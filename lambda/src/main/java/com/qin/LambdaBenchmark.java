@@ -31,116 +31,104 @@ public class LambdaBenchmark {
 
     private static final int NUM = 50_0000;
 
-    // ===== Reflection =====
-    private Constructor<User> allArgsConstructor;
+    private static final Constructor<User> ALL_ARGS_CONSTRUCTOR;
+    private static final MethodHandle MH_CONSTRUCTOR_10ARG;
+    private static final MethodHandle MH_NOARG_CONSTRUCTOR;
+    private static final MethodHandle MH_SET_ID;
+    private static final MethodHandle MH_SET_NAME;
+    private static final MethodHandle MH_SET_STATUS;
+    private static final MethodHandle MH_SET_MOBILE;
+    private static final MethodHandle MH_SET_AGE;
+    private static final MethodHandle MH_SET_BIRTHDAY;
+    private static final MethodHandle MH_SET_INTRODUCTION;
+    private static final MethodHandle MH_SET_SEX;
+    private static final MethodHandle MH_SET_CARDID;
+    private static final MethodHandle MH_SET_ADDRESS;
+    private static final NewUser<User> LAMBDA_FACTORY;
+    private static final Supplier<User> LAMBDA_SUPPLIER;
+    private static final BiConsumer<User, Long> LAMBDA_SET_ID;
+    private static final BiConsumer<User, String> LAMBDA_SET_NAME;
+    private static final BiConsumer<User, Integer> LAMBDA_SET_STATUS;
+    private static final BiConsumer<User, String> LAMBDA_SET_MOBILE;
+    private static final BiConsumer<User, Integer> LAMBDA_SET_AGE;
+    private static final BiConsumer<User, LocalDate> LAMBDA_SET_BIRTHDAY;
+    private static final BiConsumer<User, String> LAMBDA_SET_INTRODUCTION;
+    private static final BiConsumer<User, Integer> LAMBDA_SET_SEX;
+    private static final BiConsumer<User, String> LAMBDA_SET_CARDID;
+    private static final BiConsumer<User, String> LAMBDA_SET_ADDRESS;
 
-    // ===== MethodHandle =====
-    private MethodHandle mhConstructor10Arg;
-    private MethodHandle mhNoArgConstructor;
-    private MethodHandle mhSetId;
-    private MethodHandle mhSetName;
-    private MethodHandle mhSetStatus;
-    private MethodHandle mhSetMobile;
-    private MethodHandle mhSetAge;
-    private MethodHandle mhSetBirthday;
-    private MethodHandle mhSetIntroduction;
-    private MethodHandle mhSetSex;
-    private MethodHandle mhSetCardID;
-    private MethodHandle mhSetAddress;
+    static {
+        try {
+            MethodHandles.Lookup lookup = MethodHandles.lookup();
 
-    // ===== LambdaMetafactory for 10-arg constructor =====
-    private NewUser<User> lambdaFactory;
+            ALL_ARGS_CONSTRUCTOR = User.class.getConstructor(
+                    Long.class, String.class, Integer.class, String.class, Integer.class,
+                    LocalDate.class, String.class, Integer.class, String.class, String.class);
 
-    // ===== LambdaMetafactory for Supplier + BiConsumer setters =====
-    private Supplier<User> lambdaSupplier;
-    private BiConsumer<User, Long> lambdaSetId;
-    private BiConsumer<User, String> lambdaSetName;
-    private BiConsumer<User, Integer> lambdaSetStatus;
-    private BiConsumer<User, String> lambdaSetMobile;
-    private BiConsumer<User, Integer> lambdaSetAge;
-    private BiConsumer<User, LocalDate> lambdaSetBirthday;
-    private BiConsumer<User, String> lambdaSetIntroduction;
-    private BiConsumer<User, Integer> lambdaSetSex;
-    private BiConsumer<User, String> lambdaSetCardID;
-    private BiConsumer<User, String> lambdaSetAddress;
+            MH_CONSTRUCTOR_10ARG = lookup.findConstructor(User.class,
+                    MethodType.methodType(void.class, Long.class, String.class, Integer.class,
+                            String.class, Integer.class, LocalDate.class, String.class,
+                            Integer.class, String.class, String.class));
+            MH_NOARG_CONSTRUCTOR = lookup.findConstructor(User.class,
+                    MethodType.methodType(void.class));
 
-    @Setup
-    public void setup() throws Throwable {
-        MethodHandles.Lookup lookup = MethodHandles.lookup();
+            MH_SET_ID = lookup.findVirtual(User.class, "setId",
+                    MethodType.methodType(void.class, Long.class));
+            MH_SET_NAME = lookup.findVirtual(User.class, "setName",
+                    MethodType.methodType(void.class, String.class));
+            MH_SET_STATUS = lookup.findVirtual(User.class, "setStatus",
+                    MethodType.methodType(void.class, Integer.class));
+            MH_SET_MOBILE = lookup.findVirtual(User.class, "setMobile",
+                    MethodType.methodType(void.class, String.class));
+            MH_SET_AGE = lookup.findVirtual(User.class, "setAge",
+                    MethodType.methodType(void.class, Integer.class));
+            MH_SET_BIRTHDAY = lookup.findVirtual(User.class, "setBirthday",
+                    MethodType.methodType(void.class, LocalDate.class));
+            MH_SET_INTRODUCTION = lookup.findVirtual(User.class, "setIntroduction",
+                    MethodType.methodType(void.class, String.class));
+            MH_SET_SEX = lookup.findVirtual(User.class, "setSex",
+                    MethodType.methodType(void.class, Integer.class));
+            MH_SET_CARDID = lookup.findVirtual(User.class, "setCardID",
+                    MethodType.methodType(void.class, String.class));
+            MH_SET_ADDRESS = lookup.findVirtual(User.class, "setAddress",
+                    MethodType.methodType(void.class, String.class));
 
-        // -- Reflection --
-        allArgsConstructor = User.class.getConstructor(
-                Long.class, String.class, Integer.class, String.class, Integer.class,
-                LocalDate.class, String.class, Integer.class, String.class, String.class);
+            MethodType ifaceMethodType = MethodType.methodType(
+                    Object.class, Long.class, String.class, Integer.class, String.class,
+                    Integer.class, LocalDate.class, String.class, Integer.class,
+                    String.class, String.class);
+            CallSite ctorSite = LambdaMetafactory.metafactory(
+                    lookup, "apply",
+                    MethodType.methodType(NewUser.class),
+                    ifaceMethodType,
+                    MH_CONSTRUCTOR_10ARG,
+                    MethodType.methodType(User.class, Long.class, String.class, Integer.class,
+                            String.class, Integer.class, LocalDate.class, String.class,
+                            Integer.class, String.class, String.class));
+            LAMBDA_FACTORY = (NewUser<User>) ctorSite.getTarget().invokeExact();
 
-        // -- MethodHandle constructors --
-        mhConstructor10Arg = lookup.findConstructor(User.class,
-                MethodType.methodType(void.class, Long.class, String.class, Integer.class,
-                        String.class, Integer.class, LocalDate.class, String.class,
-                        Integer.class, String.class, String.class));
-        mhNoArgConstructor = lookup.findConstructor(User.class,
-                MethodType.methodType(void.class));
+            MethodType supplierIfaceType = MethodType.methodType(Object.class);
+            CallSite supplierSite = LambdaMetafactory.metafactory(
+                    lookup, "get",
+                    MethodType.methodType(Supplier.class),
+                    supplierIfaceType,
+                    MH_NOARG_CONSTRUCTOR,
+                    MethodType.methodType(User.class));
+            LAMBDA_SUPPLIER = (Supplier<User>) supplierSite.getTarget().invokeExact();
 
-        // -- MethodHandle setters (all 10) --
-        mhSetId = lookup.findVirtual(User.class, "setId",
-                MethodType.methodType(void.class, Long.class));
-        mhSetName = lookup.findVirtual(User.class, "setName",
-                MethodType.methodType(void.class, String.class));
-        mhSetStatus = lookup.findVirtual(User.class, "setStatus",
-                MethodType.methodType(void.class, Integer.class));
-        mhSetMobile = lookup.findVirtual(User.class, "setMobile",
-                MethodType.methodType(void.class, String.class));
-        mhSetAge = lookup.findVirtual(User.class, "setAge",
-                MethodType.methodType(void.class, Integer.class));
-        mhSetBirthday = lookup.findVirtual(User.class, "setBirthday",
-                MethodType.methodType(void.class, LocalDate.class));
-        mhSetIntroduction = lookup.findVirtual(User.class, "setIntroduction",
-                MethodType.methodType(void.class, String.class));
-        mhSetSex = lookup.findVirtual(User.class, "setSex",
-                MethodType.methodType(void.class, Integer.class));
-        mhSetCardID = lookup.findVirtual(User.class, "setCardID",
-                MethodType.methodType(void.class, String.class));
-        mhSetAddress = lookup.findVirtual(User.class, "setAddress",
-                MethodType.methodType(void.class, String.class));
-
-        // -- LambdaMetafactory: NewUser<User> (10-arg constructor) --
-        MethodType ifaceMethodType = MethodType.methodType(
-                Object.class, Long.class, String.class, Integer.class, String.class,
-                Integer.class, LocalDate.class, String.class, Integer.class,
-                String.class, String.class);
-        CallSite ctorSite = LambdaMetafactory.metafactory(
-                lookup, "apply",
-                MethodType.methodType(NewUser.class),
-                ifaceMethodType,
-                mhConstructor10Arg,
-                MethodType.methodType(User.class, Long.class, String.class, Integer.class,
-                        String.class, Integer.class, LocalDate.class, String.class,
-                        Integer.class, String.class, String.class));
-        lambdaFactory = (NewUser<User>) ctorSite.getTarget().invokeExact();
-
-        // -- LambdaMetafactory: Supplier<User> (no-arg constructor) --
-        MethodType supplierIfaceType = MethodType.methodType(Object.class);
-        CallSite supplierSite = LambdaMetafactory.metafactory(
-                lookup, "get",
-                MethodType.methodType(Supplier.class),
-                supplierIfaceType,
-                mhNoArgConstructor,
-                MethodType.methodType(User.class));
-        lambdaSupplier = (Supplier<User>) supplierSite.getTarget().invokeExact();
-
-        // -- LambdaMetafactory: BiConsumer setters (all 10) --
-        MethodType biconsumerErased = MethodType.methodType(void.class, Object.class, Object.class);
-
-        lambdaSetId = createBiConsumer(lookup, mhSetId, User.class, Long.class);
-        lambdaSetName = createBiConsumer(lookup, mhSetName, User.class, String.class);
-        lambdaSetStatus = createBiConsumer(lookup, mhSetStatus, User.class, Integer.class);
-        lambdaSetMobile = createBiConsumer(lookup, mhSetMobile, User.class, String.class);
-        lambdaSetAge = createBiConsumer(lookup, mhSetAge, User.class, Integer.class);
-        lambdaSetBirthday = createBiConsumer(lookup, mhSetBirthday, User.class, LocalDate.class);
-        lambdaSetIntroduction = createBiConsumer(lookup, mhSetIntroduction, User.class, String.class);
-        lambdaSetSex = createBiConsumer(lookup, mhSetSex, User.class, Integer.class);
-        lambdaSetCardID = createBiConsumer(lookup, mhSetCardID, User.class, String.class);
-        lambdaSetAddress = createBiConsumer(lookup, mhSetAddress, User.class, String.class);
+            LAMBDA_SET_ID = createBiConsumer(lookup, MH_SET_ID, User.class, Long.class);
+            LAMBDA_SET_NAME = createBiConsumer(lookup, MH_SET_NAME, User.class, String.class);
+            LAMBDA_SET_STATUS = createBiConsumer(lookup, MH_SET_STATUS, User.class, Integer.class);
+            LAMBDA_SET_MOBILE = createBiConsumer(lookup, MH_SET_MOBILE, User.class, String.class);
+            LAMBDA_SET_AGE = createBiConsumer(lookup, MH_SET_AGE, User.class, Integer.class);
+            LAMBDA_SET_BIRTHDAY = createBiConsumer(lookup, MH_SET_BIRTHDAY, User.class, LocalDate.class);
+            LAMBDA_SET_INTRODUCTION = createBiConsumer(lookup, MH_SET_INTRODUCTION, User.class, String.class);
+            LAMBDA_SET_SEX = createBiConsumer(lookup, MH_SET_SEX, User.class, Integer.class);
+            LAMBDA_SET_CARDID = createBiConsumer(lookup, MH_SET_CARDID, User.class, String.class);
+            LAMBDA_SET_ADDRESS = createBiConsumer(lookup, MH_SET_ADDRESS, User.class, String.class);
+        } catch (Throwable e) {
+            throw new ExceptionInInitializerError(e);
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -195,7 +183,7 @@ public class LambdaBenchmark {
             ArrayList<User> users = new ArrayList<>(NUM);
             long sum = 0;
             for (int i = 0; i < NUM; i++) {
-                users.add(allArgsConstructor.newInstance(sum + i, "heihei", i, "17374957973", i,
+                users.add(ALL_ARGS_CONSTRUCTOR.newInstance(sum + i, "heihei", i, "17374957973", i,
                         LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
             }
             bh.consume(users);
@@ -210,7 +198,7 @@ public class LambdaBenchmark {
             ArrayList<User> users = new ArrayList<>(NUM);
             long sum = 0;
             for (int i = 0; i < NUM; i++) {
-                users.add((User) mhConstructor10Arg.invoke(
+                users.add((User) MH_CONSTRUCTOR_10ARG.invoke(
                         sum + i, "heihei", i, "17374957973", i,
                         LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
             }
@@ -226,17 +214,17 @@ public class LambdaBenchmark {
             ArrayList<User> users = new ArrayList<>(NUM);
             long sum = 0;
             for (int i = 0; i < NUM; i++) {
-                User user = (User) mhNoArgConstructor.invoke();
-                mhSetId.invoke(user, sum + i);
-                mhSetName.invoke(user, "heihei");
-                mhSetStatus.invoke(user, i);
-                mhSetMobile.invoke(user, "17374957973");
-                mhSetAge.invoke(user, i);
-                mhSetBirthday.invoke(user, LocalDate.MAX);
-                mhSetIntroduction.invoke(user, "introduction");
-                mhSetSex.invoke(user, 1);
-                mhSetCardID.invoke(user, "17374957973");
-                mhSetAddress.invoke(user, "17374957973");
+                User user = (User) MH_NOARG_CONSTRUCTOR.invoke();
+                MH_SET_ID.invoke(user, sum + i);
+                MH_SET_NAME.invoke(user, "heihei");
+                MH_SET_STATUS.invoke(user, i);
+                MH_SET_MOBILE.invoke(user, "17374957973");
+                MH_SET_AGE.invoke(user, i);
+                MH_SET_BIRTHDAY.invoke(user, LocalDate.MAX);
+                MH_SET_INTRODUCTION.invoke(user, "introduction");
+                MH_SET_SEX.invoke(user, 1);
+                MH_SET_CARDID.invoke(user, "17374957973");
+                MH_SET_ADDRESS.invoke(user, "17374957973");
                 users.add(user);
             }
             bh.consume(users);
@@ -251,7 +239,7 @@ public class LambdaBenchmark {
             ArrayList<User> users = new ArrayList<>(NUM);
             long sum = 0;
             for (int i = 0; i < NUM; i++) {
-                users.add(lambdaFactory.apply(
+                users.add(LAMBDA_FACTORY.apply(
                         sum + i, "heihei", i, "17374957973", i,
                         LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
             }
@@ -267,17 +255,17 @@ public class LambdaBenchmark {
             ArrayList<User> users = new ArrayList<>(NUM);
             long sum = 0;
             for (int i = 0; i < NUM; i++) {
-                User user = lambdaSupplier.get();
-                lambdaSetId.accept(user, sum + i);
-                lambdaSetName.accept(user, "heihei");
-                lambdaSetStatus.accept(user, i);
-                lambdaSetMobile.accept(user, "17374957973");
-                lambdaSetAge.accept(user, i);
-                lambdaSetBirthday.accept(user, LocalDate.MAX);
-                lambdaSetIntroduction.accept(user, "introduction");
-                lambdaSetSex.accept(user, 1);
-                lambdaSetCardID.accept(user, "17374957973");
-                lambdaSetAddress.accept(user, "17374957973");
+                User user = LAMBDA_SUPPLIER.get();
+                LAMBDA_SET_ID.accept(user, sum + i);
+                LAMBDA_SET_NAME.accept(user, "heihei");
+                LAMBDA_SET_STATUS.accept(user, i);
+                LAMBDA_SET_MOBILE.accept(user, "17374957973");
+                LAMBDA_SET_AGE.accept(user, i);
+                LAMBDA_SET_BIRTHDAY.accept(user, LocalDate.MAX);
+                LAMBDA_SET_INTRODUCTION.accept(user, "introduction");
+                LAMBDA_SET_SEX.accept(user, 1);
+                LAMBDA_SET_CARDID.accept(user, "17374957973");
+                LAMBDA_SET_ADDRESS.accept(user, "17374957973");
                 users.add(user);
             }
             bh.consume(users);
@@ -285,8 +273,6 @@ public class LambdaBenchmark {
             throw new RuntimeException(e);
         }
     }
-
-    // ==================== Main ====================
 
     public static void main(String[] args) throws RunnerException {
         Options opt = new OptionsBuilder()
