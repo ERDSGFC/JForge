@@ -15,6 +15,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 
+@FunctionalInterface
+interface NewUser<T> {
+    T apply(Long id, String name, Integer status);
+}
+
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @State(Scope.Thread)
@@ -36,7 +41,7 @@ public class LambdaBenchmark {
     private MethodHandle mhSetStatus;
 
     // ===== LambdaMetafactory for constructor =====
-    private LambdaTest.NewUser<User> lambdaFactory;
+    private NewUser<User> lambdaFactory;
 
     // ===== LambdaMetafactory for Supplier + BiConsumer =====
     private Supplier<User> lambdaSupplier;
@@ -72,11 +77,11 @@ public class LambdaBenchmark {
                 Object.class, Long.class, String.class, Integer.class);
         CallSite ctorSite = LambdaMetafactory.metafactory(
                 lookup, "apply",
-                MethodType.methodType(LambdaTest.NewUser.class),
+                MethodType.methodType(NewUser.class),
                 ifaceMethodType,
                 mhConstructor3Arg,
                 MethodType.methodType(User.class, Long.class, String.class, Integer.class));
-        lambdaFactory = (LambdaTest.NewUser<User>) ctorSite.getTarget().invokeExact();
+        lambdaFactory = (NewUser<User>) ctorSite.getTarget().invokeExact();
 
         // -- LambdaMetafactory: Supplier<User> (no-arg constructor) --
         MethodType supplierIfaceType = MethodType.methodType(Object.class);
