@@ -17,13 +17,6 @@ public class User {
 
     public User() {
     }
-
-    public User(Long id, String name, Integer status) {
-        this.id = id;
-        this.name = name;
-        this.status = status;
-    }
-
     public User(Long id, String name, Integer status, String mobile, Integer age,
                 LocalDate birthday, String introduction, Integer sex, String cardID, String address) {
         this.id = id;
