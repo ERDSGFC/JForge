@@ -143,21 +143,57 @@ public class LambdaBenchmark {
         return (BiConsumer<T, U>) site.getTarget().invokeExact();
     }
 
-    // ==================== Benchmark methods ====================
+    // ==================== Benchmark methods (A-prefix for execution order) ====================
 
     @Benchmark
-    public void allArgsConstructor(Blackhole bh) {
-        ArrayList<User> users = new ArrayList<>(NUM);
-        long sum = 0;
-        for (int i = 0; i < NUM; i++) {
-            users.add(new User(sum + i, "heihei", i, "17374957973", i,
-                    LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
+    public void A01_reflectionConstructor(Blackhole bh) {
+        try {
+            ArrayList<User> users = new ArrayList<>(NUM);
+            long sum = 0;
+            for (int i = 0; i < NUM; i++) {
+                users.add(ALL_ARGS_CONSTRUCTOR.newInstance(sum + i, "heihei", i, "17374957973", i,
+                        LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
+            }
+            bh.consume(users);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
-        bh.consume(users);
     }
 
     @Benchmark
-    public void noArgConstructorWithSetters(Blackhole bh) {
+    public void A02_lambdaMetafactoryConstructor(Blackhole bh) {
+        try {
+            ArrayList<User> users = new ArrayList<>(NUM);
+            long sum = 0;
+            for (int i = 0; i < NUM; i++) {
+                users.add(LAMBDA_FACTORY.apply(
+                        sum + i, "heihei", i, "17374957973", i,
+                        LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
+            }
+            bh.consume(users);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Benchmark
+    public void A03_methodHandleConstructor(Blackhole bh) {
+        try {
+            ArrayList<User> users = new ArrayList<>(NUM);
+            long sum = 0;
+            for (int i = 0; i < NUM; i++) {
+                users.add((User) MH_CONSTRUCTOR_10ARG.invoke(
+                        sum + i, "heihei", i, "17374957973", i,
+                        LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
+            }
+            bh.consume(users);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Benchmark
+    public void A04_noArgConstructorWithSetters(Blackhole bh) {
         ArrayList<User> users = new ArrayList<>(NUM);
         long sum = 0;
         for (int i = 0; i < NUM; i++) {
@@ -178,79 +214,7 @@ public class LambdaBenchmark {
     }
 
     @Benchmark
-    public void reflectionConstructor(Blackhole bh) {
-        try {
-            ArrayList<User> users = new ArrayList<>(NUM);
-            long sum = 0;
-            for (int i = 0; i < NUM; i++) {
-                users.add(ALL_ARGS_CONSTRUCTOR.newInstance(sum + i, "heihei", i, "17374957973", i,
-                        LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
-            }
-            bh.consume(users);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Benchmark
-    public void methodHandleConstructor(Blackhole bh) {
-        try {
-            ArrayList<User> users = new ArrayList<>(NUM);
-            long sum = 0;
-            for (int i = 0; i < NUM; i++) {
-                users.add((User) MH_CONSTRUCTOR_10ARG.invoke(
-                        sum + i, "heihei", i, "17374957973", i,
-                        LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
-            }
-            bh.consume(users);
-        } catch (Throwable e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Benchmark
-    public void methodHandleWithSetters(Blackhole bh) {
-        try {
-            ArrayList<User> users = new ArrayList<>(NUM);
-            long sum = 0;
-            for (int i = 0; i < NUM; i++) {
-                User user = (User) MH_NOARG_CONSTRUCTOR.invoke();
-                MH_SET_ID.invoke(user, sum + i);
-                MH_SET_NAME.invoke(user, "heihei");
-                MH_SET_STATUS.invoke(user, i);
-                MH_SET_MOBILE.invoke(user, "17374957973");
-                MH_SET_AGE.invoke(user, i);
-                MH_SET_BIRTHDAY.invoke(user, LocalDate.MAX);
-                MH_SET_INTRODUCTION.invoke(user, "introduction");
-                MH_SET_SEX.invoke(user, 1);
-                MH_SET_CARDID.invoke(user, "17374957973");
-                MH_SET_ADDRESS.invoke(user, "17374957973");
-                users.add(user);
-            }
-            bh.consume(users);
-        } catch (Throwable e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Benchmark
-    public void lambdaMetafactoryConstructor(Blackhole bh) {
-        try {
-            ArrayList<User> users = new ArrayList<>(NUM);
-            long sum = 0;
-            for (int i = 0; i < NUM; i++) {
-                users.add(LAMBDA_FACTORY.apply(
-                        sum + i, "heihei", i, "17374957973", i,
-                        LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
-            }
-            bh.consume(users);
-        } catch (Throwable e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Benchmark
-    public void lambdaMetafactoryWithSetters(Blackhole bh) {
+    public void A05_lambdaMetafactoryWithSetters(Blackhole bh) {
         try {
             ArrayList<User> users = new ArrayList<>(NUM);
             long sum = 0;
@@ -266,6 +230,42 @@ public class LambdaBenchmark {
                 LAMBDA_SET_SEX.accept(user, 1);
                 LAMBDA_SET_CARDID.accept(user, "17374957973");
                 LAMBDA_SET_ADDRESS.accept(user, "17374957973");
+                users.add(user);
+            }
+            bh.consume(users);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Benchmark
+    public void A06_allArgsConstructor(Blackhole bh) {
+        ArrayList<User> users = new ArrayList<>(NUM);
+        long sum = 0;
+        for (int i = 0; i < NUM; i++) {
+            users.add(new User(sum + i, "heihei", i, "17374957973", i,
+                    LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
+        }
+        bh.consume(users);
+    }
+
+    @Benchmark
+    public void A07_methodHandleWithSetters(Blackhole bh) {
+        try {
+            ArrayList<User> users = new ArrayList<>(NUM);
+            long sum = 0;
+            for (int i = 0; i < NUM; i++) {
+                User user = (User) MH_NOARG_CONSTRUCTOR.invoke();
+                MH_SET_ID.invoke(user, sum + i);
+                MH_SET_NAME.invoke(user, "heihei");
+                MH_SET_STATUS.invoke(user, i);
+                MH_SET_MOBILE.invoke(user, "17374957973");
+                MH_SET_AGE.invoke(user, i);
+                MH_SET_BIRTHDAY.invoke(user, LocalDate.MAX);
+                MH_SET_INTRODUCTION.invoke(user, "introduction");
+                MH_SET_SEX.invoke(user, 1);
+                MH_SET_CARDID.invoke(user, "17374957973");
+                MH_SET_ADDRESS.invoke(user, "17374957973");
                 users.add(user);
             }
             bh.consume(users);
