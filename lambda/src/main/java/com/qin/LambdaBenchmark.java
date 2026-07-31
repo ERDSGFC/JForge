@@ -275,9 +275,14 @@ public class LambdaBenchmark {
     }
 
     public static void main(String[] args) throws RunnerException {
-        Options opt = new OptionsBuilder()
-                .include(LambdaBenchmark.class.getSimpleName())
-                .build();
-        new Runner(opt).run();
+        OptionsBuilder optBuilder = new OptionsBuilder();
+        if (args.length > 0) {
+            for (String arg : args) {
+                optBuilder.include(arg);
+            }
+        } else {
+            optBuilder.include(LambdaBenchmark.class.getSimpleName());
+        }
+        new Runner(optBuilder.build()).run();
     }
 }
