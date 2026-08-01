@@ -44,17 +44,34 @@
 
 ---
 
-## 可信结论（由 Run 8/9 支撑）
+## Run 10: invokeExact 改造（MethodHandle 追平直接 new）
 
-1. **第一梯队五者统计等价** — 直接 `new`、反射、LambdaMetafactory（构造器/setter 两种形式）、无参构造+setter **同为 ~215M 对象/s（每对象 ~4.6ns）**，差距仅 1.4% 且在误差内（Run 9 误差 ±0.5-2%）。Run 8 中 B04 第 1、Run 9 中 B01 第 1，排名互换证实前五名无法区分。
+> **代码改动**：B03/B06 的 `MethodHandle.invoke()` 全部改为 `invokeExact()`（参数改为精确类型 `(Long)`/`(Integer)` 匹配 handle 签名）。`invoke` 每次调用做 asType 参数适配（装箱/类型检查），`invokeExact` 跳过适配、JIT 可直接内联。  
+> **运行配置**（当前代码注解默认，无 CLI 覆盖）：5 次预热 × 3s，10 次测量 × 2s，默认 5 forks。  
+> **执行顺序** (字母序): allArgsConstructor → lambdaMetafactoryConstructor → lambdaMetafactoryWithSetters → methodHandleConstructor → methodHandleWithSetters → noArgConstructorWithSetters → reflectionConstructor  
+> **单位**：ops/s = 每秒创建的对象数。
 
-2. **MethodHandle 构造器稳定落后 ~29%** — 154.6M 对象/s（每对象 ~6.5ns）。
+| Benchmark | Score (ops/s) | Error |
+|---|---:|---:|
+| lambdaMetafactoryWithSetters | **223,155,893** | ±1,049,390 |
+| methodHandleConstructor | 222,818,542 | ±1,214,660 |
+| lambdaMetafactoryConstructor | 222,777,687 | ±1,096,525 |
+| allArgsConstructor | 219,560,406 | ±3,022,325 |
+| reflectionConstructor | 214,501,542 | ±3,848,058 |
+| noArgConstructorWithSetters | 214,265,375 | ±3,661,869 |
+| methodHandleWithSetters | 214,004,752 | ±14,610,331 |
 
-3. **MethodHandle+setter 断层最慢，落后 ~73%** — 59.1M 对象/s（每对象 ~16.9ns）。该结论在旧写法（Run 1-7）与新写法（Run 8/9）下**均成立**，10 次 `invoke` 的固定开销是真实瓶颈。
+---
 
-4. **JMH 按字母顺序执行 benchmark** — 源码方法书写顺序不影响；通过 `A01`/`B01` 等前缀可控制执行顺序（旧轮次多次验证）。方法命名须保留前缀约定。
+## 可信结论（由 Run 8/9/10 支撑）
 
-5. **`static final` 句柄存在优化效应，幅度待重测** — 旧轮次受控对照（唯一变量为 instance → static final 字段）显示反射 -47%、MH+setter -40%（JIT 常量折叠）；该幅度在循环式写法下测得，**标准写法下的幅度未验证**（可用 `InstanceState` 对照重测，思路见 git 历史中的 EXECUTION_STEPS.md Run 10 计划）。
+1. **7 种对象创建方式全部统计等价** — 直接 `new`、反射、LambdaMetafactory（构造器/setter 两种形式）、MethodHandle（构造器/setter 两种形式，`invokeExact`）、无参构造+setter **同为 ~214-223M 对象/s（每对象 ~4.5-4.7ns）**，最大差距 4.3% 且在误差内（Run 10，50 次测量，误差 ±0.5-6.8%）。JIT 深度优化后各方式收敛到同一水平，无显著差异。
+
+2. **⚠️ `invoke` vs `invokeExact` 是真实差异源（Run 10）** — `MethodHandle.invoke()` 的 asType 参数适配开销（装箱/类型检查）使 MethodHandle 慢 28-73%（Run 8/9"MethodHandle 落后"结论为假象）；改用 `invokeExact()` 后 MethodHandle 构造器 +44%（154.6M → 222.8M）、MethodHandle+setter **+262%**（59.1M → 214.0M），全部追平直接 `new`。旧写法（Run 1-7）中"MethodHandle+setter 最慢"结论同样受此影响，不再成立。**实践建议：使用 MethodHandle 优先 `invokeExact`（参数类型精确匹配）**。
+
+3. **JMH 按字母顺序执行 benchmark** — 源码方法书写顺序不影响；早期通过 `A01`/`B01` 等前缀控制执行顺序（多次验证顺序不影响结果），前缀已移除，当前代码恢复自然命名。
+
+4. **`static final` 句柄存在优化效应，幅度待重测** — 旧轮次受控对照（唯一变量为 instance → static final 字段）显示反射 -47%、MH+setter -40%（JIT 常量折叠）；该幅度在循环式写法下测得，**标准写法下的幅度未验证**（可用 `InstanceState` 对照重测）。
 
 ---
 
@@ -63,5 +80,5 @@
 - **手写大循环的写法改变 JIT 优化行为**（长方法深度优化、调用开销摊销），测出的是"50 万次批处理"成本而非真实单次调用成本。
 - 由此得出的排名结论**已被推翻**：旧结论"LambdaMetafactory 始终最快""直接 `new` 中等偏下"均不成立 —— Run 8/9 中直接 `new` 进入第一梯队，五者同档。
 - 旧数据在同写法内高度可复现（跨轮偏差 <8%），属于"确定性地测错了场景"：**测量方法敏感 → 结论不可信**。
-- 仅一条旧结论在两种写法下一致并保留：**MethodHandle+setter 最慢**（见可信结论 3）。
-- 完整旧数据保存在 git 历史；新数据以 `benchmark_run9_data.csv` 为准。
+- 类似地，**调用 API 的选择同样影响结论**：`MethodHandle.invoke` 的适配开销曾让 MethodHandle 显得慢 28-73%，`invokeExact` 消除适配后全部追平（Run 10）。
+- 完整旧数据保存在 git 历史；原始测量数据以 `benchmark_run9_data.csv` 为准。

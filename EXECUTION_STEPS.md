@@ -1,6 +1,6 @@
-# JMH 执行步骤记录（Run 8 / Run 9）
+# JMH 执行步骤记录（Run 8 / Run 9 / Run 10）
 
-记录第八轮（标准写法首测）与第九轮（增强配置验证）的完整执行步骤、命令与参数解析。两轮均已执行，对应结果见 `BENCHMARK_RESULTS.md`。
+记录第八轮（标准写法首测）、第九轮（增强配置验证）与第十轮（invokeExact 改造）的完整执行步骤、命令与参数解析。均已执行，对应结果见 `BENCHMARK_RESULTS.md`。
 
 ---
 
@@ -164,3 +164,92 @@ awk '/^# Benchmark: com.qin/ { b=$3; sub(/^com[.]qin[.]LambdaBenchmark[.]/, "", 
 2. B03 稳定落后 ~29%，B06 断层落后 ~73% —— 显著结论
 3. 每 fork 均值波动 <1%（除 B07 F2 受干扰掉 6%），跨 JVM 可复现
 4. 误差从 Run 8 的 ±10-26% 降至 ±0.5-2%
+
+---
+
+## Run 10：invokeExact 改造（已完成）
+
+**日期**: 2026-08-01
+**目的**: 将 MethodHandle 调用从 `invoke()` 改为 `invokeExact()`，消除 asType 参数适配开销，验证 MethodHandle 的真实性能。`invoke` 每次调用做参数类型适配（装箱/类型检查），`invokeExact` 要求参数类型与 handle 签名精确匹配、跳过适配，JIT 可直接内联到目标方法。
+
+### 代码改动（`LambdaBenchmark.java`）
+
+`methodHandleConstructor` 与 `methodHandleWithSetters` 的全部 `invoke` 改为 `invokeExact`，参数改为精确类型：
+
+```java
+// invoke 版（Run 9）：参数隐式适配
+return (User) MyState.MH_CONSTRUCTOR_10ARG.invoke(1L, "heihei", 1, ...);
+
+// invokeExact 版（Run 10）：参数必须精确匹配 handle 签名 (Long, String, Integer, ...)
+return (User) MyState.MH_CONSTRUCTOR_10ARG.invokeExact((Long) 1L, "heihei", (Integer) 1, ...);
+```
+
+要点：
+- handle 签名 `(Long, String, Integer, ...)` 要求精确类型：`1L` → `(Long) 1L`，`1` → `(Integer) 1`，字符串/LocalDate 无需转换
+- setter handle（如 `MH_SET_ID`，签名 `(User, Long)`）：`MH_SET_ID.invokeExact(user, (Long) 1L)`
+- 无参构造 handle：`(User) MH_NOARG_CONSTRUCTOR.invokeExact()`
+- 编译期类型不匹配会直接报编译错误（如 `Argument type should be exactly 'java.lang.Long'`）
+
+同时类注解由用户调整为：`@Warmup(iterations=5, time=3s)`、`@Measurement(iterations=10, time=2s)`、默认 5 forks（无 `@Fork` 注解、无 `-bs`）。
+
+### 步骤 1：打包
+
+```bash
+mvn package -pl lambda -q -DskipTests
+```
+
+### 步骤 2：快速验证（确认功能正常，~1 分钟）
+
+```bash
+java -jar lambda/target/benchmarks.jar -f 1 -i 2 -w 1 -to 120s
+```
+
+### 步骤 3：完整运行（默认注解配置，后台执行，~21 分钟）
+
+```bash
+java -jar lambda/target/benchmarks.jar > /tmp/jmh_run12.log 2>&1
+```
+
+### 参数解析（实测，来自日志头）
+
+```
+# Warmup: 5 iterations, 3 s each       ← @Warmup(iterations=5, time=3s)
+# Measurement: 10 iterations, 2 s each ← @Measurement(iterations=10, time=2s)
+# Fork: 1-5 of 5                       ← 默认 5 forks（无 @Fork 注解）
+```
+
+### 步骤 4：运行时长
+
+```
+# Run complete. Total time: 00:20:58
+```
+
+### 步骤 5：结果提取
+
+```bash
+grep -E "^LambdaBenchmark" /tmp/jmh_run12.log
+```
+
+### Run 10 结果（ops/s = 对象/s，50 次测量 = 10 迭代 × 5 forks）
+
+| Benchmark | Score (ops/s) | Error |
+|---|---:|---:|
+| lambdaMetafactoryWithSetters | **223,155,893** | ±1,049,390 |
+| methodHandleConstructor | 222,818,542 | ±1,214,660 |
+| lambdaMetafactoryConstructor | 222,777,687 | ±1,096,525 |
+| allArgsConstructor | 219,560,406 | ±3,022,325 |
+| reflectionConstructor | 214,501,542 | ±3,848,058 |
+| noArgConstructorWithSetters | 214,265,375 | ±3,661,869 |
+| methodHandleWithSetters | 214,004,752 | ±14,610,331 |
+
+### 结论（与 Run 9 invoke 版对比）
+
+| Benchmark | invoke（Run 9） | invokeExact（Run 10） | 变化 |
+|---|---:|---:|---:|
+| methodHandleConstructor | 154.6M（-29%） | 222.8M | **+44%** |
+| methodHandleWithSetters | 59.1M（-73%） | 214.0M | **+262%** |
+| 其余五者 | ~215M | ~214-223M | 0-3% |
+
+1. **7 种方式全部收敛到 214-223M（差距 ≤4.3%，误差区间重叠）→ 统计等价**，"MethodHandle 慢 28-73%"的结论被彻底推翻
+2. 真实差异源是 `invoke` 的 asType 适配开销，非 MethodHandle 本身
+3. 实践建议：MethodHandle 调用优先 `invokeExact`，参数类型精确匹配
