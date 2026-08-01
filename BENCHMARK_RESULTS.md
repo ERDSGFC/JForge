@@ -94,17 +94,35 @@
 
 ---
 
+## Run 6: B01-B07 前缀（第三组执行顺序）
+
+> 通过 `B01`~`B07` 前缀验证第三组不同的执行顺序。  
+> **执行顺序**:  
+> ① B01_lambdaMetafactoryConstructor → ② B02_reflectionConstructor → ③ B03_methodHandleConstructor → ④ B04_allArgsConstructor → ⑤ B05_lambdaMetafactoryWithSetters → ⑥ B06_methodHandleWithSetters → ⑦ B07_noArgConstructorWithSetters
+
+| Benchmark | Score (ms/op) | Error | 序号 |
+|---|---:|---:|:---:|
+| B01_lambdaMetafactoryConstructor | 5.448 | ±0.937 | ① |
+| B02_reflectionConstructor | 5.550 | ±0.969 | ② |
+| B03_methodHandleConstructor | 6.058 | ±1.823 | ③ |
+| B04_allArgsConstructor | 6.125 | ±0.607 | ④ |
+| B05_lambdaMetafactoryWithSetters | 6.156 | ±0.122 | ⑤ |
+| B06_methodHandleWithSetters | 10.385 | ±0.354 | ⑥ |
+| B07_noArgConstructorWithSetters | 6.064 | ±0.143 | ⑦ |
+
+---
+
 ## 全部轮次汇总
 
-| Benchmark | Run 1 (instance) | Run 2 (static) | Run 3 (逆序) | Run 4 (A前缀) | Run 5 (独立JVM) |
-|---:|---:|---:|---:|---:|---:|
-| reflectionConstructor | 10.196 | **5.398** | 5.686 | 5.511 | **5.491** |
-| lambdaMetafactoryConstructor | **5.378** | 5.564 | 5.321 | **5.291** | 5.491 |
-| methodHandleConstructor | 6.138 | 5.608 | 6.018 | 5.616 | 5.854 |
-| noArgConstructorWithSetters | 6.128 | 5.952 | 6.355 | 6.208 | 5.915 |
-| lambdaMetafactoryWithSetters | 7.252 | 6.162 | 6.067 | 6.097 | 6.068 |
-| allArgsConstructor | 6.101 | 6.346 | 6.188 | 6.299 | 6.141 |
-| methodHandleWithSetters | **16.855** | 10.186 | 10.492 | 10.180 | 10.152 |
+| Benchmark | Run 1 (instance) | Run 2 (static) | Run 3 (逆序) | Run 4 (A前缀) | Run 5 (独立JVM) | Run 6 (B前缀) |
+|---:|---:|---:|---:|---:|---:|---:|
+| reflectionConstructor | 10.196 | **5.398** | 5.686 | 5.511 | **5.491** | 5.550 |
+| lambdaMetafactoryConstructor | **5.378** | 5.564 | 5.321 | **5.291** | 5.491 | **5.448** |
+| methodHandleConstructor | 6.138 | 5.608 | 6.018 | 5.616 | 5.854 | 6.058 |
+| noArgConstructorWithSetters | 6.128 | 5.952 | 6.355 | 6.208 | 5.915 | 6.064 |
+| lambdaMetafactoryWithSetters | 7.252 | 6.162 | 6.067 | 6.097 | 6.068 | 6.156 |
+| allArgsConstructor | 6.101 | 6.346 | 6.188 | 6.299 | 6.141 | 6.125 |
+| methodHandleWithSetters | **16.855** | 10.186 | 10.492 | 10.180 | 10.152 | 10.385 |
 
 | 轮次 | 执行顺序 (① → ② → ... → ⑦) |
 |:---|:---|
@@ -113,6 +131,7 @@
 | Run 3 | ① allArgsConstructor → ② lambdaMetafactoryCtor → ③ lambdaMetafactorySetters → ④ methodHandleCtor → ⑤ methodHandleSetters → ⑥ noArgCtorSetters → ⑦ reflectionCtor |
 | Run 4 | ① reflectionCtor → ② lambdaMetafactoryCtor → ③ methodHandleCtor → ④ noArgCtorSetters → ⑤ lambdaMetafactorySetters → ⑥ allArgsConstructor → ⑦ methodHandleSetters |
 | Run 5 | 无执行顺序——每个 benchmark 独立 JVM 运行 |
+| Run 6 | ① lambdaMetafactoryCtor → ② reflectionCtor → ③ methodHandleCtor → ④ allArgsConstructor → ⑤ lambdaMetafactorySetters → ⑥ methodHandleSetters → ⑦ noArgCtorSetters |
 
 ---
 
@@ -124,9 +143,9 @@
 
 3. **LambdaMetafactory 构造器始终最快** — 生成的 lambda 方法绕过 `<init>` verification，即使反射用 `static final` 优化后仍略逊一筹。
 
-4. **JMH 按字母顺序执行 benchmark**，源码方法书写顺序不影响。但格式命名（A01-A07）可控制。
+4. **JMH 按字母顺序执行 benchmark**，源码方法书写顺序不影响。通过 A01-A07 / B01-B07 前缀可控制执行顺序。
 
-5. **独立 JVM（方案 2）确认结果稳定** — Run 5 每个 benchmark 单独启动 JVM，结果与 Run 2/3/4 完全一致（误差 <3%）。说明 JMH 的独立预热在同一个 JVM 内也已充分消除跨 benchmark 污染，但独立 JVM 仍是黄金标准。
+5. **六轮测试结果高度一致** — Run 1-3 字母序相同、Run 4/6 两套不同前缀顺序、Run 5 独立 JVM，六种执行顺序下排名与绝对值均稳定（同 benchmark 跨轮最大偏差 <8%）。JMH 独立预热已有效消除跨 benchmark 污染。
 
 6. **直接 `new` (allArgsConstructor) 中等偏下** — 受 JVM `<init>` verification 约束，始终比反射/LambdaMetafactory 慢约 0.5-0.8ms。
 

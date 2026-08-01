@@ -143,25 +143,10 @@ public class LambdaBenchmark {
         return (BiConsumer<T, U>) site.getTarget().invokeExact();
     }
 
-    // ==================== Benchmark methods (A-prefix for execution order) ====================
+    // ==================== Benchmark methods (B-prefix for execution order) ====================
 
     @Benchmark
-    public void A01_reflectionConstructor(Blackhole bh) {
-        try {
-            ArrayList<User> users = new ArrayList<>(NUM);
-            long sum = 0;
-            for (int i = 0; i < NUM; i++) {
-                users.add(ALL_ARGS_CONSTRUCTOR.newInstance(sum + i, "heihei", i, "17374957973", i,
-                        LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
-            }
-            bh.consume(users);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Benchmark
-    public void A02_lambdaMetafactoryConstructor(Blackhole bh) {
+    public void B01_lambdaMetafactoryConstructor(Blackhole bh) {
         try {
             ArrayList<User> users = new ArrayList<>(NUM);
             long sum = 0;
@@ -177,7 +162,22 @@ public class LambdaBenchmark {
     }
 
     @Benchmark
-    public void A03_methodHandleConstructor(Blackhole bh) {
+    public void B02_reflectionConstructor(Blackhole bh) {
+        try {
+            ArrayList<User> users = new ArrayList<>(NUM);
+            long sum = 0;
+            for (int i = 0; i < NUM; i++) {
+                users.add(ALL_ARGS_CONSTRUCTOR.newInstance(sum + i, "heihei", i, "17374957973", i,
+                        LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
+            }
+            bh.consume(users);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Benchmark
+    public void B03_methodHandleConstructor(Blackhole bh) {
         try {
             ArrayList<User> users = new ArrayList<>(NUM);
             long sum = 0;
@@ -193,28 +193,18 @@ public class LambdaBenchmark {
     }
 
     @Benchmark
-    public void A04_noArgConstructorWithSetters(Blackhole bh) {
+    public void B04_allArgsConstructor(Blackhole bh) {
         ArrayList<User> users = new ArrayList<>(NUM);
         long sum = 0;
         for (int i = 0; i < NUM; i++) {
-            User user = new User();
-            user.setId(sum + i);
-            user.setName("heihei");
-            user.setStatus(i);
-            user.setMobile("17374957973");
-            user.setAge(i);
-            user.setBirthday(LocalDate.MAX);
-            user.setIntroduction("introduction");
-            user.setSex(1);
-            user.setCardID("17374957973");
-            user.setAddress("17374957973");
-            users.add(user);
+            users.add(new User(sum + i, "heihei", i, "17374957973", i,
+                    LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
         }
         bh.consume(users);
     }
 
     @Benchmark
-    public void A05_lambdaMetafactoryWithSetters(Blackhole bh) {
+    public void B05_lambdaMetafactoryWithSetters(Blackhole bh) {
         try {
             ArrayList<User> users = new ArrayList<>(NUM);
             long sum = 0;
@@ -239,18 +229,7 @@ public class LambdaBenchmark {
     }
 
     @Benchmark
-    public void A06_allArgsConstructor(Blackhole bh) {
-        ArrayList<User> users = new ArrayList<>(NUM);
-        long sum = 0;
-        for (int i = 0; i < NUM; i++) {
-            users.add(new User(sum + i, "heihei", i, "17374957973", i,
-                    LocalDate.MAX, "introduction", 1, "17374957973", "17374957973"));
-        }
-        bh.consume(users);
-    }
-
-    @Benchmark
-    public void A07_methodHandleWithSetters(Blackhole bh) {
+    public void B06_methodHandleWithSetters(Blackhole bh) {
         try {
             ArrayList<User> users = new ArrayList<>(NUM);
             long sum = 0;
@@ -272,6 +251,27 @@ public class LambdaBenchmark {
         } catch (Throwable e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Benchmark
+    public void B07_noArgConstructorWithSetters(Blackhole bh) {
+        ArrayList<User> users = new ArrayList<>(NUM);
+        long sum = 0;
+        for (int i = 0; i < NUM; i++) {
+            User user = new User();
+            user.setId(sum + i);
+            user.setName("heihei");
+            user.setStatus(i);
+            user.setMobile("17374957973");
+            user.setAge(i);
+            user.setBirthday(LocalDate.MAX);
+            user.setIntroduction("introduction");
+            user.setSex(1);
+            user.setCardID("17374957973");
+            user.setAddress("17374957973");
+            users.add(user);
+        }
+        bh.consume(users);
     }
 
     public static void main(String[] args) throws RunnerException {
