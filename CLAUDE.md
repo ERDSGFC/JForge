@@ -52,6 +52,12 @@ mvn test -pl orm
 - `Session.ownsDataSource` 标记连接池所有权（Session 自建的池由 `Session.close()` 关闭；外部传入的不关闭）
 - 测试：`mvn test -pl orm`（内存 H2，`BIGSERIAL` 自增，PostgreSQL 模式）
 
+### 代码规范
+
+- **类、方法、属性都必须加文档注释（Javadoc）**：类注释说明职责与设计意图（如双路径、所有权语义）；方法注释说明行为、参数、返回值、异常；字段注释说明用途
+- **方法中的复杂逻辑必须加代码注释**：解释"为什么"（机制、权衡、坑），不只写"做了什么"——如 JIT 相关设计、连接所有权、事务连接不关闭等关键决策
+- 生成代码（`com.qin.orm.generated` 包）除外：由处理器自动生成，文件头标注"Do not edit"
+
 ### 构建细节
 
 - 根 POM 在 `dependencyManagement` 管理 JMH 1.37（`scope>test</scope>`）；`lambda` 模块覆盖为 `compile`
