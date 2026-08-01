@@ -158,6 +158,112 @@ public class LambdaBenchmark {
         }
     }
 
+    /**
+     * Control group: same handles as {@link MyState} but as plain instance fields initialized in
+     * {@code @Setup} (no {@code static final} constant-folding). Used to measure the effect of
+     * {@code static final} handles; {@code allArgsConstructor} is the shared baseline needing no handles.
+     */
+    @State(Scope.Thread)
+    public static class InstanceState {
+
+        private Constructor<User> allArgsConstructor;
+        private MethodHandle mhConstructor10Arg;
+        private MethodHandle mhNoArgConstructor;
+        private MethodHandle mhSetId;
+        private MethodHandle mhSetName;
+        private MethodHandle mhSetStatus;
+        private MethodHandle mhSetMobile;
+        private MethodHandle mhSetAge;
+        private MethodHandle mhSetBirthday;
+        private MethodHandle mhSetIntroduction;
+        private MethodHandle mhSetSex;
+        private MethodHandle mhSetCardId;
+        private MethodHandle mhSetAddress;
+        private NewUser factory;
+        private Supplier<User> supplier;
+        private BiConsumer<User, Long> setId;
+        private BiConsumer<User, String> setName;
+        private BiConsumer<User, Integer> setStatus;
+        private BiConsumer<User, String> setMobile;
+        private BiConsumer<User, Integer> setAge;
+        private BiConsumer<User, LocalDate> setBirthday;
+        private BiConsumer<User, String> setIntroduction;
+        private BiConsumer<User, Integer> setSex;
+        private BiConsumer<User, String> setCardId;
+        private BiConsumer<User, String> setAddress;
+
+        @Setup
+        public void init() throws Throwable {
+            MethodHandles.Lookup lookup = MethodHandles.lookup();
+
+            allArgsConstructor = User.class.getConstructor(
+                    Long.class, String.class, Integer.class, String.class, Integer.class,
+                    LocalDate.class, String.class, Integer.class, String.class, String.class);
+
+            mhConstructor10Arg = lookup.findConstructor(User.class,
+                    MethodType.methodType(void.class, Long.class, String.class, Integer.class,
+                            String.class, Integer.class, LocalDate.class, String.class,
+                            Integer.class, String.class, String.class));
+            mhNoArgConstructor = lookup.findConstructor(User.class,
+                    MethodType.methodType(void.class));
+
+            mhSetId = lookup.findVirtual(User.class, "setId",
+                    MethodType.methodType(void.class, Long.class));
+            mhSetName = lookup.findVirtual(User.class, "setName",
+                    MethodType.methodType(void.class, String.class));
+            mhSetStatus = lookup.findVirtual(User.class, "setStatus",
+                    MethodType.methodType(void.class, Integer.class));
+            mhSetMobile = lookup.findVirtual(User.class, "setMobile",
+                    MethodType.methodType(void.class, String.class));
+            mhSetAge = lookup.findVirtual(User.class, "setAge",
+                    MethodType.methodType(void.class, Integer.class));
+            mhSetBirthday = lookup.findVirtual(User.class, "setBirthday",
+                    MethodType.methodType(void.class, LocalDate.class));
+            mhSetIntroduction = lookup.findVirtual(User.class, "setIntroduction",
+                    MethodType.methodType(void.class, String.class));
+            mhSetSex = lookup.findVirtual(User.class, "setSex",
+                    MethodType.methodType(void.class, Integer.class));
+            mhSetCardId = lookup.findVirtual(User.class, "setCardID",
+                    MethodType.methodType(void.class, String.class));
+            mhSetAddress = lookup.findVirtual(User.class, "setAddress",
+                    MethodType.methodType(void.class, String.class));
+
+            MethodType ifaceMethodType = MethodType.methodType(
+                    User.class, Long.class, String.class, Integer.class, String.class,
+                    Integer.class, LocalDate.class, String.class, Integer.class,
+                    String.class, String.class);
+            CallSite ctorSite = LambdaMetafactory.metafactory(
+                    lookup, "apply",
+                    MethodType.methodType(NewUser.class),
+                    ifaceMethodType,
+                    mhConstructor10Arg,
+                    MethodType.methodType(User.class, Long.class, String.class, Integer.class,
+                            String.class, Integer.class, LocalDate.class, String.class,
+                            Integer.class, String.class, String.class));
+            factory = (NewUser) ctorSite.getTarget().invokeExact();
+
+            MethodType supplierIfaceType = MethodType.methodType(Object.class);
+            CallSite supplierSite = LambdaMetafactory.metafactory(
+                    lookup, "get",
+                    MethodType.methodType(Supplier.class),
+                    supplierIfaceType,
+                    mhNoArgConstructor,
+                    MethodType.methodType(User.class));
+            supplier = (Supplier<User>) supplierSite.getTarget().invokeExact();
+
+            setId = MyState.createBiConsumer(lookup, mhSetId, User.class, Long.class);
+            setName = MyState.createBiConsumer(lookup, mhSetName, User.class, String.class);
+            setStatus = MyState.createBiConsumer(lookup, mhSetStatus, User.class, Integer.class);
+            setMobile = MyState.createBiConsumer(lookup, mhSetMobile, User.class, String.class);
+            setAge = MyState.createBiConsumer(lookup, mhSetAge, User.class, Integer.class);
+            setBirthday = MyState.createBiConsumer(lookup, mhSetBirthday, User.class, LocalDate.class);
+            setIntroduction = MyState.createBiConsumer(lookup, mhSetIntroduction, User.class, String.class);
+            setSex = MyState.createBiConsumer(lookup, mhSetSex, User.class, Integer.class);
+            setCardId = MyState.createBiConsumer(lookup, mhSetCardId, User.class, String.class);
+            setAddress = MyState.createBiConsumer(lookup, mhSetAddress, User.class, String.class);
+        }
+    }
+
     // ==================== Benchmark methods (executed in alphabetical name order) ====================
 
     @Benchmark
@@ -230,6 +336,54 @@ public class LambdaBenchmark {
         user.setSex(1);
         user.setCardID("17374957973");
         user.setAddress("17374957973");
+        return user;
+    }
+
+    // ==================== Control group: instance handles (no static final) ====================
+    // allArgsConstructor above is the shared baseline (needs no handles).
+
+    @Benchmark
+    public User reflectionConstructorInstance(InstanceState state) throws Exception {
+        return state.allArgsConstructor.newInstance(1L, "heihei", 1, "17374957973", 1,
+                LocalDate.MAX, "introduction", 1, "17374957973", "17374957973");
+    }
+
+    @Benchmark
+    public User methodHandleConstructorInstance(InstanceState state) throws Throwable {
+        return (User) state.mhConstructor10Arg.invokeExact((Long) 1L, "heihei", (Integer) 1,
+                "17374957973", (Integer) 1, LocalDate.MAX, "introduction", (Integer) 1,
+                "17374957973", "17374957973");
+    }
+
+    @Benchmark
+    public User lambdaMetafactoryWithSettersInstance(InstanceState state) {
+        User user = state.supplier.get();
+        state.setId.accept(user, 1L);
+        state.setName.accept(user, "heihei");
+        state.setStatus.accept(user, 1);
+        state.setMobile.accept(user, "17374957973");
+        state.setAge.accept(user, 1);
+        state.setBirthday.accept(user, LocalDate.MAX);
+        state.setIntroduction.accept(user, "introduction");
+        state.setSex.accept(user, 1);
+        state.setCardId.accept(user, "17374957973");
+        state.setAddress.accept(user, "17374957973");
+        return user;
+    }
+
+    @Benchmark
+    public User methodHandleWithSettersInstance(InstanceState state) throws Throwable {
+        User user = (User) state.mhNoArgConstructor.invokeExact();
+        state.mhSetId.invokeExact(user, (Long) 1L);
+        state.mhSetName.invokeExact(user, "heihei");
+        state.mhSetStatus.invokeExact(user, (Integer) 1);
+        state.mhSetMobile.invokeExact(user, "17374957973");
+        state.mhSetAge.invokeExact(user, (Integer) 1);
+        state.mhSetBirthday.invokeExact(user, LocalDate.MAX);
+        state.mhSetIntroduction.invokeExact(user, "introduction");
+        state.mhSetSex.invokeExact(user, (Integer) 1);
+        state.mhSetCardId.invokeExact(user, "17374957973");
+        state.mhSetAddress.invokeExact(user, "17374957973");
         return user;
     }
 }

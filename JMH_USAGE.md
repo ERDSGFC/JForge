@@ -53,13 +53,13 @@ java -jar lambda/target/benchmarks.jar -l
 java -jar lambda/target/benchmarks.jar
 
 # 运行单个
-java -jar lambda/target/benchmarks.jar LambdaBenchmark.B04_allArgsConstructor
+java -jar lambda/target/benchmarks.jar LambdaBenchmark.allArgsConstructor
 
 # 运行多个（正则筛选）
-java -jar lambda/target/benchmarks.jar 'LambdaBenchmark\.B0[1-3].*'
+java -jar lambda/target/benchmarks.jar 'LambdaBenchmark\.(allArgsConstructor|reflectionConstructor)'
 
 # 覆盖默认参数：10 次测量、5 次预热、3 个 fork、加 GC 剖析、结果导出 JSON
-java -jar lambda/target/benchmarks.jar LambdaBenchmark.B04 -i 10 -w 5 -f 3 -prof gc -rf json -rff result.json
+java -jar lambda/target/benchmarks.jar LambdaBenchmark.allArgsConstructor -i 10 -w 5 -f 3 -prof gc -rf json -rff result.json
 ```
 
 ## 入口（当前配置）
@@ -72,3 +72,27 @@ java -jar lambda/target/benchmarks.jar LambdaBenchmark.B04 -i 10 -w 5 -f 3 -prof
 | `com.qin.LambdaBenchmark`（类内 main） | 只把参数当 include 模式，不支持 `-i/-w/-f/-prof/-l` 等 | 只跑 LambdaBenchmark 一个类 |
 
 两个入口最终都走同一个 `org.openjdk.jmh.runner.Runner`，差异仅在入口 wrapper 的参数处理方式。
+
+---
+
+## 关键经验与教训（本项目 12 轮基准实证）
+
+> 完整数据与推理见 `BENCHMARK_RESULTS.md`；以下为可直接套用的结论。
+
+### 测量写法（最容易犯的错）
+
+1. **不要手写循环** — 标准写法是方法体单次操作 + 返回对象（JMH 自动循环调用并消费返回值防 DCE）。手写 50 万次循环会改变 JIT 优化行为，**排名结论被证明失真**（Run 8 推翻了 Run 1-7 的全部排名）。
+2. **测量方法敏感 → 结论不可信** — 同写法内可复现（跨轮 <8%）不等于结论正确，可能是"确定性地测错了场景"。
+3. **短方法误差大**（方法体 ~5ns 时 ±10-26%）— 用 `-bs` 提高每次迭代调用次数 + 增加 `-i`/`-f` 压低（本项目从 ±10-26% 压到 ±0.5-2%）。
+4. **跨轮波动 ±4-12%**（JIT 编译时序差异）— 任何 <5% 的 benchmark 间差异都视为噪声，下结论前重复运行。
+5. `-w` 是预热**秒数**不是次数（jmh.Main 解析）；`-bs N` 时 ops/s 是"调用数/s"，换算对象吞吐 ×N。
+6. 同 JVM 内 JMH 按**字母序**执行 benchmark（源码顺序无效）；fork 隔离跨 benchmark 污染。
+
+### JVM 调用机制（哪些快哪些慢）
+
+7. **对象创建 7 种方式全部等价** — `new`、反射、LambdaMetafactory、MethodHandle（`invokeExact`）、无参+setter 等，JIT 深度预热后同为 ~220M 对象/s，无显著差异。
+8. **`MethodHandle.invoke` 慢 28-73%**（asType 参数适配开销）— `invokeExact` 追平直接调用 → **优先 `invokeExact`**。
+9. **`static final` 句柄 vs instance 字段：慢 17-84%**（反射 -56%、MethodHandle+setter -84%）→ 频繁调用的反射/MethodHandle 句柄必须 `static final`。
+10. **"调用次数多"不是性能问题** — 12 次 lambda 调用 ≈ 1 次 `new` 构造，因为 JIT 级联内联后调用边界消失；关键在调用点能否被内联（`invoke` 不能，`invokeExact`/常规调用能）。
+11. **H2 内存库**必须 `DB_CLOSE_DELAY=-1`，否则最后一个连接关闭时库被销毁。
+12. **连接所有权**：谁创建谁关闭（Session 自建的连接池才由 Session 关闭），避免资源泄漏。

@@ -9,6 +9,7 @@
   <name>benchmark</name>
   <modules>
     <module>lambda</module>
+    <module>orm</module>
   </modules>
 
   <properties>

@@ -253,3 +253,48 @@ grep -E "^LambdaBenchmark" /tmp/jmh_run12.log
 1. **7 种方式全部收敛到 214-223M（差距 ≤4.3%，误差区间重叠）→ 统计等价**，"MethodHandle 慢 28-73%"的结论被彻底推翻
 2. 真实差异源是 `invoke` 的 asType 适配开销，非 MethodHandle 本身
 3. 实践建议：MethodHandle 调用优先 `invokeExact`，参数类型精确匹配
+
+---
+
+## Run 12：static final 对照组（已完成）
+
+**日期**: 2026-08-01
+**目的**: 用受控对照验证 `static final` 句柄的优化效应——新增 `InstanceState`（instance 字段 + `@Setup`）与 4 个 `*Instance` 对照方法，唯一变量为句柄存储方式，`allArgsConstructor` 为无句柄锚点。
+
+### 代码改动（`LambdaBenchmark.java`）
+
+1. 新增 `InstanceState` `@State` 类：与 `MyState` 相同的初始化逻辑，写入 instance 字段（复用 `MyState.createBiConsumer`）
+2. 新增 4 个对照方法（`...Instance` 后缀，参数注入 `InstanceState`）
+
+### 步骤 1：打包 + 快速验证
+
+```bash
+mvn package -pl lambda -q -DskipTests
+java -jar lambda/target/benchmarks.jar 'LambdaBenchmark\.\w*Instance$' -f 1 -i 2 -w 1 -to 120s
+```
+
+### 步骤 2：完整运行（11 个 benchmark，~32 分钟）
+
+```bash
+java -jar lambda/target/benchmarks.jar > /tmp/jmh_run14.log 2>&1
+# Run complete. Total time: 00:32:19
+```
+
+### 步骤 3：结果提取
+
+```bash
+grep -E "^LambdaBenchmark" /tmp/jmh_run14.log
+```
+
+### 对照结论
+
+| 方案 | static final | instance | 差距 |
+|---|---:|---:|---:|
+| lambdaMetafactoryWithSetters | 214.1M | 177.9M | -17% |
+| methodHandleConstructor | 195.0M | 151.3M | -22% |
+| reflectionConstructor | 212.7M | 93.3M | -56% |
+| methodHandleWithSetters | 217.2M | 33.8M | -84% |
+
+1. **static final 效应在标准写法下确认**，幅度大于旧循环式测得值（-47%/-40% → -56%/-84%）
+2. 锚点 allArgsConstructor 217.3M 与历轮一致 → 两组环境可比
+3. 旁注：methodHandleConstructor（static final）本轮 195M vs Run 10 的 222.8M，跨轮波动 ~12%，invokeExact 调用点对编译时序敏感，但不影响对照结论

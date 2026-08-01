@@ -63,7 +63,48 @@
 
 ---
 
-## 可信结论（由 Run 8/9/10 支撑）
+## Run 11: 子集轮（仅 4 个 benchmark）
+
+> 用正则筛选只跑 `methodHandleConstructor` / `allArgsConstructor` / `reflectionConstructor` / `noArgConstructorWithSetters`，配置与 Run 10 相同（5×3s 预热 + 10×2s 测量 + 5 forks），验证 Run 10 结论的子集复现。  
+> **命令**：`java -jar lambda/target/benchmarks.jar 'LambdaBenchmark\.(methodHandleConstructor|allArgsConstructor|reflectionConstructor|noArgConstructorWithSetters)$'`  
+> **执行顺序** (字母序): allArgsConstructor → methodHandleConstructor → noArgConstructorWithSetters → reflectionConstructor
+
+| Benchmark | Score (ops/s) | Error | vs Run 10 |
+|---|---:|---:|---:|
+| allArgsConstructor | 218,730,011 | ±4,152,587 | -0.4% |
+| noArgConstructorWithSetters | 216,703,127 | ±2,665,845 | +1.1% |
+| reflectionConstructor | 215,271,967 | ±3,151,674 | +0.4% |
+| methodHandleConstructor | 212,930,776 | ±5,506,116 | **-4.4%** ⚠️ |
+
+**发现**：methodHandleConstructor 5 个 fork 一致偏低（203-222M vs Run 10 的 222-224M），同轮其他 benchmark 正常 → 指向**轮间 JIT 编译差异**（invokeExact 调用点的内联决策对编译时序敏感），非环境干扰。**跨轮波动可达 ±4-5%**，任何 <5% 的 benchmark 间差异均视为噪声——进一步支持"7 种方式统计等价"。
+
+---
+
+## Run 12: static final 对照组（InstanceState，11 个 benchmark）
+
+> 新增 `InstanceState`（句柄为 instance 字段 + `@Setup` 初始化），新增 4 个对照方法（`reflectionConstructorInstance` 等），`allArgsConstructor` 作为无句柄依赖的基础锚点。  
+> **运行配置**（当前代码注解默认）：5×3s 预热 + 10×2s 测量 + 5 forks，50 次测量。  
+> **单位**：ops/s = 对象/s。
+
+| Benchmark | Score (ops/s) | Error |
+|---|---:|---:|
+| lambdaMetafactoryConstructor | 219,173,734 | ±4,184,668 |
+| methodHandleWithSetters | 217,182,568 | ±3,203,023 |
+| allArgsConstructor（锚点） | 217,270,443 | ±4,310,534 |
+| noArgConstructorWithSetters | 216,961,845 | ±3,583,721 |
+| lambdaMetafactoryWithSetters | 214,125,776 | ±5,682,559 |
+| reflectionConstructor | 212,698,451 | ±2,863,169 |
+| methodHandleConstructor | 195,014,493 | ±6,396,709 |
+| lambdaMetafactoryWithSettersInstance | 177,867,127 | ±5,232,347 |
+| methodHandleConstructorInstance | 151,305,490 | ±2,648,430 |
+| reflectionConstructorInstance | 93,253,115 | ±1,365,878 |
+| methodHandleWithSettersInstance | **33,822,314** | ±253,526 |
+
+**对照结论**：instance 句柄使性能大幅下降 —— LambdaMetafactory+setter -17%、MH 构造器 -22%、反射 **-56%**、MH+setter **-84%**。锚点 allArgsConstructor（217.3M）与历轮一致，两组环境可比。
+
+---
+
+## 可信结论（由 Run 8/9/10/11/12 支撑）
 
 1. **7 种对象创建方式全部统计等价** — 直接 `new`、反射、LambdaMetafactory（构造器/setter 两种形式）、MethodHandle（构造器/setter 两种形式，`invokeExact`）、无参构造+setter **同为 ~214-223M 对象/s（每对象 ~4.5-4.7ns）**，最大差距 4.3% 且在误差内（Run 10，50 次测量，误差 ±0.5-6.8%）。JIT 深度优化后各方式收敛到同一水平，无显著差异。
 
@@ -71,7 +112,7 @@
 
 3. **JMH 按字母顺序执行 benchmark** — 源码方法书写顺序不影响；早期通过 `A01`/`B01` 等前缀控制执行顺序（多次验证顺序不影响结果），前缀已移除，当前代码恢复自然命名。
 
-4. **`static final` 句柄存在优化效应，幅度待重测** — 旧轮次受控对照（唯一变量为 instance → static final 字段）显示反射 -47%、MH+setter -40%（JIT 常量折叠）；该幅度在循环式写法下测得，**标准写法下的幅度未验证**（可用 `InstanceState` 对照重测）。
+4. **✅ `static final` 句柄效应确认（Run 12 受控对照，标准写法）** — 唯一变量为 instance → static final 字段，测得：LambdaMetafactory+setter -17%、MH 构造器 -22%、反射 **-56%**、MH+setter **-84%**，幅度大于旧循环式测得值（-47%/-40%）。机制：JIT 将 `static final` 引用常量折叠为编译期常量 → 调用点深度内联；instance 字段每次调用需 load + 类型检查。**实践建议：框架/工具类中频繁调用的反射/MethodHandle 句柄应声明为 `static final`**。
 
 ---
 

@@ -1,41 +1,60 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件为 Claude Code（claude.ai/code）在此仓库工作时提供指引。
 
-## Build Commands
+## 构建命令
 
 ```bash
-# Compile all modules
+# 编译所有模块
 mvn clean compile
 
-# Package lambda module (generates uber-jar with JMH benchmarks)
+# 打包 lambda 模块（生成含 JMH benchmark 的 uber-jar）
 mvn clean package -pl lambda
 
-# Run all benchmarks
+# 运行全部 benchmark（注解配置：5×3s 预热、10×2s 测量、5 forks）
 java -jar lambda/target/benchmarks.jar
 
-# Run selected benchmarks (regex patterns, full JMH CLI via jmh.Main entry point)
+# 运行选中的 benchmark（正则筛选，入口为 jmh.Main，支持完整 JMH CLI）
 java -jar lambda/target/benchmarks.jar 'LambdaBenchmark\.(allArgsConstructor|reflectionConstructor)'
 
-# Run with overridden config + GC profiling
-java -jar lambda/target/benchmarks.jar LambdaBenchmark.B04 -i 10 -w 5 -f 3 -prof gc
+# 覆盖配置运行 + GC 剖析
+java -jar lambda/target/benchmarks.jar LambdaBenchmark.allArgsConstructor -i 10 -w 5 -f 3 -prof gc
+
+# 运行 orm 模块测试
+mvn test -pl orm
 ```
 
-## Project Architecture
+## 项目架构
 
-Multi-module Maven project (`com.qin:benchmark`) benchmarking JVM object-creation strategies on Java 25 (JMH 1.37). Each benchmark call creates **one** `User` (10 fields); JMH loops over the calls per iteration and consumes the returned object.
+基于 Java 25 的多模块 Maven 项目（`com.qin:benchmark`）：
 
-### Key Files
+- **`lambda`** — JVM 对象创建策略的 JMH 基准（10 字段 `User` POJO）。每个 benchmark 方法只创建 **1 个** `User` 并返回，由 JMH 自动循环调用并消费返回值（禁止手写循环——见 `BENCHMARK_RESULTS.md` 的"方法学教训"）。
+- **`orm`** — 性能优先的微型 ORM（目标：与裸 JDBC 一样快），H2 PostgreSQL 兼容模式 + HikariCP。开发计划与性能原则见 `ORM_PLAN.md`。
 
-- **`LambdaBenchmark.java`** — Single class containing everything: 7 `@Benchmark` methods (`allArgsConstructor`, `reflectionConstructor`, `methodHandleConstructor`, `lambdaMetafactoryConstructor`, `lambdaMetafactoryWithSetters`, `methodHandleWithSetters`, `noArgConstructorWithSetters`), the `com.qin.fun.NewUser` functional interface, and the `MyState` handle container. A `main()` is retained for direct invocation, but the jar entry point is `org.openjdk.jmh.Main`. JMH runs benchmarks in **alphabetical name order**, not source order; early runs used `A01`/`B01` prefixes to control this, but the prefixes were removed once order was proven not to affect results.
-  - All constructors/handles live in `MyState` as `static final`, initialized in a `static {}` block (any failure → `ExceptionInInitializerError`). This was a major optimization: JIT constant-folds `static final` references (Run 2, e.g. reflection −47%).
-  - Benchmark methods do **one** creation and return the `User` — no manual loops (JMH consumes the return value to prevent DCE, see JMHSample_11_Loops). Mode is `Throughput` (ops/s, see Run 8); previously used a 500k-object loop under `AverageTime` (Runs 1–7), which measurably changed rankings.
-  - `LambdaMetafactory.metafactory` generates `NewUser` (all-args constructor), `Supplier` (no-arg constructor), and 10 `BiConsumer` setters via the private `createBiConsumer` helper in `MyState`.
-- **`User.java`** — Plain POJO, 10 fields with getters/setters, no-arg + all-args constructors.
-- **`BENCHMARK_RESULTS.md`** — Results ledger. Append new runs in the established format: run section noting execution order and per-benchmark score table, then update the "可信结论" section. Run 1-7 data (hand-written 500k loops, ms/op) was **removed** because that measurement style changed rankings — see the "方法学教训" section; do not reintroduce loop-style benchmarks. Current conclusion (Run 10): **all 7 creation strategies are statistically equivalent** (~214-223M objects/s, ≤4.3% apart) — including MethodHandle when called via `invokeExact`; `invoke` (with asType adaptation) was the real 28-73% slowdown, so prefer `invokeExact` with exact argument types.
+### 关键文件
 
-### Build Details
+- **`LambdaBenchmark.java`** — 11 个 `@Benchmark` 方法：
+  - 7 个使用 `MyState` 句柄（`allArgsConstructor` 为无句柄的基础锚点，`lambdaMetafactoryConstructor`、`reflectionConstructor`、`methodHandleConstructor`、`lambdaMetafactoryWithSetters`、`methodHandleWithSetters`、`noArgConstructorWithSetters`）
+  - 4 个对照组方法（`reflectionConstructorInstance`、`methodHandleConstructorInstance`、`lambdaMetafactoryWithSettersInstance`、`methodHandleWithSettersInstance`），逻辑相同但句柄为 **instance 字段**（非 `static final`），用于测量常量折叠效应（Run 12）
+  - 句柄均为 `static final`（JIT 常量折叠——instance 字段实测慢 17-84%）；MethodHandle 调用使用 `invokeExact` + 精确参数类型（`invoke` 的 asType 适配实测慢 28-73%）
+  - 无 `main()`；jar 入口为 `org.openjdk.jmh.Main`。JMH 按**方法名字母序**执行（早期用 `A01`/`B01` 前缀控制顺序，验证顺序不影响结果后已移除）
+- **`lambda/src/main/java/com/qin/fun/NewUser.java`** — LambdaMetafactory 使用的函数式接口（已从 benchmark 类中移出）
+- **`BENCHMARK_RESULTS.md`** — 结果台账（Run 8-12）+ 可信结论 + 方法学教训。Run 1-7 数据已**删除**（手写 50 万次循环改变了排名）。当前结论：7 种创建方式统计等价（~214-223M 对象/s）；`invokeExact` vs `invoke`、`static final` vs instance 才是真正的性能杠杆。新增轮次按既有格式追加并更新可信结论
+- **`JMH_USAGE.md`** — JMH CLI 速查 + "关键经验与教训"（12 条实证结论）
+- **`EXECUTION_STEPS.md`** — Run 8-12 完整执行步骤（命令、参数解析、结果）
+- **`ORM_PLAN.md`** — ORM 开发计划：分阶段、性能设计原则、验收标准（相对裸 JDBC 框架开销 <5%）
+- **`benchmark_run9_data.csv`** — 增强版 Run 9 的 350 个原始测量点
 
-- Root POM manages JMH 1.37 in `dependencyManagement` with `scope>test</scope>`; the `lambda` module overrides to `compile`.
-- `maven-compiler-plugin` explicitly declares the JMH annotation processor (`jmh-generator-annprocess`) because JDK 23+ disables automatic annotation processing.
-- `maven-shade-plugin` produces `lambda/target/benchmarks.jar` (uber-jar with `org.openjdk.jmh.Main` as main class, enabling the full JMH CLI: `-i/-w/-f/-prof/-p/-l` etc.).
+### orm 模块
+
+- `com.qin.orm` 包结构：`annotation`（Table/Id/Column/GeneratedValue/Transient）、`core`（EntityMetadata：MethodHandle 访问器 + 缓存、SqlGenerator、RowMapper/DefaultRowMapper）、`Session`（CRUD + 事务）、`SessionFactory`
+- `EntityMetadata` 反射解析一次，`ConcurrentHashMap` 缓存，字段访问走 `MethodHandle`（无逐次反射）
+- `Session.ownsDataSource` 标记连接池所有权（Session 自建的池由 `Session.close()` 关闭；外部传入的不关闭）
+- 测试：`mvn test -pl orm`（内存 H2，`BIGSERIAL` 自增，PostgreSQL 模式）
+
+### 构建细节
+
+- 根 POM 在 `dependencyManagement` 管理 JMH 1.37（`scope>test</scope>`）；`lambda` 模块覆盖为 `compile`
+- `maven-compiler-plugin` 显式声明 JMH 注解处理器（`jmh-generator-annprocess`），因为 JDK 23+ 默认关闭自动注解处理
+- `maven-shade-plugin` 产出 `lambda/target/benchmarks.jar`（uber-jar，入口 `org.openjdk.jmh.Main`，支持完整 JMH CLI）
+- `orm` 依赖 H2 2.3.232、HikariCP 5.1.0、JUnit 5（test）
