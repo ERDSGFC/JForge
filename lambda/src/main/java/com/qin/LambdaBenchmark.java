@@ -1,9 +1,7 @@
 package com.qin;
 
+import com.qin.fun.NewUser;
 import org.openjdk.jmh.annotations.*;
-import org.openjdk.jmh.runner.Runner;
-import org.openjdk.jmh.runner.RunnerException;
-import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 import java.lang.invoke.*;
 import java.lang.reflect.Constructor;
@@ -11,12 +9,6 @@ import java.time.LocalDate;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
-
-@FunctionalInterface
-interface NewUser<T> {
-    T apply(Long id, String name, Integer status, String mobile, Integer age,
-            LocalDate birthday, String introduction, Integer sex, String cardID, String address);
-}
 
 /**
  * JMH benchmark comparing 7 strategies for instantiating and populating a 10-field User POJO.
@@ -60,7 +52,7 @@ public class LambdaBenchmark {
         private static final MethodHandle MH_SET_SEX;
         private static final MethodHandle MH_SET_CARDID;
         private static final MethodHandle MH_SET_ADDRESS;
-        private static final NewUser<User> FACTORY;
+        private static final NewUser FACTORY;
         private static final Supplier<User> SUPPLIER;
         private static final BiConsumer<User, Long> SET_ID;
         private static final BiConsumer<User, String> SET_NAME;
@@ -110,7 +102,7 @@ public class LambdaBenchmark {
                         MethodType.methodType(void.class, String.class));
 
                 MethodType ifaceMethodType = MethodType.methodType(
-                        Object.class, Long.class, String.class, Integer.class, String.class,
+                        User.class, Long.class, String.class, Integer.class, String.class,
                         Integer.class, LocalDate.class, String.class, Integer.class,
                         String.class, String.class);
                 CallSite ctorSite = LambdaMetafactory.metafactory(
@@ -121,7 +113,7 @@ public class LambdaBenchmark {
                         MethodType.methodType(User.class, Long.class, String.class, Integer.class,
                                 String.class, Integer.class, LocalDate.class, String.class,
                                 Integer.class, String.class, String.class));
-                FACTORY = (NewUser<User>) ctorSite.getTarget().invokeExact();
+                FACTORY = (NewUser) ctorSite.getTarget().invokeExact();
 
                 MethodType supplierIfaceType = MethodType.methodType(Object.class);
                 CallSite supplierSite = LambdaMetafactory.metafactory(
@@ -162,31 +154,31 @@ public class LambdaBenchmark {
     // ==================== Benchmark methods (B-prefix for execution order) ====================
 
     @Benchmark
-    public User B01_lambdaMetafactoryConstructor() {
+    public User lambdaMetafactoryConstructor() {
         return MyState.FACTORY.apply(1L, "heihei", 1, "17374957973", 1,
                 LocalDate.MAX, "introduction", 1, "17374957973", "17374957973");
     }
 
     @Benchmark
-    public User B02_reflectionConstructor() throws Exception {
+    public User reflectionConstructor() throws Exception {
         return MyState.ALL_ARGS_CONSTRUCTOR.newInstance(1L, "heihei", 1, "17374957973", 1,
                 LocalDate.MAX, "introduction", 1, "17374957973", "17374957973");
     }
 
     @Benchmark
-    public User B03_methodHandleConstructor() throws Throwable {
+    public User methodHandleConstructor() throws Throwable {
         return (User) MyState.MH_CONSTRUCTOR_10ARG.invoke(1L, "heihei", 1, "17374957973", 1,
                 LocalDate.MAX, "introduction", 1, "17374957973", "17374957973");
     }
 
     @Benchmark
-    public User B04_allArgsConstructor() {
+    public User allArgsConstructor() {
         return new User(1L, "heihei", 1, "17374957973", 1,
                 LocalDate.MAX, "introduction", 1, "17374957973", "17374957973");
     }
 
     @Benchmark
-    public User B05_lambdaMetafactoryWithSetters() {
+    public User lambdaMetafactoryWithSetters() {
         User user = MyState.SUPPLIER.get();
         MyState.SET_ID.accept(user, 1L);
         MyState.SET_NAME.accept(user, "heihei");
@@ -202,7 +194,7 @@ public class LambdaBenchmark {
     }
 
     @Benchmark
-    public User B06_methodHandleWithSetters() throws Throwable {
+    public User methodHandleWithSetters() throws Throwable {
         User user = (User) MyState.MH_NOARG_CONSTRUCTOR.invoke();
         MyState.MH_SET_ID.invoke(user, 1L);
         MyState.MH_SET_NAME.invoke(user, "heihei");
@@ -218,7 +210,7 @@ public class LambdaBenchmark {
     }
 
     @Benchmark
-    public User B07_noArgConstructorWithSetters() {
+    public User noArgConstructorWithSetters() {
         User user = new User();
         user.setId(1L);
         user.setName("heihei");
@@ -231,17 +223,5 @@ public class LambdaBenchmark {
         user.setCardID("17374957973");
         user.setAddress("17374957973");
         return user;
-    }
-
-    public static void main(String[] args) throws RunnerException {
-        OptionsBuilder optBuilder = new OptionsBuilder();
-        if (args.length > 0) {
-            for (String arg : args) {
-                optBuilder.include(arg);
-            }
-        } else {
-            optBuilder.include(LambdaBenchmark.class.getSimpleName());
-        }
-        new Runner(optBuilder.build()).run();
     }
 }
