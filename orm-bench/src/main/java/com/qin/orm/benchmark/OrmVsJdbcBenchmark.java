@@ -50,6 +50,7 @@ public class OrmVsJdbcBenchmark {
     private HikariDataSource dataSource;
     private long seededId;
 
+    /** Creates the shared HikariCP pool (with statement caching) and seeds one row. */
     @Setup(Level.Trial)
     public void setUp() throws SQLException {
         HikariConfig config = new HikariConfig();
@@ -74,6 +75,7 @@ public class OrmVsJdbcBenchmark {
         session = SessionFactory.open(dataSource);
     }
 
+    /** Closes the session and the shared pool. */
     @TearDown(Level.Trial)
     public void tearDown() {
         session.close();
@@ -82,6 +84,7 @@ public class OrmVsJdbcBenchmark {
 
     // ==================== ORM ====================
 
+    /** ORM insert with generated-key write-back. */
     @Benchmark
     public UserEntity ormInsert() {
         UserEntity user = new UserEntity();
@@ -91,11 +94,13 @@ public class OrmVsJdbcBenchmark {
         return user;
     }
 
+    /** ORM select by primary key. */
     @Benchmark
     public UserEntity ormFindById() {
         return session.findById(UserEntity.class, seededId);
     }
 
+    /** ORM select all rows. */
     @Benchmark
     public List<UserEntity> ormFindAll() {
         return session.findAll(UserEntity.class);
@@ -103,6 +108,7 @@ public class OrmVsJdbcBenchmark {
 
     // ==================== Raw JDBC ====================
 
+    /** Raw JDBC insert with generated-key read-back. */
     @Benchmark
     public UserEntity jdbcInsert() throws SQLException {
         try (Connection conn = dataSource.getConnection();
@@ -122,6 +128,7 @@ public class OrmVsJdbcBenchmark {
         }
     }
 
+    /** Raw JDBC select by primary key (column-index reads). */
     @Benchmark
     public UserEntity jdbcFindById() throws SQLException {
         try (Connection conn = dataSource.getConnection();
@@ -138,6 +145,7 @@ public class OrmVsJdbcBenchmark {
         }
     }
 
+    /** Raw JDBC select all rows (column-index reads). */
     @Benchmark
     public List<UserEntity> jdbcFindAll() throws SQLException {
         try (Connection conn = dataSource.getConnection();

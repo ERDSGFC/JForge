@@ -1,8 +1,5 @@
 package com.qin.orm.core;
 
-import com.qin.orm.OrmException;
-
-import java.lang.reflect.InvocationTargetException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
@@ -21,23 +18,21 @@ public final class DefaultRowMapper<T> implements RowMapper<T> {
         this.readers = meta.rowReaders();
     }
 
+    /**
+     * Maps the current row to a new entity: instance via the metadata's factory
+     * (generated direct constructor or MethodHandle), columns via the pre-resolved
+     * type-exact readers (1-based column index — no findColumn lookup).
+     */
     @Override
+    @SuppressWarnings("unchecked")
     public T map(ResultSet rs) throws SQLException {
-        T entity = newInstance();
+        T entity = (T) meta.newInstance();
+        // Column index = row position + 1: SELECT column order always matches columnNames()
+        // (see SqlGenerator / generated selectByIdSql/selectAllSql), so no findColumn lookup.
         for (int i = 0; i < readers.size(); i++) {
-            Object value = readers.get(i).read(rs, meta.columnNames().get(i));
+            Object value = readers.get(i).read(rs, i + 1);
             meta.setValue(entity, i, value);
         }
         return entity;
-    }
-
-    @SuppressWarnings("unchecked")
-    private T newInstance() {
-        try {
-            return (T) meta.entityClass().getDeclaredConstructor().newInstance();
-        } catch (InstantiationException | IllegalAccessException | InvocationTargetException
-                | NoSuchMethodException e) {
-            throw new OrmException("Entity needs a public no-arg constructor: " + meta.entityClass(), e);
-        }
     }
 }

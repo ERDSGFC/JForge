@@ -10,6 +10,7 @@ import com.qin.orm.generated.GeneratedMetadataRegistry;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
@@ -82,6 +83,11 @@ public final class EntityMetadata {
         void set(Object entity, Object value);
     }
 
+    @FunctionalInterface
+    private interface InstanceFactory {
+        Object create();
+    }
+
     /** Parsed result shared by both construction paths. */
     private static final class Parsed {
         String tableName;
@@ -90,6 +96,7 @@ public final class EntityMetadata {
         boolean idGenerated;
     }
 
+    /** Parses mapping metadata from runtime reflection (JVM fallback path). */
     private static Parsed parseByReflection(Class<?> entityClass) {
         Table table = entityClass.getAnnotation(Table.class);
         if (table == null) {
@@ -125,6 +132,25 @@ public final class EntityMetadata {
         return parsed;
     }
 
+    /** Constructor MethodHandle (resolved once; used by the reflection fallback path). */
+    private static InstanceFactory constructorFactory(Class<?> entityClass) {
+        try {
+            MethodHandle constructor = MethodHandles.lookup().findConstructor(
+                    entityClass, MethodType.methodType(void.class));
+            MethodHandle casted = constructor.asType(MethodType.methodType(Object.class));
+            return () -> {
+                try {
+                    return casted.invokeExact();
+                } catch (Throwable e) {
+                    throw new OrmException("Cannot instantiate " + entityClass.getName(), e);
+                }
+            };
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new OrmException("Entity needs a public no-arg constructor: " + entityClass.getName(), e);
+        }
+    }
+
+    /** Parses mapping metadata from a compile-time generated {@link GeneratedMetadata}. */
     private static Parsed parseFromGenerated(GeneratedMetadata generated) {
         Parsed parsed = new Parsed();
         parsed.tableName = generated.tableName();
@@ -148,6 +174,7 @@ public final class EntityMetadata {
         return parsed;
     }
 
+    /** Builds a MethodHandle to read the field's value (private fields via setAccessible). */
     private static MethodHandle buildGetter(Field field) {
         try {
             field.setAccessible(true);
@@ -157,6 +184,7 @@ public final class EntityMetadata {
         }
     }
 
+    /** Builds a MethodHandle to write the field's value (private fields via setAccessible). */
     private static MethodHandle buildSetter(Field field) {
         try {
             field.setAccessible(true);
@@ -166,6 +194,7 @@ public final class EntityMetadata {
         }
     }
 
+    /** Wraps a getter MethodHandle as a checked-exception-free {@link Getter}. */
     private static Getter wrapGetter(MethodHandle handle) {
         return entity -> {
             try {
@@ -176,6 +205,7 @@ public final class EntityMetadata {
         };
     }
 
+    /** Wraps a setter MethodHandle as a checked-exception-free {@link Setter}. */
     private static Setter wrapSetter(MethodHandle handle) {
         return (entity, value) -> {
             try {
@@ -230,80 +260,82 @@ public final class EntityMetadata {
     /** Picks the type-exact row reader for a field type (fallback: getObject). */
     private static RowReader readerFor(Class<?> type) {
         if (type == long.class || type == Long.class) {
-            return (rs, c) -> {
-                long v = rs.getLong(c);
+            return (rs, i) -> {
+                long v = rs.getLong(i);
                 return rs.wasNull() ? null : v;
             };
         }
         if (type == int.class || type == Integer.class) {
-            return (rs, c) -> {
-                int v = rs.getInt(c);
+            return (rs, i) -> {
+                int v = rs.getInt(i);
                 return rs.wasNull() ? null : v;
             };
         }
         if (type == String.class) {
-            return (rs, c) -> rs.getString(c);
+            return (rs, i) -> rs.getString(i);
         }
         if (type == boolean.class || type == Boolean.class) {
-            return (rs, c) -> {
-                boolean v = rs.getBoolean(c);
+            return (rs, i) -> {
+                boolean v = rs.getBoolean(i);
                 return rs.wasNull() ? null : v;
             };
         }
         if (type == double.class || type == Double.class) {
-            return (rs, c) -> {
-                double v = rs.getDouble(c);
+            return (rs, i) -> {
+                double v = rs.getDouble(i);
                 return rs.wasNull() ? null : v;
             };
         }
         if (type == float.class || type == Float.class) {
-            return (rs, c) -> {
-                float v = rs.getFloat(c);
+            return (rs, i) -> {
+                float v = rs.getFloat(i);
                 return rs.wasNull() ? null : v;
             };
         }
         if (type == short.class || type == Short.class) {
-            return (rs, c) -> {
-                short v = rs.getShort(c);
+            return (rs, i) -> {
+                short v = rs.getShort(i);
                 return rs.wasNull() ? null : v;
             };
         }
         if (type == byte.class || type == Byte.class) {
-            return (rs, c) -> {
-                byte v = rs.getByte(c);
+            return (rs, i) -> {
+                byte v = rs.getByte(i);
                 return rs.wasNull() ? null : v;
             };
         }
         if (type == BigDecimal.class) {
-            return (rs, c) -> rs.getBigDecimal(c);
+            return (rs, i) -> rs.getBigDecimal(i);
         }
         if (type == Timestamp.class) {
-            return (rs, c) -> rs.getTimestamp(c);
+            return (rs, i) -> rs.getTimestamp(i);
         }
         if (type == java.sql.Date.class) {
-            return (rs, c) -> rs.getDate(c);
+            return (rs, i) -> rs.getDate(i);
         }
         if (type == LocalDate.class) {
-            return (rs, c) -> rs.getObject(c, LocalDate.class);
+            return (rs, i) -> rs.getObject(i, LocalDate.class);
         }
         if (type == LocalDateTime.class) {
-            return (rs, c) -> rs.getObject(c, LocalDateTime.class);
+            return (rs, i) -> rs.getObject(i, LocalDateTime.class);
         }
         if (type == byte[].class) {
-            return (rs, c) -> rs.getBytes(c);
+            return (rs, i) -> rs.getBytes(i);
         }
-        return (rs, c) -> rs.getObject(c);
+        return (rs, i) -> rs.getObject(i);
     }
 
     // ==================== State ====================
 
     private final Class<?> entityClass;
+    private final InstanceFactory instanceFactory;
     private final String tableName;
     private final List<ColumnDef> columns;
     private final int idIndex;
     private final boolean idGenerated;
     private final List<String> columnNames;
     private final List<RowReader> rowReaders;
+    private final RowMapper<Object> rowMapper; // stateless; reused across operations
 
     // Pre-generated SQL.
     private final String insertSql;
@@ -322,6 +354,7 @@ public final class EntityMetadata {
 
     private EntityMetadata(Class<?> entityClass, Parsed parsed, GeneratedMetadata generated) {
         this.entityClass = entityClass;
+        this.instanceFactory = generated != null ? generated::newInstance : constructorFactory(entityClass);
         this.tableName = parsed.tableName;
         this.columns = parsed.columns;
         this.idIndex = parsed.idIndex;
@@ -335,6 +368,7 @@ public final class EntityMetadata {
         for (ColumnDef column : columns) {
             rowReaders.add(column.reader);
         }
+        this.rowMapper = new DefaultRowMapper<>(this);
 
         if (generated != null) {
             // Pre-generated SQL from the compile-time metadata.
@@ -425,6 +459,11 @@ public final class EntityMetadata {
         columns.get(columnIndex).set.set(entity, value);
     }
 
+    /** Creates a new entity instance (generated direct constructor, or MethodHandle fallback). */
+    public Object newInstance() {
+        return instanceFactory.create();
+    }
+
     public Object getIdValue(Object entity) {
         return columns.get(idIndex).get.get(entity);
     }
@@ -458,5 +497,11 @@ public final class EntityMetadata {
     /** Row readers aligned with {@link #columnNames()}, for ResultSet → entity mapping. */
     public List<RowReader> rowReaders() {
         return rowReaders;
+    }
+
+    /** Reusable stateless row mapper. */
+    @SuppressWarnings("unchecked")
+    public <T> RowMapper<T> rowMapper() {
+        return (RowMapper<T>) rowMapper;
     }
 }

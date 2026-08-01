@@ -13,6 +13,9 @@ public interface GeneratedMetadata {
     /** The mapped entity class. */
     Class<?> entityClass();
 
+    /** Creates a new entity instance (direct constructor call in generated code). */
+    Object newInstance();
+
     String tableName();
 
     String idColumn();

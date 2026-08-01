@@ -86,7 +86,7 @@ public class Session implements AutoCloseable {
     /** Loads an entity by its id, or {@code null} if absent. */
     public <T> T findById(Class<T> entityClass, Object id) {
         EntityMetadata meta = EntityMetadata.of(entityClass);
-        RowMapper<T> mapper = new DefaultRowMapper<>(meta);
+        RowMapper<T> mapper = meta.rowMapper();
         return withConnection(conn -> {
             try (PreparedStatement ps = conn.prepareStatement(meta.selectByIdSql())) {
                 meta.bindId(ps, id);
@@ -100,7 +100,7 @@ public class Session implements AutoCloseable {
     /** Loads all rows of the entity's table. */
     public <T> List<T> findAll(Class<T> entityClass) {
         EntityMetadata meta = EntityMetadata.of(entityClass);
-        RowMapper<T> mapper = new DefaultRowMapper<>(meta);
+        RowMapper<T> mapper = meta.rowMapper();
         return withConnection(conn -> {
             try (PreparedStatement ps = conn.prepareStatement(meta.selectAllSql())) {
                 try (ResultSet rs = ps.executeQuery()) {

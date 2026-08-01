@@ -102,6 +102,7 @@ public class MetadataProcessor extends AbstractProcessor {
         return true;
     }
 
+    /** Parses one @Table entity and generates its metadata class (errors at compile time). */
     private void processEntity(TypeElement entity) {
         Table table = entity.getAnnotation(Table.class);
         EntityInfo info = new EntityInfo();
@@ -198,6 +199,7 @@ public class MetadataProcessor extends AbstractProcessor {
 
     // ==================== JavaPoet code generation ====================
 
+    /** Emits the Xxx_Metadata source file (JavaPoet) for one entity. */
     private void writeMetadata(EntityInfo info) {
         ClassName generatedClass = ClassName.get(GENERATED_PACKAGE, info.generatedClassName());
         ClassName entityClass = ClassName.bestGuess(info.entityQualifiedName);
@@ -213,6 +215,10 @@ public class MetadataProcessor extends AbstractProcessor {
         builder.addMethod(override("entityClass")
                 .returns(ClassName.get(Class.class))
                 .addStatement("return $T.class", entityClass)
+                .build());
+        builder.addMethod(override("newInstance")
+                .returns(ClassName.get(Object.class))
+                .addStatement("return new $T()", entityClass)
                 .build());
         builder.addMethod(override("tableName")
                 .returns(String.class)
@@ -243,6 +249,7 @@ public class MetadataProcessor extends AbstractProcessor {
         }
     }
 
+    /** Emits the GeneratedMetadataRegistry source file listing all processed entities. */
     private void writeRegistry() {
         MethodSpec.Builder find = MethodSpec.methodBuilder("find")
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -278,10 +285,12 @@ public class MetadataProcessor extends AbstractProcessor {
                 .addModifiers(Modifier.PUBLIC);
     }
 
+    /** Builds a single-value SQL accessor method returning the pre-generated string. */
     private static MethodSpec sqlMethod(String name, String sql) {
         return override(name).returns(String.class).addStatement("return $S", sql).build();
     }
 
+    /** Builds the accessors() method: one FieldAccessor.of(...) per mapped field. */
     private static MethodSpec accessorsMethod(EntityInfo info, ClassName entityClass) {
         CodeBlock.Builder cb = CodeBlock.builder();
         cb.add("return $T.of(\n", List.class);
@@ -386,6 +395,7 @@ public class MetadataProcessor extends AbstractProcessor {
 
     private boolean hasErrors;
 
+    /** Reports a compile-time error attached to the given element (null = global). */
     private void error(Element element, String message) {
         hasErrors = true;
         processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, message, element);

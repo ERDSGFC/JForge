@@ -5,17 +5,20 @@ import com.qin.orm.annotation.GeneratedValue;
 import com.qin.orm.annotation.Id;
 import com.qin.orm.annotation.Table;
 
-/** Test entity used by the CRUD integration tests. */
+/** Test entity used by the CRUD integration tests and the ORM vs JDBC benchmark. */
 @Table(name = "users")
 public class UserEntity {
 
+    /** Database-generated primary key (BIGSERIAL). */
     @Id
     @GeneratedValue
     private Long id;
 
+    /** User display name, mapped to the {@code user_name} column. */
     @Column(name = "user_name")
     private String name;
 
+    /** User age in years, mapped to the {@code age} column. */
     private Integer age;
 
     public Long getId() {
