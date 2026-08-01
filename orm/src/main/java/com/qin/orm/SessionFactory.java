@@ -25,6 +25,11 @@ public final class SessionFactory {
         config.setUsername(username);
         config.setPassword(password);
         config.setMaximumPoolSize(DEFAULT_POOL_SIZE);
+        // PreparedStatement cache: reuse compiled statements for identical SQL (pre-generated
+        // metadata SQL strings make every operation hit this cache).
+        config.addDataSourceProperty("cachePrepStmts", "true");
+        config.addDataSourceProperty("prepStmtCacheSize", "250");
+        config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
         return new Session(new HikariDataSource(config), true);
     }
 

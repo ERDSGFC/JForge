@@ -3,10 +3,8 @@ package com.qin.orm;
 import com.qin.orm.core.DefaultRowMapper;
 import com.qin.orm.core.EntityMetadata;
 import com.qin.orm.core.RowMapper;
-import com.qin.orm.core.SqlGenerator;
 
 import javax.sql.DataSource;
-import java.lang.reflect.Field;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -18,6 +16,7 @@ import java.util.List;
 /**
  * Top-level ORM entry point. Stateless between calls except for an optional
  * transaction connection started via {@link #beginTransaction()}.
+ * All SQL and parameter binding is pre-computed in {@link EntityMetadata}.
  */
 public class Session implements AutoCloseable {
 
@@ -41,19 +40,13 @@ public class Session implements AutoCloseable {
         EntityMetadata meta = EntityMetadata.of(entity.getClass());
         withConnection(conn -> {
             try (PreparedStatement ps = conn.prepareStatement(
-                    SqlGenerator.insertSql(meta), Statement.RETURN_GENERATED_KEYS)) {
-                int index = 1;
-                for (Field field : meta.fields()) {
-                    if (field == meta.idField() && meta.idGenerated()) {
-                        continue;
-                    }
-                    ps.setObject(index++, meta.getFieldValue(entity, field));
-                }
+                    meta.insertSql(), Statement.RETURN_GENERATED_KEYS)) {
+                meta.bindInsertParams(ps, entity);
                 ps.executeUpdate();
                 if (meta.idGenerated()) {
                     try (ResultSet keys = ps.getGeneratedKeys()) {
                         if (keys.next()) {
-                            meta.setFieldValue(entity, meta.idField(), keys.getObject(1));
+                            meta.setIdValue(entity, keys.getObject(1));
                         }
                     }
                 }
@@ -66,14 +59,8 @@ public class Session implements AutoCloseable {
     public int update(Object entity) {
         EntityMetadata meta = EntityMetadata.of(entity.getClass());
         return withConnection(conn -> {
-            try (PreparedStatement ps = conn.prepareStatement(SqlGenerator.updateSql(meta))) {
-                int index = 1;
-                for (Field field : meta.fields()) {
-                    if (field != meta.idField()) {
-                        ps.setObject(index++, meta.getFieldValue(entity, field));
-                    }
-                }
-                ps.setObject(index, meta.getFieldValue(entity, meta.idField()));
+            try (PreparedStatement ps = conn.prepareStatement(meta.updateSql())) {
+                meta.bindUpdateParams(ps, entity);
                 return ps.executeUpdate();
             }
         });
@@ -82,15 +69,15 @@ public class Session implements AutoCloseable {
     /** Deletes the entity by its id. Returns affected rows. */
     public int delete(Object entity) {
         EntityMetadata meta = EntityMetadata.of(entity.getClass());
-        return deleteById(meta.entityClass(), meta.getFieldValue(entity, meta.idField()));
+        return deleteById(meta.entityClass(), meta.getIdValue(entity));
     }
 
     /** Deletes the row with the given id. Returns affected rows. */
     public int deleteById(Class<?> entityClass, Object id) {
         EntityMetadata meta = EntityMetadata.of(entityClass);
         return withConnection(conn -> {
-            try (PreparedStatement ps = conn.prepareStatement(SqlGenerator.deleteSql(meta))) {
-                ps.setObject(1, id);
+            try (PreparedStatement ps = conn.prepareStatement(meta.deleteSql())) {
+                meta.bindId(ps, id);
                 return ps.executeUpdate();
             }
         });
@@ -101,8 +88,8 @@ public class Session implements AutoCloseable {
         EntityMetadata meta = EntityMetadata.of(entityClass);
         RowMapper<T> mapper = new DefaultRowMapper<>(meta);
         return withConnection(conn -> {
-            try (PreparedStatement ps = conn.prepareStatement(SqlGenerator.selectByIdSql(meta))) {
-                ps.setObject(1, id);
+            try (PreparedStatement ps = conn.prepareStatement(meta.selectByIdSql())) {
+                meta.bindId(ps, id);
                 try (ResultSet rs = ps.executeQuery()) {
                     return rs.next() ? mapper.map(rs) : null;
                 }
@@ -115,7 +102,7 @@ public class Session implements AutoCloseable {
         EntityMetadata meta = EntityMetadata.of(entityClass);
         RowMapper<T> mapper = new DefaultRowMapper<>(meta);
         return withConnection(conn -> {
-            try (PreparedStatement ps = conn.prepareStatement(SqlGenerator.selectAllSql(meta))) {
+            try (PreparedStatement ps = conn.prepareStatement(meta.selectAllSql())) {
                 try (ResultSet rs = ps.executeQuery()) {
                     List<T> result = new ArrayList<>();
                     while (rs.next()) {

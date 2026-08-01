@@ -3,49 +3,42 @@ package com.qin.orm.core;
 import java.util.List;
 import java.util.StringJoiner;
 
-/** Builds parameterized CRUD SQL from {@link EntityMetadata}. */
+/**
+ * Builds parameterized CRUD SQL from plain mapping data. Called only once per entity,
+ * at {@link EntityMetadata} parse time; the results are cached, never rebuilt per operation.
+ */
 public final class SqlGenerator {
 
     private SqlGenerator() {
     }
 
     /** INSERT INTO t (c1,c2,...) VALUES (?,?,...) — generated id excluded. */
-    public static String insertSql(EntityMetadata meta) {
-        String table = meta.tableName();
-        String columns = join(meta.insertColumns());
-        String placeholders = placeholders(meta.insertColumns().size());
-        return "INSERT INTO " + table + " (" + columns + ") VALUES (" + placeholders + ")";
+    public static String insertSql(String tableName, List<String> columns) {
+        return "INSERT INTO " + tableName + " (" + join(columns) + ") VALUES (" + placeholders(columns.size()) + ")";
     }
 
     /** UPDATE t SET c1=?,c2=?,... WHERE id=? — id excluded from SET. */
-    public static String updateSql(EntityMetadata meta) {
-        String table = meta.tableName();
+    public static String updateSql(String tableName, List<String> columns, String idColumn) {
         StringJoiner sets = new StringJoiner(",");
-        for (String column : meta.updateColumns()) {
+        for (String column : columns) {
             sets.add(column + "=?");
         }
-        return "UPDATE " + table + " SET " + sets + " WHERE " + meta.idColumnName() + "=?";
+        return "UPDATE " + tableName + " SET " + sets + " WHERE " + idColumn + "=?";
     }
 
     /** DELETE FROM t WHERE id=?. */
-    public static String deleteSql(EntityMetadata meta) {
-        return "DELETE FROM " + meta.tableName() + " WHERE " + meta.idColumnName() + "=?";
+    public static String deleteSql(String tableName, String idColumn) {
+        return "DELETE FROM " + tableName + " WHERE " + idColumn + "=?";
     }
 
     /** SELECT c1,c2,... FROM t WHERE id=?. */
-    public static String selectByIdSql(EntityMetadata meta) {
-        return "SELECT " + selectColumns(meta) + " FROM " + meta.tableName()
-                + " WHERE " + meta.idColumnName() + "=?";
+    public static String selectByIdSql(String tableName, List<String> columns, String idColumn) {
+        return "SELECT " + join(columns) + " FROM " + tableName + " WHERE " + idColumn + "=?";
     }
 
     /** SELECT c1,c2,... FROM t. */
-    public static String selectAllSql(EntityMetadata meta) {
-        return "SELECT " + selectColumns(meta) + " FROM " + meta.tableName();
-    }
-
-    /** Comma-joined selectable columns. */
-    public static String selectColumns(EntityMetadata meta) {
-        return join(meta.columnNames());
+    public static String selectAllSql(String tableName, List<String> columns) {
+        return "SELECT " + join(columns) + " FROM " + tableName;
     }
 
     private static String join(List<String> items) {

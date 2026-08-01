@@ -40,9 +40,9 @@
 ## 模块结构
 
 ```
+orm-processor/                      # ✅ 构建期元数据生成器（零依赖，provided，不进入运行时）
 orm/
-├── pom.xml                          # 依赖: H2, HikariCP, JUnit5(test), orm-processor
-├── orm-processor/                   # [Phase 1.5] 构建期元数据生成器（独立模块，不进入运行时）
+├── pom.xml                          # 依赖: H2, HikariCP, JUnit5(test), orm-processor(provided)
 └── src/
     ├── main/java/com/qin/orm/
     │   ├── OrmException.java
@@ -70,11 +70,11 @@ orm/
 
 **已完成**：5 个映射注解、`EntityMetadata`（反射解析一次 + 缓存）、`Session` CRUD + 事务、`SessionFactory`、6/6 集成测试通过。
 
-**与目标的差距（优化清单）**：
-- [ ] `SqlGenerator` 每次调用拼 SQL → 元数据解析时预生成并缓存
-- [ ] 参数绑定 `ps.setObject` → 按字段类型精确 `setLong/setString/...`
-- [ ] `DefaultRowMapper` 的 `getObject(col, type)` → 按字段类型精确 `rs.getLong/...`
-- [ ] HikariCP statement cache 开启验证
+**性能优化已完成**（6/6 测试通过）：
+- ✅ SQL 预生成缓存：`EntityMetadata` 解析时生成全部 5 条 SQL 字符串，运行时零拼接（`SqlGenerator` 参数化，仅解析时调用一次）
+- ✅ 参数绑定精确 setter：按字段类型解析时确定 `ParamBinder`（`setLong/setString/...`，兜底 `setObject`），`meta.bindInsertParams/bindUpdateParams/bindId` 统一出口
+- ✅ ResultSet 精确 getter：按字段类型解析时确定 `RowReader`（`getLong` + `wasNull` 处理，兜底 `getObject`），`DefaultRowMapper` 直接消费
+- ✅ HikariCP statement cache：`cachePrepStmts=true`、`prepStmtCacheSize=250`、`prepStmtCacheSqlLimit=2048`（预生成的固定 SQL 使每条语句都命中缓存）
 
 **API 示例**：
 ```java
@@ -85,16 +85,20 @@ session.update(u);
 session.delete(u);
 ```
 
-### ⬜ Phase 1.5：构建期元数据生成（AOT 就绪）
+### ✅ Phase 1.5：构建期元数据生成（AOT 就绪）— 已完成
 
-新增 `orm-processor` 子模块（javax.annotation.processing，独立打包，不进入运行时 classpath）：
-- 编译期扫描 `@Table` 注解的实体，为每个实体生成 `Xxx_Metadata` 类：
-  - `tableName`、预生成 SQL 字符串（static final）
-  - 每个字段一个 `FieldAccessor` 实现（直接调用实体的 getter/setter —— 静态可解析，Native Image 友好）
-- `EntityMetadata` 运行时按类名约定（`com.qin.orm.generated.Xxx_Metadata`）优先加载生成类；加载失败回退反射路径（JVM 模式可用，AOT 模式要求必须生成成功）
-- 生成代码在编译期可用 → 错误（如缺 getter/setter）在编译期报错而非运行期
+**架构**：
+- 新增 `orm-processor` 子模块（javax.annotation.processing，**零依赖**——用 Mirror API 按限定名匹配注解，避免与 orm 循环依赖；`provided` scope，不进入运行时 classpath）
+- 编译期扫描 `@Table` 实体，为每个实体生成 `Xxx_Metadata`（`com.qin.orm.generated` 包）：
+  - `entityClass()`、表名、**预生成全部 5 条 SQL 字符串**
+  - `FieldAccessor` 列表：直接调用实体 getter/setter 的 lambda（编译期 invokedynamic，Native Image 安全）
+- 同时生成 `GeneratedMetadataRegistry`（**静态引用**各实体 `.class` 与 `INSTANCE`——无 `Class.forName`，AOT 可达性分析直接保留）
+- `EntityMetadata` 双路径：`GeneratedMetadataRegistry.find()` 命中 → 生成路径；未命中 → 反射回退（JVM）
+- **编译期报错**：实体缺 getter/setter、缺 @Id 等映射错误在 `mvn compile` 直接失败
 
-**验证**：JVM 模式下测试通过 + 确认生成类被使用（日志/断点）。
+**验证**：10/10 测试通过（6 CRUD 走生成路径 + 4 元数据路径验证：registry 命中、SQL 与反射回退一致、未注册类回退反射）。
+
+**已知限制**：registry 在首个处理轮生成一次；增量编译中后续轮新出现的实体不会追加进 registry（全量 Maven 构建无此问题）。
 
 ### ⬜ Phase 2：流式查询 DSL
 

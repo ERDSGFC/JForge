@@ -9,7 +9,10 @@
   <name>benchmark</name>
   <modules>
     <module>lambda</module>
+    <module>orm-annotation</module>
+    <module>orm-processor</module>
     <module>orm</module>
+    <module>orm-bench</module>
   </modules>
 
   <properties>
@@ -20,6 +23,7 @@
 
   <dependencyManagement>
     <dependencies>
+      <!-- JMH -->
       <dependency>
         <groupId>org.openjdk.jmh</groupId>
         <artifactId>jmh-core</artifactId>
@@ -31,6 +35,35 @@
         <artifactId>jmh-generator-annprocess</artifactId>
         <version>1.37</version>
         <scope>test</scope>
+      </dependency>
+      <!-- orm -->
+      <dependency>
+        <groupId>com.h2database</groupId>
+        <artifactId>h2</artifactId>
+        <version>2.3.232</version>
+      </dependency>
+      <dependency>
+        <groupId>com.zaxxer</groupId>
+        <artifactId>HikariCP</artifactId>
+        <version>5.1.0</version>
+      </dependency>
+      <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>5.10.2</version>
+        <scope>test</scope>
+      </dependency>
+      <!-- orm-processor -->
+      <dependency>
+        <groupId>com.google.auto.service</groupId>
+        <artifactId>auto-service</artifactId>
+        <version>1.1.1</version>
+        <scope>provided</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.palantir.javapoet</groupId>
+        <artifactId>javapoet</artifactId>
+        <version>0.18.0</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
