@@ -1,7 +1,7 @@
 # JMH 基准测试结果汇总
 
-**环境**: JDK 25, JMH 1.37, 每次操作创建 500,000 个 `User` 对象（10 字段）
-**模式**: AverageTime, ms/op, 3 次预热 + 5 次测量, 1 fork
+**环境**: JDK 25, JMH 1.37, 10 字段 `User` POJO
+**模式**: 3 次预热 + 5 次测量, 1 fork（Run 1-7: AverageTime ms/op, 每次操作 50 万对象；Run 8+: Throughput ops/s, 每次调用 1 个对象）
 
 ---
 
@@ -112,17 +112,70 @@
 
 ---
 
+## Run 7: JMH 标准化改造（逐元素 consume + @State 重构）
+
+> 代码重构：句柄移入 `MyState` 内部类（保持 static final）、`NUM` 改为 `@Param num`、去掉 try-catch 包裹、删无用 `sum` 变量、**逐元素 `bh.consume(user)` 替代 `bh.consume(users)`**（去掉 ArrayList 累积开销，防 DCE 更严格）。  
+> **执行顺序**: ① B01_lambdaMetafactoryConstructor → ② B02_reflectionConstructor → ③ B03_methodHandleConstructor → ④ B04_allArgsConstructor → ⑤ B05_lambdaMetafactoryWithSetters → ⑥ B06_methodHandleWithSetters → ⑦ B07_noArgConstructorWithSetters
+
+| Benchmark | Score (ms/op) | Error | 序号 |
+|---|---:|---:|:---:|
+| B01_lambdaMetafactoryConstructor | **4.916** | ±0.223 | ① |
+| B02_reflectionConstructor | 5.110 | ±0.110 | ② |
+| B03_methodHandleConstructor | 5.166 | ±0.347 | ③ |
+| B07_noArgConstructorWithSetters | 5.407 | ±0.068 | ⑦ |
+| B04_allArgsConstructor | 5.442 | ±0.103 | ④ |
+| B05_lambdaMetafactoryWithSetters | 5.449 | ±0.152 | ⑤ |
+| B06_methodHandleWithSetters | **9.268** | ±0.062 | ⑥ |
+
+---
+
+## Run 8: 标准写法（Throughput + 单次调用）
+
+> **测量方式彻底重构**：`@BenchmarkMode(Mode.Throughput)` + `@OutputTimeUnit(TimeUnit.SECONDS)`，方法体去掉手写循环，每次调用只创建 **1 个** User 并返回（JMH 自动循环调用并消费返回值防 DCE，见 JMHSample_11_Loops）。  
+> **执行顺序**: ① B01_lambdaMetafactoryConstructor → ② B02_reflectionConstructor → ③ B03_methodHandleConstructor → ④ B04_allArgsConstructor → ⑤ B05_lambdaMetafactoryWithSetters → ⑥ B06_methodHandleWithSetters → ⑦ B07_noArgConstructorWithSetters  
+> **注意**：单位为 ops/s（越大越好），与 Run 1-7 的 ms/op 不直接可比。
+
+| Benchmark | Score (ops/s) | Error | 序号 |
+|---|---:|---:|:---:|
+| B04_allArgsConstructor | **208,875,709** | ±15,509,051 | ④ |
+| B02_reflectionConstructor | 198,683,702 | ±24,851,963 | ② |
+| B07_noArgConstructorWithSetters | 195,672,752 | ±51,386,614 | ⑦ |
+| B05_lambdaMetafactoryWithSetters | 189,557,631 | ±49,567,759 | ⑤ |
+| B01_lambdaMetafactoryConstructor | 186,260,590 | ±16,396,466 | ① |
+| B03_methodHandleConstructor | 142,951,370 | ±25,919,960 | ③ |
+| B06_methodHandleWithSetters | **54,642,865** | ±5,487,842 | ⑥ |
+
+---
+
+## Run 9: 增强配置验证（-i 10 -w 5 -f 5 -bs 1000）
+
+> 验证 Run 8 结论的统计稳定性：测量迭代 ×2、fork ×5、`-bs 1000`（每次迭代内调用 1000 次方法，JMH 内部循环）。误差从 ±10-26% 降至 ±0.5-2%。  
+> **单位**：ops/s 为调用次数/s，**×1000 = 每秒创建的对象数**（与 Run 8 同口径对比）。  
+> **执行顺序**: ① B01 → ② B02 → ③ B03 → ④ B04 → ⑤ B05 → ⑥ B06 → ⑦ B07
+
+| Benchmark | Score (ops/s) | Error | ≈对象/s | 序号 |
+|---|---:|---:|---:|:---:|
+| B01_lambdaMetafactoryConstructor | 217,650 | ±1,149 | 217.6M | ① |
+| B05_lambdaMetafactoryWithSetters | 216,533 | ±1,476 | 216.5M | ⑤ |
+| B04_allArgsConstructor | 215,060 | ±2,342 | 215.1M | ④ |
+| B02_reflectionConstructor | 214,550 | ±2,135 | 214.5M | ② |
+| B07_noArgConstructorWithSetters | 214,543 | ±4,516 | 214.5M | ⑦ |
+| B03_methodHandleConstructor | 154,589 | ±1,274 | 154.6M | ③ |
+| B06_methodHandleWithSetters | **59,148** | ±170 | 59.1M | ⑥ |
+
+---
+
 ## 全部轮次汇总
 
-| Benchmark | Run 1 (instance) | Run 2 (static) | Run 3 (逆序) | Run 4 (A前缀) | Run 5 (独立JVM) | Run 6 (B前缀) |
-|---:|---:|---:|---:|---:|---:|---:|
-| reflectionConstructor | 10.196 | **5.398** | 5.686 | 5.511 | **5.491** | 5.550 |
-| lambdaMetafactoryConstructor | **5.378** | 5.564 | 5.321 | **5.291** | 5.491 | **5.448** |
-| methodHandleConstructor | 6.138 | 5.608 | 6.018 | 5.616 | 5.854 | 6.058 |
-| noArgConstructorWithSetters | 6.128 | 5.952 | 6.355 | 6.208 | 5.915 | 6.064 |
-| lambdaMetafactoryWithSetters | 7.252 | 6.162 | 6.067 | 6.097 | 6.068 | 6.156 |
-| allArgsConstructor | 6.101 | 6.346 | 6.188 | 6.299 | 6.141 | 6.125 |
-| methodHandleWithSetters | **16.855** | 10.186 | 10.492 | 10.180 | 10.152 | 10.385 |
+| Benchmark | Run 1 (instance) | Run 2 (static) | Run 3 (逆序) | Run 4 (A前缀) | Run 5 (独立JVM) | Run 6 (B前缀) | Run 7 (标准化) |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| reflectionConstructor | 10.196 | **5.398** | 5.686 | 5.511 | **5.491** | 5.550 | 5.110 |
+| lambdaMetafactoryConstructor | **5.378** | 5.564 | 5.321 | **5.291** | 5.491 | **5.448** | **4.916** |
+| methodHandleConstructor | 6.138 | 5.608 | 6.018 | 5.616 | 5.854 | 6.058 | 5.166 |
+| noArgConstructorWithSetters | 6.128 | 5.952 | 6.355 | 6.208 | 5.915 | 6.064 | 5.407 |
+| lambdaMetafactoryWithSetters | 7.252 | 6.162 | 6.067 | 6.097 | 6.068 | 6.156 | 5.449 |
+| allArgsConstructor | 6.101 | 6.346 | 6.188 | 6.299 | 6.141 | 6.125 | 5.442 |
+| methodHandleWithSetters | **16.855** | 10.186 | 10.492 | 10.180 | 10.152 | 10.385 | **9.268** |
 
 | 轮次 | 执行顺序 (① → ② → ... → ⑦) |
 |:---|:---|
@@ -132,6 +185,7 @@
 | Run 4 | ① reflectionCtor → ② lambdaMetafactoryCtor → ③ methodHandleCtor → ④ noArgCtorSetters → ⑤ lambdaMetafactorySetters → ⑥ allArgsConstructor → ⑦ methodHandleSetters |
 | Run 5 | 无执行顺序——每个 benchmark 独立 JVM 运行 |
 | Run 6 | ① lambdaMetafactoryCtor → ② reflectionCtor → ③ methodHandleCtor → ④ allArgsConstructor → ⑤ lambdaMetafactorySetters → ⑥ methodHandleSetters → ⑦ noArgCtorSetters |
+| Run 7 | ① lambdaMetafactoryCtor → ② reflectionCtor → ③ methodHandleCtor → ④ allArgsConstructor → ⑤ lambdaMetafactorySetters → ⑥ methodHandleSetters → ⑦ noArgCtorSetters |
 
 ---
 
@@ -150,3 +204,9 @@
 6. **直接 `new` (allArgsConstructor) 中等偏下** — 受 JVM `<init>` verification 约束，始终比反射/LambdaMetafactory 慢约 0.5-0.8ms。
 
 7. **MethodHandle + setter 始终最慢** — 即使 `static final`，10 次 `invoke` 的开销也远大于一次性传参构造。
+
+8. **去除 ArrayList 累积（Run 7）整体提速 ~7-11%，排名不变** — 逐元素 `bh.consume(user)` 后，所有方案绝对耗时下降（如 allArgsConstructor 6.14→5.44），跨方案相对差异保持稳定，再次确认之前结论不受测量方式影响。
+
+9. **⚠️ 测量写法影响排名（Run 8）— 手写循环掩盖了真相** — 改为标准写法（单次调用 + 返回对象 + Throughput）后，**直接 `new` 从第 5 升至第 1**（208.9M ops/s ≈ 2 亿对象/秒），**LambdaMetafactory 构造器从第 1 掉到第 5**（186.3M），推翻 Run 1-7"LambdaMetafactory 始终最快"的结论。原因：单次调用模式下 JIT 可对每个方法完整内联深度优化，无长方法/循环干扰，更能反映真实调用成本。仅 B06（MethodHandle+setter, 54.6M）断层最慢的结论在两种写法下一致。前五名差距部分在误差范围内（±10-26%），以 Run 8 为准。
+
+10. **Run 9 确认：第一梯队五者统计等价，B03/B06 确定落后** — 增强配置（`-i 10 -w 5 -f 5 -bs 1000`）将误差压至 ±0.5-2% 后：直接 `new`、反射、LambdaMetafactory（构造器/setter 两种）、无参构造+setter **同为 ~215M 对象/s（每对象 ~4.6ns），差距仅 1.4% 且在误差内**（Run 8 中 B04 第 1、Run 9 中 B01 第 1，排名互换证实前五名无法区分）。**最终可信结论**：① 五者同档，无显著差异；② MethodHandle 构造器稳定落后 ~29%（154.6M）；③ MethodHandle+setter 断层最慢 ~73%（59.1M），10 次 `invoke` 的固定开销是真实瓶颈。
