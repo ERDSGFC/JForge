@@ -15,7 +15,7 @@ mvn clean package -pl lambda
 java -jar lambda/target/benchmarks.jar
 
 # Run selected benchmarks (regex patterns, full JMH CLI via jmh.Main entry point)
-java -jar lambda/target/benchmarks.jar 'LambdaBenchmark\.B0[1-3].*'
+java -jar lambda/target/benchmarks.jar 'LambdaBenchmark\.(allArgsConstructor|reflectionConstructor)'
 
 # Run with overridden config + GC profiling
 java -jar lambda/target/benchmarks.jar LambdaBenchmark.B04 -i 10 -w 5 -f 3 -prof gc
@@ -27,7 +27,7 @@ Multi-module Maven project (`com.qin:benchmark`) benchmarking JVM object-creatio
 
 ### Key Files
 
-- **`LambdaBenchmark.java`** — Single class containing everything: 7 `@Benchmark` methods (`B01`–`B07`), the package-private `@FunctionalInterface NewUser<T>`, and the `MyState` handle container. A `main()` is retained for direct invocation, but the jar entry point is `org.openjdk.jmh.Main`. Method names are **deliberately prefixed `B01`–`B07` to control execution order**: JMH runs benchmarks in alphabetical name order, not source order (evidence in BENCHMARK_RESULTS.md Runs 3/4/6). Keep the prefix scheme when adding or renaming benchmarks.
+- **`LambdaBenchmark.java`** — Single class containing everything: 7 `@Benchmark` methods (`allArgsConstructor`, `reflectionConstructor`, `methodHandleConstructor`, `lambdaMetafactoryConstructor`, `lambdaMetafactoryWithSetters`, `methodHandleWithSetters`, `noArgConstructorWithSetters`), the `com.qin.fun.NewUser` functional interface, and the `MyState` handle container. A `main()` is retained for direct invocation, but the jar entry point is `org.openjdk.jmh.Main`. JMH runs benchmarks in **alphabetical name order**, not source order; early runs used `A01`/`B01` prefixes to control this, but the prefixes were removed once order was proven not to affect results.
   - All constructors/handles live in `MyState` as `static final`, initialized in a `static {}` block (any failure → `ExceptionInInitializerError`). This was a major optimization: JIT constant-folds `static final` references (Run 2, e.g. reflection −47%).
   - Benchmark methods do **one** creation and return the `User` — no manual loops (JMH consumes the return value to prevent DCE, see JMHSample_11_Loops). Mode is `Throughput` (ops/s, see Run 8); previously used a 500k-object loop under `AverageTime` (Runs 1–7), which measurably changed rankings.
   - `LambdaMetafactory.metafactory` generates `NewUser` (all-args constructor), `Supplier` (no-arg constructor), and 10 `BiConsumer` setters via the private `createBiConsumer` helper in `MyState`.

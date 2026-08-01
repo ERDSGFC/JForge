@@ -17,19 +17,26 @@ import java.util.function.Supplier;
  * iteration and consumes the returned object via Blackhole, so no manual loops are needed
  * (see JMHSample_11_Loops).
  *
- * Execution order follows JMH alphabetical naming: B01 → B02 → ... → B07.
- * BENCHMARK_RESULTS.md records multi-run history verifying this order.
+ * JMH executes benchmarks in alphabetical method-name order (source order does not matter);
+ * BENCHMARK_RESULTS.md records the run history.
  *
- * Mode: Throughput (ops/sec). Run configuration (@Warmup/@Measurement/@Fork) is kept as-is to
- * stay comparable with the historical runs recorded in BENCHMARK_RESULTS.md;
- * it can be overridden on the CLI.
+ * Mode: Throughput (ops/sec). Run configuration: 5 warmup iterations of 3 s,
+ * 10 measurement iterations of 2 s, default forks; it can be overridden on the CLI.
  */
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 @State(Scope.Thread)
-@Warmup(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
-@Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
-@Fork(1)
+@Warmup(
+        iterations = 5,
+        time = 3,
+        timeUnit = TimeUnit.SECONDS
+)
+
+@Measurement(
+        iterations = 10,
+        time = 2,
+        timeUnit = TimeUnit.SECONDS
+)
 public class LambdaBenchmark {
 
     /**
@@ -151,7 +158,7 @@ public class LambdaBenchmark {
         }
     }
 
-    // ==================== Benchmark methods (B-prefix for execution order) ====================
+    // ==================== Benchmark methods (executed in alphabetical name order) ====================
 
     @Benchmark
     public User lambdaMetafactoryConstructor() {
@@ -167,8 +174,9 @@ public class LambdaBenchmark {
 
     @Benchmark
     public User methodHandleConstructor() throws Throwable {
-        return (User) MyState.MH_CONSTRUCTOR_10ARG.invoke(1L, "heihei", 1, "17374957973", 1,
-                LocalDate.MAX, "introduction", 1, "17374957973", "17374957973");
+        return (User) MyState.MH_CONSTRUCTOR_10ARG.invokeExact((Long) 1L, "heihei", (Integer) 1,
+                "17374957973", (Integer) 1, LocalDate.MAX, "introduction", (Integer) 1,
+                "17374957973", "17374957973");
     }
 
     @Benchmark
@@ -195,17 +203,17 @@ public class LambdaBenchmark {
 
     @Benchmark
     public User methodHandleWithSetters() throws Throwable {
-        User user = (User) MyState.MH_NOARG_CONSTRUCTOR.invoke();
-        MyState.MH_SET_ID.invoke(user, 1L);
-        MyState.MH_SET_NAME.invoke(user, "heihei");
-        MyState.MH_SET_STATUS.invoke(user, 1);
-        MyState.MH_SET_MOBILE.invoke(user, "17374957973");
-        MyState.MH_SET_AGE.invoke(user, 1);
-        MyState.MH_SET_BIRTHDAY.invoke(user, LocalDate.MAX);
-        MyState.MH_SET_INTRODUCTION.invoke(user, "introduction");
-        MyState.MH_SET_SEX.invoke(user, 1);
-        MyState.MH_SET_CARDID.invoke(user, "17374957973");
-        MyState.MH_SET_ADDRESS.invoke(user, "17374957973");
+        User user = (User) MyState.MH_NOARG_CONSTRUCTOR.invokeExact();
+        MyState.MH_SET_ID.invokeExact(user, (Long) 1L);
+        MyState.MH_SET_NAME.invokeExact(user, "heihei");
+        MyState.MH_SET_STATUS.invokeExact(user, (Integer) 1);
+        MyState.MH_SET_MOBILE.invokeExact(user, "17374957973");
+        MyState.MH_SET_AGE.invokeExact(user, (Integer) 1);
+        MyState.MH_SET_BIRTHDAY.invokeExact(user, LocalDate.MAX);
+        MyState.MH_SET_INTRODUCTION.invokeExact(user, "introduction");
+        MyState.MH_SET_SEX.invokeExact(user, (Integer) 1);
+        MyState.MH_SET_CARDID.invokeExact(user, "17374957973");
+        MyState.MH_SET_ADDRESS.invokeExact(user, "17374957973");
         return user;
     }
 
