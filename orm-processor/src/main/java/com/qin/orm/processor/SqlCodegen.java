@@ -16,10 +16,13 @@ public final class SqlCodegen {
     }
 
     /**
-     * Binds one parameter: {@code ps.setXxx(index, expr);}.
-     * @param typeName  the declared type of the parameter (e.g. "int", "java.lang.String")
-     * @param expr      the value expression (e.g. "id", "entity.age()")
-     * @param index     the 1-based placeholder index (constant)
+     * Builds a type-exact parameter bind statement with a constant index:
+     * {@code ps.setXxx(index, expr);}.
+     *
+     * @param typeName the declared type of the parameter (e.g. {@code "int"}, {@code "java.lang.String"})
+     * @param expr     the value expression (e.g. {@code "id"}, {@code "entity.age()"})
+     * @param index    the 1-based placeholder index (compile-time constant)
+     * @return the bind code block
      */
     public static CodeBlock bindParam(String typeName, String expr, int index) {
         return CodeBlock.of("$L.$L($L, $L);",
@@ -27,14 +30,29 @@ public final class SqlCodegen {
     }
 
     /**
-     * Binds one parameter with a runtime index expression (e.g. the loop variable "i").
+     * Builds a type-exact parameter bind statement with a runtime index expression,
+     * used inside loops over a variable-length parameter list.
+     *
+     * @param typeName  the declared type of the parameter
+     * @param expr      the value expression
+     * @param indexExpr the runtime index expression (e.g. the loop variable {@code "i"})
+     * @return the bind code block
      */
     public static CodeBlock bindParam(String typeName, String expr, String indexExpr) {
         return CodeBlock.of("$L.$L($L, $L);",
                 "ps", TypeNameUtils.jdbcSetter(typeName), indexExpr, expr);
     }
 
-    /** Reads a column by index and maps it through the given setter call. */
+    /**
+     * Builds a column-read statement by index and maps it through the entity's setter.
+     * Used by generated CRUD where the SELECT column order always matches the field order.
+     *
+     * @param typeName   the field type string
+     * @param entityVar  the entity variable name
+     * @param setterName the builder-setter method name
+     * @param index      the 1-based column index
+     * @return the read code block
+     */
     public static CodeBlock readColumn(String typeName, String entityVar, String setterName, int index) {
         String getter = TypeNameUtils.jdbcGetter(typeName);
         if (getter.equals("getObject")) {
@@ -47,7 +65,16 @@ public final class SqlCodegen {
                 entityVar, setterName, "rs", getter, index);
     }
 
-    /** Reads a column by name (used by @Query methods where SELECT order is user-controlled). */
+    /**
+     * Builds a column-read statement by name and maps it through the entity's setter.
+     * Used by {@code @Query} methods where the SELECT column order is user-controlled.
+     *
+     * @param typeName   the field type string
+     * @param entityVar  the entity variable name
+     * @param setterName the builder-setter method name
+     * @param column     the column name
+     * @return the read code block
+     */
     public static CodeBlock readColumnByName(String typeName, String entityVar, String setterName, String column) {
         String getter = TypeNameUtils.jdbcGetter(typeName);
         if (getter.equals("getObject")) {
@@ -59,12 +86,22 @@ public final class SqlCodegen {
                 entityVar, setterName, "rs", getter, column);
     }
 
-    /** Column names joined for SELECT / INSERT column lists. */
+    /**
+     * Joins column names for SELECT / INSERT column lists.
+     *
+     * @param names the column names
+     * @return comma-joined string
+     */
     public static String joinColumns(List<String> names) {
         return String.join(",", names);
     }
 
-    /** "?,?,?" placeholders. */
+    /**
+     * Builds a placeholder list, e.g. 3 → {@code "?,?,?"}.
+     *
+     * @param count the number of placeholders
+     * @return the placeholder string
+     */
     public static String placeholders(int count) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < count; i++) {
@@ -76,7 +113,13 @@ public final class SqlCodegen {
         return sb.toString();
     }
 
-    /** Converts a {@code :name} SQL to {@code ?} placeholders, collecting placeholder order. */
+    /**
+     * Converts {@code :name} placeholders in a SQL string to {@code ?} placeholders.
+     *
+     * @param sql              the SQL with named placeholders (e.g. {@code "WHERE age > :age"})
+     * @param placeholderOrder receives the placeholder names in order of appearance
+     * @return the SQL with {@code ?} placeholders
+     */
     public static String convertPlaceholders(String sql, List<String> placeholderOrder) {
         StringBuilder out = new StringBuilder();
         int i = 0;

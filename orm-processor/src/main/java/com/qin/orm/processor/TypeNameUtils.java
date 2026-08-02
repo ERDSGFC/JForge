@@ -10,7 +10,12 @@ public final class TypeNameUtils {
     private TypeNameUtils() {
     }
 
-    /** e.g. "int" → TypeName.INT, "byte[]" → byte[][], "java.lang.Long" → ClassName. */
+    /**
+     * Converts a TypeMirror string to a JavaPoet type name.
+     *
+     * @param typeName the type string, e.g. {@code "int"}, {@code "byte[]"}, {@code "java.lang.Long"}
+     * @return the corresponding JavaPoet type (primitive, array, or class)
+     */
     public static TypeName toTypeName(String typeName) {
         if (typeName.equals("byte[]")) {
             return ArrayTypeName.of(TypeName.BYTE);
@@ -38,8 +43,11 @@ public final class TypeNameUtils {
     }
 
     /**
-     * The JDBC "get" method name for a field type, e.g. "long"/"Long" → "getLong",
-     * "byte[]" → "getBytes", "java.lang.String" → "getString", "java.time.LocalDate" → "getObject".
+     * Returns the JDBC result-set getter method name for a field type.
+     *
+     * @param typeName the field type string, e.g. {@code "long"}, {@code "java.lang.String"}
+     * @return the getter method name, e.g. {@code "getLong"}, {@code "getString"}, or
+     *         {@code "getObject"} for types without a dedicated getter (LocalDate etc.)
      */
     public static String jdbcGetter(String typeName) {
         switch (typeName) {
@@ -79,7 +87,13 @@ public final class TypeNameUtils {
         }
     }
 
-    /** The JDBC "set" method name for a field type, e.g. "long"/"Long" → "setLong". */
+    /**
+     * Returns the JDBC prepared-statement setter method name for a field type.
+     *
+     * @param typeName the field type string, e.g. {@code "long"}, {@code "java.lang.String"}
+     * @return the setter method name, e.g. {@code "setLong"}, {@code "setString"}, or
+     *         {@code "setObject"} for types without a dedicated setter
+     */
     public static String jdbcSetter(String typeName) {
         switch (typeName) {
             case "long":
@@ -118,7 +132,12 @@ public final class TypeNameUtils {
         }
     }
 
-    /** The boxed class literal for a type (used for casts), e.g. "int" → "Integer". */
+    /**
+     * Returns the boxed type name for a primitive type (used for setter casts).
+     *
+     * @param typeName the type string, e.g. {@code "int"}
+     * @return the boxed type name, e.g. {@code "Integer"}; non-primitives pass through unchanged
+     */
     public static String boxedType(String typeName) {
         switch (typeName) {
             case "byte":

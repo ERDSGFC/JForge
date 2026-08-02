@@ -28,7 +28,12 @@ import java.util.List;
  */
 public final class EntityModel {
 
-    /** The generated impl class name for an entity interface. */
+    /**
+     * Returns the generated impl class name for an entity interface.
+     *
+     * @param entitySimpleName the simple name of the entity interface (e.g. {@code UserEntity})
+     * @return the impl simple name (e.g. {@code UserEntity_Impl})
+     */
     public static String implNameOf(String entitySimpleName) {
         return entitySimpleName + "_Impl";
     }
@@ -59,6 +64,15 @@ public final class EntityModel {
         }
     }
 
+    /**
+     * Parses an entity interface into its mapping model.
+     *
+     * @param entity    the {@code @Table} entity interface
+     * @param types     the type utilities (unused placeholder for future resolution)
+     * @param errorKind the diagnostic kind used to report mapping errors
+     * @param messager  the annotation-processing messager for compile-time errors
+     * @return the parsed model, or {@code null} if the entity is not valid (error reported)
+     */
     public static EntityModel parse(TypeElement entity, Types types, Diagnostic.Kind errorKind,
             javax.annotation.processing.Messager messager) {
         EntityModel model = new EntityModel();
@@ -95,12 +109,27 @@ public final class EntityModel {
         return model;
     }
 
+    /**
+     * Whether the method is a builder-style setter, i.e. takes one parameter and
+     * returns the entity interface itself (e.g. {@code UserEntity id(Long id)}).
+     *
+     * @param method the candidate method
+     * @param entity the entity interface
+     * @return {@code true} if the method returns the entity interface
+     */
     private static boolean isSelfReturning(ExecutableElement method, TypeElement entity) {
         TypeMirror returnType = method.getReturnType();
         return returnType.getKind() == TypeKind.DECLARED
                 && ((DeclaredType) returnType).asElement().equals(entity);
     }
 
+    /**
+     * Records a property getter method as a mapped column.
+     *
+     * @param method    the getter method ({@code Long id()})
+     * @param messager  the messager for compile-time errors
+     * @param errorKind the diagnostic kind for errors
+     */
     private void addGetter(ExecutableElement method, javax.annotation.processing.Messager messager,
             Diagnostic.Kind errorKind) {
         String fieldName = method.getSimpleName().toString();

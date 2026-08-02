@@ -66,6 +66,14 @@ public class RepositoryProcessor extends AbstractProcessor {
         String implName;
     }
 
+    /**
+     * Scans the current round's root elements for {@code @Dao} interfaces and
+     * generates their implementation classes, plus the {@code Repositories} factory.
+     *
+     * @param annotations the annotation types requested by this processor
+     * @param roundEnv    the current processing round
+     * @return {@code true} (the @Dao annotation is claimed by this processor)
+     */
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         if (roundEnv.processingOver()) {
@@ -87,6 +95,13 @@ public class RepositoryProcessor extends AbstractProcessor {
         return true;
     }
 
+    /**
+     * Generates the implementation class for one {@code @Dao} repository interface:
+     * resolves the entity/id types from {@code BaseRepository<T, ID>}, parses the
+     * entity model, and emits the CRUD + {@code @Query} methods.
+     *
+     * @param dao the {@code @Dao} repository interface
+     */
     private void processDao(TypeElement dao) {
         DaoInfo info = new DaoInfo();
         info.element = dao;
@@ -144,6 +159,13 @@ public class RepositoryProcessor extends AbstractProcessor {
 
     // ==================== Implementation class ====================
 
+    /**
+     * Assembles the repository implementation class: data source field, constructor,
+     * shared row mapper, count helper, the 12 CRUD methods, and the {@code @Query} methods.
+     *
+     * @param info the parsed repository info
+     * @return the generated class specification
+     */
     private TypeSpec buildImpl(DaoInfo info) {
         ClassName daoClass = ClassName.get(info.daoPackage, info.daoSimpleName);
         ClassName dataSource = ClassName.get("javax.sql", "DataSource");
@@ -177,7 +199,16 @@ public class RepositoryProcessor extends AbstractProcessor {
         return builder.build();
     }
 
-    /** private Xxx_Impl mapRow(ResultSet rs) throws SQLException — column index = field order. */
+    /**
+     * Builds the private {@code mapRow} method: maps the current ResultSet row to a
+     * new entity impl by column index (column order always equals field order).
+     *
+     * @param info         the repository info
+     * @param entityImpl   the generated entity impl class
+     * @param sqlException the SQLException class
+     * @param resultSet    the ResultSet class
+     * @return the mapRow method specification
+     */
     private MethodSpec rowMapperMethod(DaoInfo info, ClassName entityImpl,
             ClassName sqlException, ClassName resultSet) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("mapRow")
@@ -196,7 +227,16 @@ public class RepositoryProcessor extends AbstractProcessor {
         return method.build();
     }
 
-    /** private long countById(...) — used by existsById and count. */
+    /**
+     * Builds the private {@code countById} helper used by {@code existsById}.
+     *
+     * @param info             the repository info
+     * @param sqlException     the SQLException class
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param resultSet        the ResultSet class
+     * @return the countById method specification
+     */
     private MethodSpec countByIdMethod(DaoInfo info, ClassName sqlException,
             ClassName connection, ClassName preparedStatement, ClassName resultSet) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("countById")
@@ -219,6 +259,18 @@ public class RepositoryProcessor extends AbstractProcessor {
         return method.build();
     }
 
+    /**
+     * Builds all 12 CRUD methods inherited from {@code BaseRepository}.
+     *
+     * @param info             the repository info
+     * @param entityImpl       the generated entity impl class
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param resultSet        the ResultSet class
+     * @param sqlException     the SQLException class
+     * @param statement        the Statement class
+     * @return the CRUD method specifications
+     */
     private List<MethodSpec> crudMethods(DaoInfo info, ClassName entityImpl,
             ClassName connection, ClassName preparedStatement, ClassName resultSet,
             ClassName sqlException, ClassName statement) {
@@ -238,6 +290,17 @@ public class RepositoryProcessor extends AbstractProcessor {
         return methods;
     }
 
+    /**
+     * Builds {@code save(T)}: INSERT with type-exact binds; when the id is generated,
+     * uses {@code RETURN_GENERATED_KEYS} and writes the key back into the entity.
+     *
+     * @param info             the repository info
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param sqlException     the SQLException class
+     * @param statement        the Statement class
+     * @return the save method specification
+     */
     private MethodSpec saveMethod(DaoInfo info, ClassName connection, ClassName preparedStatement,
             ClassName sqlException, ClassName statement) {
         EntityModel model = info.model;
@@ -279,6 +342,12 @@ public class RepositoryProcessor extends AbstractProcessor {
         return method.build();
     }
 
+    /**
+     * Builds the batch {@code save(List<T>)}: iterates and delegates to the single save.
+     *
+     * @param info the repository info
+     * @return the batch save method specification
+     */
     private MethodSpec saveAllMethod(DaoInfo info, ClassName connection, ClassName preparedStatement,
             ClassName sqlException, ClassName statement) {
         return MethodSpec.methodBuilder("save")
@@ -293,6 +362,12 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .build();
     }
 
+    /**
+     * Builds {@code delete(T)}: deletes by the entity's id.
+     *
+     * @param info the repository info
+     * @return the delete method specification
+     */
     private MethodSpec deleteMethod(DaoInfo info) {
         return MethodSpec.methodBuilder("delete")
                 .addAnnotation(Override.class)
@@ -303,6 +378,12 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .build();
     }
 
+    /**
+     * Builds the batch {@code delete(List<T>)}: collects ids and delegates to deleteByIds.
+     *
+     * @param info the repository info
+     * @return the batch delete method specification
+     */
     private MethodSpec deleteManyMethod(DaoInfo info) {
         EntityModel.ColumnModel idColumn = info.model.idColumn();
         MethodSpec.Builder method = MethodSpec.methodBuilder("delete")
@@ -319,6 +400,15 @@ public class RepositoryProcessor extends AbstractProcessor {
         return method.build();
     }
 
+    /**
+     * Builds {@code deleteById(ID)}: {@code DELETE ... WHERE id=?}.
+     *
+     * @param info             the repository info
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param sqlException     the SQLException class
+     * @return the deleteById method specification
+     */
     private MethodSpec deleteByIdMethod(DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName sqlException) {
         String sql = "DELETE FROM " + info.model.tableName() + " WHERE "
@@ -339,6 +429,16 @@ public class RepositoryProcessor extends AbstractProcessor {
         return method.build();
     }
 
+    /**
+     * Builds {@code deleteByIds(List<ID>)}: {@code DELETE ... WHERE id IN (?,...)} with
+     * a dynamically built placeholder list.
+     *
+     * @param info             the repository info
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param sqlException     the SQLException class
+     * @return the deleteByIds method specification
+     */
     private MethodSpec deleteByIdsMethod(DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName sqlException) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("deleteByIds")
@@ -374,6 +474,16 @@ public class RepositoryProcessor extends AbstractProcessor {
         return method.build();
     }
 
+    /**
+     * Builds {@code update(T)}: {@code UPDATE t SET c1=?,... WHERE id=?}, binding all
+     * non-id columns then the id.
+     *
+     * @param info             the repository info
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param sqlException     the SQLException class
+     * @return the update method specification
+     */
     private MethodSpec updateMethod(DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName sqlException) {
         EntityModel model = info.model;
@@ -415,6 +525,18 @@ public class RepositoryProcessor extends AbstractProcessor {
         return method.build();
     }
 
+    /**
+     * Builds {@code findById(ID)}: {@code SELECT cols FROM t WHERE id=?}, mapping a
+     * single row via {@code mapRow} or returning {@code null}.
+     *
+     * @param info             the repository info
+     * @param entityImpl       the generated entity impl class
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param resultSet        the ResultSet class
+     * @param sqlException     the SQLException class
+     * @return the findById method specification
+     */
     private MethodSpec findByIdMethod(DaoInfo info, ClassName entityImpl, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         String sql = "SELECT " + SqlCodegen.joinColumns(namesOf(info.model.columns())) + " FROM "
@@ -440,6 +562,17 @@ public class RepositoryProcessor extends AbstractProcessor {
         return method.build();
     }
 
+    /**
+     * Builds {@code findByIds(List<ID>)}: {@code SELECT cols FROM t WHERE id IN (?,...)}.
+     *
+     * @param info             the repository info
+     * @param entityImpl       the generated entity impl class
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param resultSet        the ResultSet class
+     * @param sqlException     the SQLException class
+     * @return the findByIds method specification
+     */
     private MethodSpec findByIdsMethod(DaoInfo info, ClassName entityImpl, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         String select = "SELECT " + SqlCodegen.joinColumns(namesOf(info.model.columns())) + " FROM "
@@ -483,6 +616,17 @@ public class RepositoryProcessor extends AbstractProcessor {
         return method.build();
     }
 
+    /**
+     * Builds {@code findAll()}: {@code SELECT cols FROM t}, mapping every row.
+     *
+     * @param info             the repository info
+     * @param entityImpl       the generated entity impl class
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param resultSet        the ResultSet class
+     * @param sqlException     the SQLException class
+     * @return the findAll method specification
+     */
     private MethodSpec findAllMethod(DaoInfo info, ClassName entityImpl, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         String sql = "SELECT " + SqlCodegen.joinColumns(namesOf(info.model.columns())) + " FROM "
@@ -507,6 +651,16 @@ public class RepositoryProcessor extends AbstractProcessor {
         return method.build();
     }
 
+    /**
+     * Builds {@code count()}: {@code SELECT COUNT(*) FROM t}.
+     *
+     * @param info             the repository info
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param resultSet        the ResultSet class
+     * @param sqlException     the SQLException class
+     * @return the count method specification
+     */
     private MethodSpec countMethod(DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         String sql = "SELECT COUNT(*) FROM " + info.model.tableName();
@@ -526,6 +680,15 @@ public class RepositoryProcessor extends AbstractProcessor {
         return method.build();
     }
 
+    /**
+     * Builds {@code existsById(ID)}: delegates to the private {@code countById} helper.
+     *
+     * @param info             the repository info
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param sqlException     the SQLException class
+     * @return the existsById method specification
+     */
     private MethodSpec existsByIdMethod(DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName sqlException) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("existsById")
@@ -543,6 +706,17 @@ public class RepositoryProcessor extends AbstractProcessor {
 
     // ==================== @Query methods ====================
 
+    /**
+     * Adds a generated method for every {@code @Query}-annotated method on the repository.
+     *
+     * @param info             the repository info
+     * @param builder          the impl class builder receiving the methods
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param resultSet        the ResultSet class
+     * @param sqlException     the SQLException class
+     * @param statement        the Statement class
+     */
     private void queryMethods(DaoInfo info, TypeSpec.Builder builder, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException,
             ClassName statement) {
@@ -560,6 +734,21 @@ public class RepositoryProcessor extends AbstractProcessor {
         }
     }
 
+    /**
+     * Builds one {@code @Query} method implementation: converts named placeholders to
+     * {@code ?}, binds each {@code @Bind} parameter by type, and maps the result
+     * according to the return type (entity, DTO record, scalar, or update count).
+     *
+     * @param info             the repository info
+     * @param method           the annotated repository method
+     * @param query            the @Query annotation
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param resultSet        the ResultSet class
+     * @param sqlException     the SQLException class
+     * @param statement        the Statement class
+     * @return the query method specification
+     */
     private MethodSpec queryMethod(DaoInfo info, ExecutableElement method, Query query,
             ClassName connection, ClassName preparedStatement, ClassName resultSet,
             ClassName sqlException, ClassName statement) {
@@ -635,7 +824,14 @@ public class RepositoryProcessor extends AbstractProcessor {
         return spec.build();
     }
 
-    /** Writes back the generated key into the entity parameter's id setter. */
+    /**
+     * Builds the generated-key write-back expression for a {@code @ReturnGeneratedKeys}
+     * method: finds the entity parameter and returns an assignment to its id setter.
+     *
+     * @param info   the repository info
+     * @param method the annotated method
+     * @return the write-back expression, or a no-op comment when no entity parameter exists
+     */
     private String generatedKeysWriteback(DaoInfo info, ExecutableElement method) {
         for (VariableElement parameter : method.getParameters()) {
             TypeMirror type = parameter.asType();
@@ -652,6 +848,15 @@ public class RepositoryProcessor extends AbstractProcessor {
         return "/* no entity parameter to write back the generated key */";
     }
 
+    /**
+     * Appends result-mapping code for a SELECT {@code @Query} based on the return type:
+     * entity interface (by column name), DTO record (by component order), or scalar.
+     *
+     * @param spec       the method builder receiving the mapping code
+     * @param info       the repository info
+     * @param method     the annotated method
+     * @param returnType the method's return type
+     */
     private void appendResultMapping(MethodSpec.Builder spec, DaoInfo info, ExecutableElement method,
             TypeMirror returnType) {
         boolean isList = returnType.getKind() == TypeKind.DECLARED
@@ -690,6 +895,15 @@ public class RepositoryProcessor extends AbstractProcessor {
         }
     }
 
+    /**
+     * Appends row mapping for an entity-interface result type, reading columns by name
+     * (custom SELECT order is user-controlled in @Query SQL).
+     *
+     * @param spec       the method builder receiving the mapping code
+     * @param info       the repository info
+     * @param entityType the entity interface type
+     * @param isList     whether the method returns a list
+     */
     private void appendEntityMapping(MethodSpec.Builder spec, DaoInfo info, TypeMirror entityType,
             boolean isList) {
         TypeElement entityElement = (TypeElement) ((DeclaredType) entityType).asElement();
@@ -724,6 +938,14 @@ public class RepositoryProcessor extends AbstractProcessor {
         }
     }
 
+    /**
+     * Appends row mapping for a DTO record result type: record component order maps to
+     * SELECT column order by index.
+     *
+     * @param spec   the method builder receiving the mapping code
+     * @param record the DTO record element
+     * @param isList whether the method returns a list
+     */
     private void appendRecordMapping(MethodSpec.Builder spec, TypeElement record, boolean isList) {
         ClassName recordClass = ClassName.get(record);
         List<? extends Element> components = record.getRecordComponents();
@@ -744,6 +966,12 @@ public class RepositoryProcessor extends AbstractProcessor {
         }
     }
 
+    /**
+     * Builds the constructor argument list for a record from the current row.
+     *
+     * @param components the record components
+     * @return comma-joined {@code rs.getXxx(i)} expressions
+     */
     private String recordArgs(List<? extends Element> components) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < components.size(); i++) {
@@ -758,6 +986,10 @@ public class RepositoryProcessor extends AbstractProcessor {
 
     // ==================== Factories ====================
 
+    /**
+     * Emits one {@code Repositories} factory class per dao package, with a
+     * {@code createXxxRepository(DataSource)} method for each processed dao.
+     */
     private void writeFactories() {
         // Group daos by package and emit one Repositories class per package.
         Map<String, List<DaoInfo>> byPackage = new java.util.LinkedHashMap<>();
@@ -818,7 +1050,13 @@ public class RepositoryProcessor extends AbstractProcessor {
         return ClassName.get("java.sql", "ResultSet");
     }
 
-    /** TypeMirror → JavaPoet TypeName, preserving generics (e.g. {@code List<UserEntity>}). */
+    /**
+     * Converts a TypeMirror to a JavaPoet TypeName, preserving generic arguments
+     * (e.g. {@code List<UserEntity>}).
+     *
+     * @param type the type mirror
+     * @return the corresponding JavaPoet type
+     */
     private static TypeName toTypeNameWithGenerics(TypeMirror type) {
         if (type.getKind() == TypeKind.DECLARED) {
             DeclaredType declared = (DeclaredType) type;
@@ -834,11 +1072,23 @@ public class RepositoryProcessor extends AbstractProcessor {
         return TypeNameUtils.toTypeName(type.toString());
     }
 
+    /**
+     * Extracts the package name from a fully qualified name.
+     *
+     * @param qualifiedName the fully qualified name
+     * @return the package name, or an empty string for the default package
+     */
     private static String packageOf(String qualifiedName) {
         int dot = qualifiedName.lastIndexOf('.');
         return dot < 0 ? "" : qualifiedName.substring(0, dot);
     }
 
+    /**
+     * Reports a compile-time error attached to the given element (null = global).
+     *
+     * @param element the offending element, or {@code null}
+     * @param message the error message
+     */
     private void error(Element element, String message) {
         processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, message, element);
     }

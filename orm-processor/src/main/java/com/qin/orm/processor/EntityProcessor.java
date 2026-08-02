@@ -33,6 +33,14 @@ import java.util.Set;
 @SupportedSourceVersion(SourceVersion.RELEASE_25)
 public class EntityProcessor extends AbstractProcessor {
 
+    /**
+     * Scans the current round's root elements for {@code @Table} interfaces and
+     * generates their impl classes.
+     *
+     * @param annotations the annotation types requested by this processor
+     * @param roundEnv    the current processing round
+     * @return {@code true} (the @Table annotation is claimed by this processor)
+     */
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         for (Element root : roundEnv.getRootElements()) {
@@ -47,6 +55,11 @@ public class EntityProcessor extends AbstractProcessor {
         return true;
     }
 
+    /**
+     * Generates the impl class for one entity interface.
+     *
+     * @param entity the {@code @Table} entity interface
+     */
     private void processEntity(TypeElement entity) {
         EntityModel model = EntityModel.parse(entity, processingEnv.getTypeUtils(),
                 Diagnostic.Kind.ERROR, processingEnv.getMessager());
@@ -65,7 +78,12 @@ public class EntityProcessor extends AbstractProcessor {
         }
     }
 
-    /** Builds the {@code Xxx_Impl} class implementing the entity interface. */
+    /**
+     * Builds the {@code Xxx_Impl} class implementing the entity interface.
+     *
+     * @param model the parsed entity model
+     * @return the generated class specification
+     */
     static TypeSpec buildImpl(EntityModel model) {
         ClassName entityClass = ClassName.get(model.entityPackage(), model.entitySimpleName());
         TypeSpec.Builder builder = TypeSpec.classBuilder(EntityModel.implNameOf(model.entitySimpleName()))
