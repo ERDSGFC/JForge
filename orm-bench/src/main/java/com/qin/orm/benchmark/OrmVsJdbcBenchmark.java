@@ -1,8 +1,5 @@
 package com.qin.orm.benchmark;
 
-import com.qin.orm.Session;
-import com.qin.orm.SessionFactory;
-import com.qin.orm.UserEntity;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -18,7 +15,6 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 
-import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -29,12 +25,9 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * ORM vs raw JDBC: same table, same operations, same connection pool (both with
- * statement caching). Measures whether the ORM framework overhead stays within the
- * acceptance budget (<=5%) using the standard single-call style.
- *
- * NOTE: the insert benchmarks grow the table, so findAll scans more rows in later
- * benchmarks; both sides are equally affected (alphabetical order runs JDBC first).
+ * ORM (compile-time generated repository) vs raw JDBC: same table, same operations,
+ * same connection pool (both with statement caching). The generated repository emits
+ * direct JDBC code, so the framework overhead should be negligible.
  */
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
@@ -46,8 +39,8 @@ public class OrmVsJdbcBenchmark {
 
     private static final String URL = "jdbc:h2:mem:orm_bench;DB_CLOSE_DELAY=-1;MODE=PostgreSQL";
 
-    private Session session;
     private HikariDataSource dataSource;
+    private UserRepository repo;
     private long seededId;
 
     /** Creates the shared HikariCP pool (with statement caching) and seeds one row. */
@@ -72,38 +65,33 @@ public class OrmVsJdbcBenchmark {
             rs.next();
             seededId = rs.getLong(1);
         }
-        session = SessionFactory.open(dataSource);
+        repo = Repositories.createUserRepository(dataSource);
     }
 
-    /** Closes the session and the shared pool. */
+    /** Closes the shared pool. */
     @TearDown(Level.Trial)
     public void tearDown() {
-        session.close();
         dataSource.close();
     }
 
-    // ==================== ORM ====================
+    // ==================== ORM (generated repository) ====================
 
-    /** ORM insert with generated-key write-back. */
+    /** Generated insert with generated-key write-back. */
     @Benchmark
     public UserEntity ormInsert() {
-        UserEntity user = new UserEntity();
-        user.setName("heihei");
-        user.setAge(25);
-        session.insert(user);
-        return user;
+        return repo.save(new UserEntity_Impl().name("heihei").age(25));
     }
 
-    /** ORM select by primary key. */
+    /** Generated select by primary key. */
     @Benchmark
     public UserEntity ormFindById() {
-        return session.findById(UserEntity.class, seededId);
+        return repo.findById(seededId);
     }
 
-    /** ORM select all rows. */
+    /** Generated select all rows. */
     @Benchmark
     public List<UserEntity> ormFindAll() {
-        return session.findAll(UserEntity.class);
+        return repo.findAll();
     }
 
     // ==================== Raw JDBC ====================
@@ -119,10 +107,10 @@ public class OrmVsJdbcBenchmark {
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 keys.next();
-                UserEntity user = new UserEntity();
-                user.setId(keys.getLong(1));
-                user.setName("heihei");
-                user.setAge(25);
+                UserEntity user = new UserEntity_Impl();
+                user.id(keys.getLong(1));
+                user.name("heihei");
+                user.age(25);
                 return user;
             }
         }
@@ -136,10 +124,10 @@ public class OrmVsJdbcBenchmark {
             ps.setLong(1, seededId);
             try (ResultSet rs = ps.executeQuery()) {
                 rs.next();
-                UserEntity user = new UserEntity();
-                user.setId(rs.getLong(1));
-                user.setName(rs.getString(2));
-                user.setAge(rs.getInt(3));
+                UserEntity user = new UserEntity_Impl();
+                user.id(rs.getLong(1));
+                user.name(rs.getString(2));
+                user.age(rs.getInt(3));
                 return user;
             }
         }
@@ -153,10 +141,10 @@ public class OrmVsJdbcBenchmark {
              ResultSet rs = ps.executeQuery()) {
             List<UserEntity> list = new ArrayList<>();
             while (rs.next()) {
-                UserEntity user = new UserEntity();
-                user.setId(rs.getLong(1));
-                user.setName(rs.getString(2));
-                user.setAge(rs.getInt(3));
+                UserEntity user = new UserEntity_Impl();
+                user.id(rs.getLong(1));
+                user.name(rs.getString(2));
+                user.age(rs.getInt(3));
                 list.add(user);
             }
             return list;

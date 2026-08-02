@@ -6,13 +6,12 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Maps a field to a column. When absent, the field name is used as the column name
- * (camelCase kept as-is).
+ * Binds a repository method parameter to a named {@code :placeholder} in a {@link Query}.
  */
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.FIELD, ElementType.METHOD})
-public @interface Column {
+@Target(ElementType.PARAMETER)
+public @interface Bind {
 
-    /** Column name. */
-    String name();
+    /** The placeholder name in the SQL (without the leading colon). */
+    String value();
 }

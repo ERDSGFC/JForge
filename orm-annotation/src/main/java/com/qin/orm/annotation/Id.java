@@ -7,6 +7,6 @@ import java.lang.annotation.Target;
 
 /** Marks the primary-key field of an entity. */
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.FIELD)
+@Target({ElementType.FIELD, ElementType.METHOD})
 public @interface Id {
 }

@@ -5,8 +5,11 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Excludes a field from ORM mapping (not persisted). */
+/**
+ * On an INSERT {@link Query}, requests {@code RETURN_GENERATED_KEYS} and writes the
+ * generated key back into the passed entity's {@code @Id} field.
+ */
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.FIELD, ElementType.METHOD})
-public @interface Transient {
+@Target(ElementType.METHOD)
+public @interface ReturnGeneratedKeys {
 }

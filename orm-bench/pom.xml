@@ -48,9 +48,16 @@
                             <artifactId>jmh-generator-annprocess</artifactId>
                             <version>1.37</version>
                         </path>
+                        <path>
+                            <groupId>com.qin</groupId>
+                            <artifactId>orm-processor</artifactId>
+                            <version>${project.version}</version>
+                        </path>
                     </annotationProcessorPaths>
                     <annotationProcessors>
                         <annotationProcessor>org.openjdk.jmh.generators.BenchmarkProcessor</annotationProcessor>
+                        <annotationProcessor>com.qin.orm.processor.EntityProcessor</annotationProcessor>
+                        <annotationProcessor>com.qin.orm.processor.RepositoryProcessor</annotationProcessor>
                     </annotationProcessors>
                 </configuration>
             </plugin>

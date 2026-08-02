@@ -61,7 +61,8 @@
                         </path>
                     </annotationProcessorPaths>
                     <annotationProcessors>
-                        <annotationProcessor>com.qin.orm.processor.MetadataProcessor</annotationProcessor>
+                        <annotationProcessor>com.qin.orm.processor.EntityProcessor</annotationProcessor>
+                        <annotationProcessor>com.qin.orm.processor.RepositoryProcessor</annotationProcessor>
                     </annotationProcessors>
                 </configuration>
             </plugin>

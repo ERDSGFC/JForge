@@ -1,169 +1,101 @@
 # ORM 开发计划
 
 **性能优先**的微型 ORM（`orm` 模块）：
-- 目标 1：与裸 JDBC 一样快（框架开销 <5%）
-- 目标 2：**兼容 AOT**（GraalVM Native Image 可构建、可运行）
+- 目标 1：与裸 JDBC 一样快（框架开销 <5%）— ✅ **已达成**
+- 目标 2：兼容 AOT（GraalVM Native Image 可构建、可运行）
 
-## 定位与选型
+## 架构：Repository 接口继承 + 编译期生成实现
 
-| 项 | 决策 |
-|---|---|
-| 定位 | 性能优先微型 ORM，JVM 与 GraalVM Native Image 双模式 |
-| 数据库 | H2（内嵌），**PostgreSQL 兼容模式**（`MODE=PostgreSQL`） |
-| 连接池 | HikariCP |
-| Java | 25 |
-| 实体形态 | 纯 POJO + 注解驱动 |
-| SQL 安全 | 全部 `PreparedStatement` 参数化，防注入 |
+```
+用户代码                              Processor 自动生成                    orm 框架库
+────────                             ────────────────                    ──────────
+@Dao                                UserRepository_Impl                  BaseRepository<T,ID>
+public interface UserRepository      implements UserRepository               ↓
+    extends BaseRepository<U,Long>       ↓                              @Dao/@Query/@Bind
+{                                     直接 JDBC 实现                    注解层
+    @Query(...)                        → new UserEntity_Impl()
+    List<User> findByAge(int age);       rs.getLong(1)
+}                                       ps.setString(2,...)
 
-## 性能设计原则（源自本项目 JMH 基准结论）
+UserEntity (interface)              UserEntity_Impl
+```
 
-> 本项目对 JVM 调用机制做了 12 轮 JMH 基准，以下原则直接来自实证结论（见 `BENCHMARK_RESULTS.md`）：
-
-1. **字段读写用 `MethodHandle.invokeExact`** — `invoke` 的 asType 适配开销使调用慢 28-73%（Run 10），`invokeExact` 追平直接调用。
-2. **句柄必须 `static final`** — instance 字段句柄实测慢 17-84%（Run 12，反射 -56%、MethodHandle -84%）。JIT 常量折叠后调用点深度内联。
-3. **SQL 只生成一次** — `EntityMetadata` 解析时预生成并缓存全部 SQL 字符串，运行时零拼接。
-4. **参数绑定按类型用精确 setter** — `ps.setLong/setString` 而非 `setObject`。
-5. **ResultSet 按类型用精确 getter** — `rs.getLong/getString` 而非 `getObject(col, type)`。
-6. **PreparedStatement 复用** — 开启 HikariCP statement cache。
-7. **连接池** — HikariCP。
-8. **测量遵循 JMH 标准写法** — 单次调用 + 返回对象防 DCE（手写循环扭曲结论，见 Run 8）。
-
-## AOT 设计原则（GraalVM Native Image）
-
-> Native Image 默认**不支持运行时反射、动态代理、运行时 MethodHandle 创建**（需显式配置且损耗性能）。因此：
-
-1. **运行时零反射** — 映射元数据在**编译期**生成（annotation processor 扫描 `@Table` 实体），生成可直接调用的访问器代码（调用实体的 getter/setter，Native Image 完全支持）。
-2. **运行时零 MethodHandle 创建** — 句柄仅在 JVM 模式（回退路径）使用；AOT 模式走编译期生成的访问器类。
-3. **无字节码库**（CGLIB/ByteBuddy）— 本就不引入；懒加载代理在 AOT 下用编译期生成的实现类替代 JDK Proxy。
-4. **配置可追溯** — 仍需的资源（驱动、连接池）按 GraalVM 惯例在 `build.gradle`/`META-INF/native-image` 注册，保持最小化。
+**核心思想**：用户定义 `@Table` 实体接口 + `@Dao` 仓库接口继承 `BaseRepository`，processor 在编译期生成**直写 JDBC 的实现类**——运行时零反射、零元数据查找、零动态分发。
 
 ## 模块结构
 
 ```
-orm-annotation/                     # ✅ 映射注解（零依赖，orm 与 orm-processor 共用）
-orm-processor/                      # ✅ 构建期元数据生成器（javapoet + auto-service，provided，不进入运行时）
-orm/
-├── pom.xml                          # 依赖: orm-annotation, H2, HikariCP, JUnit5(test), orm-processor(provided)
-└── src/
-    ├── main/java/com/qin/orm/
-    │   ├── OrmException.java
-    │   ├── Session.java             # 顶层 API：CRUD + 事务
-    │   ├── SessionFactory.java
-    │   ├── annotation/              # Table / Id / Column / GeneratedValue / Transient
-    │   ├── core/
-    │   │   ├── EntityMetadata.java  # 元信息：优先加载生成类，回退反射（JVM 模式）
-    │   │   ├── FieldAccessor.java   # get/set 访问器接口（生成实现 + 反射实现）
-    │   │   ├── SqlGenerator.java    # SQL 生成（仅元数据解析时调用一次）
-    │   │   ├── RowMapper.java
-    │   │   └── DefaultRowMapper.java# 访问器赋值 + 按类型 getter
-    │   ├── query/                   # [Phase 2] 流式查询 DSL
-    │   ├── relation/                # [Phase 3] 关联映射（AOT：生成实现类替代代理）
-    │   ├── cache/                   # [Phase 4] 缓存层
-    │   └── benchmark/               # [Phase 5] JMH：ORM vs 裸 JDBC
-    └── test/java/com/qin/orm/
-        ├── UserEntity.java
-        └── SessionCrudTest.java     # H2 PG 模式集成测试
+orm-annotation/      # 注解：@Table/@Id/@Column/@GeneratedValue/@Transient（METHOD 作用域）
+                     #       @Dao/@Query/@Bind/@ReturnGeneratedKeys
+orm-processor/       # 编译期生成器（javapoet + auto-service，provided，不进运行时）
+  ├── EntityProcessor.java      # @Table 接口 → UserEntity_Impl（字段 + getter + builder setter）
+  ├── RepositoryProcessor.java  # @Dao 接口 → UserRepository_Impl（CRUD 12 方法 + @Query）
+  ├── EntityModel.java          # 共享实体模型解析
+  ├── SqlCodegen.java           # 绑定/读取代码块生成（编译期类型决策）
+  └── TypeNameUtils.java        # 类型 → javapoet TypeName / JDBC getter/setter 映射
+orm/                 # 框架库：BaseRepository（用户文件）、OrmException
+orm-bench/           # ORM vs 裸 JDBC 基准
 ```
 
-## 阶段计划
-
-### ✅ Phase 1：核心引擎（CRUD）— 已完成，待按性能原则优化
-
-**已完成**：5 个映射注解、`EntityMetadata`（反射解析一次 + 缓存）、`Session` CRUD + 事务、`SessionFactory`、6/6 集成测试通过。
-
-**性能优化已完成**（10/10 测试通过）：
-- ✅ SQL 预生成缓存：`EntityMetadata` 解析时生成全部 5 条 SQL 字符串，运行时零拼接（`SqlGenerator` 参数化，仅解析时调用一次）
-- ✅ 参数绑定精确 setter：按字段类型解析时确定 `ParamBinder`（`setLong/setString/...`，兜底 `setObject`），`meta.bindInsertParams/bindUpdateParams/bindId` 统一出口
-- ✅ ResultSet 精确 getter：按字段类型解析时确定 `RowReader`（`getLong` + `wasNull` 处理，兜底 `getObject`），`DefaultRowMapper` 直接消费
-- ✅ HikariCP statement cache：`cachePrepStmts=true`、`prepStmtCacheSize=250`、`prepStmtCacheSqlLimit=2048`（预生成的固定 SQL 使每条语句都命中缓存）
-
-**API 示例**：
-```java
-Session session = SessionFactory.open("jdbc:h2:mem:test;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
-session.insert(user);                     // @GeneratedValue 自增 id 自动回填
-UserEntity u = session.findById(UserEntity.class, 1L);
-session.update(u);
-session.delete(u);
-```
-
-### ✅ Phase 1.5：构建期元数据生成（AOT 就绪）— 已完成
-
-**架构**：
-- 新增 `orm-processor` 子模块（javax.annotation.processing，**零依赖**——用 Mirror API 按限定名匹配注解，避免与 orm 循环依赖；`provided` scope，不进入运行时 classpath）
-- 编译期扫描 `@Table` 实体，为每个实体生成 `Xxx_Metadata`（`com.qin.orm.generated` 包）：
-  - `entityClass()`、表名、**预生成全部 5 条 SQL 字符串**
-  - `FieldAccessor` 列表：直接调用实体 getter/setter 的 lambda（编译期 invokedynamic，Native Image 安全）
-- 同时生成 `GeneratedMetadataRegistry`（**静态引用**各实体 `.class` 与 `INSTANCE`——无 `Class.forName`，AOT 可达性分析直接保留）
-- `EntityMetadata` 双路径：`GeneratedMetadataRegistry.find()` 命中 → 生成路径；未命中 → 反射回退（JVM）
-- **编译期报错**：实体缺 getter/setter、缺 @Id 等映射错误在 `mvn compile` 直接失败
-
-**验证**：10/10 测试通过（6 CRUD 走生成路径 + 4 元数据路径验证：registry 命中、SQL 与反射回退一致、未注册类回退反射）。
-
-**已知限制**：registry 在首个处理轮生成一次；增量编译中后续轮新出现的实体不会追加进 registry（全量 Maven 构建无此问题）。
-
-**后续增强**：注解已拆分至独立模块 `orm-annotation`（orm 与 processor 共用，无循环依赖）；源码生成改用 JavaPoet（`JavaFile/TypeSpec/MethodSpec`）替代手写字符串拼接；processor 注册用 auto-service 自动生成。
-
-### ⬜ Phase 2：流式查询 DSL
-
-`com.qin.orm.query`：`Condition`（EQ/NE/GT/GTE/LT/LTE/LIKE/IN/IS_NULL/IS_NOT_NULL）、`Order`（ASC/DESC）、`Query<T>`（不可变链式构建器）。
+## 用法示例
 
 ```java
-List<UserEntity> users = session.query(UserEntity.class)
-    .where("age", Condition.Operator.GT, 18)
-    .orderBy("age", Order.Direction.DESC)
-    .limit(10).offset(0)
-    .list();
+// 1. 实体（接口 + builder setter）
+@Table(name = "users")
+public interface UserEntity {
+    @Id @GeneratedValue Long id();
+    UserEntity id(Long id);
+    @Column(name = "user_name") String name();
+    UserEntity name(String name);
+    Integer age();
+    UserEntity age(Integer age);
+}
+
+// 2. 仓库（继承 BaseRepository 获得 CRUD；@Query 自定义查询）
+@Dao
+public interface UserRepository extends BaseRepository<UserEntity, Long> {
+    @Query("SELECT id, user_name, age FROM users WHERE age > :age")
+    List<UserEntity> findByAgeGreaterThan(@Bind("age") int age);
+
+    @Query("SELECT id, user_name FROM users WHERE id = :id")
+    UserNameDto findNameById(@Bind("id") long id);   // record DTO 投影
+}
+
+// 3. 使用（Repositories 工厂编译期生成）
+UserRepository repo = Repositories.createUserRepository(dataSource);
+UserEntity user = repo.save(new UserEntity_Impl().name("qin").age(25));
+UserEntity found = repo.findById(1L);
+repo.update(found);
+repo.deleteById(1L);
 ```
 
-性能要求：条件 SQL 首次构建时组装一次并缓存；列名校验防注入；`LIMIT ? OFFSET ?`（PostgreSQL 语法）。
+## 基准结果（ORM vs 裸 JDBC，`-f 3 -i 5`，15 次测量）
 
-### ⬜ Phase 3：关联映射
-
-`@OneToOne` / `@OneToMany` / `@ManyToOne` / `@JoinColumn`；默认懒加载。**AOT 方案**：懒加载实现类由 annotation processor 编译期生成（非 JDK Proxy，Proxy 在 Native Image 需配置且有限制）；`fetch=EAGER` 急加载；仅外键关联。
-
-### ⬜ Phase 4：缓存层
-
-`Cache<K,V>`、`LruCache`（线程安全 LRU，默认 1000）、`CacheManager`、`@Cacheable(ttlSeconds)`；L1 按主键缓存；写操作自动失效。纯 Java 实现，AOT 天然兼容。
-
-### 🔄 Phase 5：JMH 性能基准（目标验收）— 初测完成
-
-`orm-bench` 模块已独立（不污染 orm 库），JMH 对比 **ORM vs 裸 JDBC**（同表、同操作、同一 HikariCP 池、双方都开 statement cache；裸 JDBC 用列索引读取；测量遵循标准写法）。
-
-**初测结果**（`-f 3 -i 5 -w 2`，15 次测量/操作）：
-
-| 操作 | ORM | 裸 JDBC | ORM/JDBC | 预算 |
+| 操作 | ORM（生成代码） | 裸 JDBC | ORM/JDBC | 状态 |
 |---|---:|---:|---:|---:|
-| Insert | 504,871 | 495,294 | **+1.9%** | ✅ |
-| FindAll | 1,506,608 | 1,588,127 | **-5.1%** | ✅ |
-| FindById | 1,426,876 | 1,545,399 | **-7.7%** | ⚠️ 边界 |
+| Insert | 529,893 | 512,190 | **+3.5%** | ✅ |
+| FindById | 1,558,908 | 1,560,231 | **-0.1%** | ✅ 持平 |
+| FindAll | 1,658,211 | 1,620,312 | **+2.3%** | ✅ |
 
-**优化历程**（从初始 -37% 到现状）：
-1. SQL 预生成 + 精确 binder/reader + statement cache（Phase 1）
-2. `newInstance()` 双路径：生成类直接构造 + 反射回退 MethodHandle（-37% → -27%）
-3. RowReader 改**列索引**读取（消除 findColumn 查找；-27% → -5% 附近）
-4. RowMapper 复用（缓存于 metadata）
+**结论**：编译期生成直写 JDBC = 手写 JDBC 性能（甚至略优）。目标 1 达成。
 
-**剩余差距**：`EntityMetadata.of()` 缓存查找、`withConnection` 间接层、lambda 调用等框架固有开销（~5-8%）。FindById 在 -4% ~ -8% 间跨轮浮动，接近验收标准。
+## 阶段状态
 
-**待办**：update/delete 基准补齐、完整配置终测（更多 fork/迭代）、达标后记录最终结果。
+- ✅ **Repository 架构重构**（原 Phase 1/1.5 全部替换）：实体接口 + @Dao 仓库 + 编译期生成（CRUD 12 方法 + @Query + DTO 投影 + Repositories 工厂）
+- ✅ **基准验证**：ORM vs 裸 JDBC 全部达标
+- ⬜ **Phase 3 关联映射**：实体是接口 → 懒加载用 `java.lang.reflect.Proxy`（无需字节码库）
+- ⬜ **Phase 4 缓存层**：L1 按主键缓存，写操作失效
+- ⬜ **Phase 6 GraalVM 验证**：native-image 构建 + native 下测试（生成代码零反射，预期直接通过）
 
-### ⬜ Phase 6：GraalVM Native Image 验证（AOT 验收）
+## 性能设计原则（源自本项目 JMH 基准结论）
 
-- 用 GraalVM 构建 native image（`native-image` 命令行或 Maven 插件）
-- 验证：native 镜像下 CRUD 集成测试通过、Phase 1.5 生成类被使用、无反射/MethodHandle 运行期错误
-- 记录需要的 native-image 配置（驱动注册、资源）
+1. 句柄/调用点必须可被 JIT 内联：`invokeExact` > `invoke`（慢 28-73%）
+2. `static final` 引用（instance 字段慢 17-84%）
+3. 类型决策编译期完成（精确 setter/getter，避免 `setObject`/`findColumn`）
+4. PreparedStatement 复用（statement cache）
+5. 生成代码是直写 JDBC —— 与手写等价是性能上限
 
-## 关键设计决策（已完成部分）
+## AOT 状态
 
-1. **连接所有权**：`Session.ownsDataSource` 标记池归属——Session 自建的池由 `close()` 关闭，外部传入的池由调用方管理
-2. **事务连接管理**：事务内操作复用单一连接且不被关闭（`withConnection` helper），提交/回滚后才归还
-3. **`EntityMetadata` 缓存**：`ConcurrentHashMap` 按类缓存
-4. **H2 内存库**：`DB_CLOSE_DELAY=-1` 保持库在 JVM 存活期间存在
-5. **双模式元数据**：AOT 优先编译期生成类，JVM 回退反射（保证两模式都可用，AOT 模式无反射）
-
-## 验证方式
-
-- 每个 Phase 完成后 `mvn test -pl orm` 集成测试通过
-- 测试库：内存 H2 + PostgreSQL 兼容模式（`BIGSERIAL` 自增等 PostgreSQL 方言）
-- **Phase 5 验收**：JMH 基准 ORM vs 裸 JDBC，框架开销 <5%
-- **Phase 6 验收**：GraalVM native image 构建成功 + native 下测试通过
+- 生成代码：纯静态方法调用、直接构造、无反射、无 MethodHandle、无 Class.forName → Native Image 友好
+- 待 Phase 6 实测验证

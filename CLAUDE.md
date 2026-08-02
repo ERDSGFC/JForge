@@ -45,12 +45,13 @@ mvn test -pl orm
 - **`ORM_PLAN.md`** — ORM 开发计划：分阶段、性能设计原则、验收标准（相对裸 JDBC 框架开销 <5%）
 - **`benchmark_run9_data.csv`** — 增强版 Run 9 的 350 个原始测量点
 
-### orm 模块
+### orm 模块（Repository 接口 + 编译期生成架构）
 
-- `com.qin.orm` 包结构：`annotation`（Table/Id/Column/GeneratedValue/Transient）、`core`（EntityMetadata：MethodHandle 访问器 + 缓存、SqlGenerator、RowMapper/DefaultRowMapper）、`Session`（CRUD + 事务）、`SessionFactory`
-- `EntityMetadata` 反射解析一次，`ConcurrentHashMap` 缓存，字段访问走 `MethodHandle`（无逐次反射）
-- `Session.ownsDataSource` 标记连接池所有权（Session 自建的池由 `Session.close()` 关闭；外部传入的不关闭）
-- 测试：`mvn test -pl orm`（内存 H2，`BIGSERIAL` 自增，PostgreSQL 模式）
+- **用户 API**：`@Table` 实体**接口**（getter + builder setter）+ `@Dao` 仓库接口继承 `BaseRepository<T, ID>`（com.qin.orm.core，用户定义）；自定义查询用 `@Query("SQL :param")` + `@Bind`
+- **`orm-processor`** 编译期生成直写 JDBC 的实现类：`EntityProcessor`（实体接口 → `Xxx_Impl`）、`RepositoryProcessor`（@Dao → `XxxRepository_Impl`，BaseRepository 12 个 CRUD 方法 + @Query 方法 + DTO record 投影）、`Repositories` 工厂（`Repositories.createXxxRepository(DataSource)`）
+- **性能**：生成代码与手写 JDBC 等价（基准实测 -0.1% ~ +3.5%）；运行时零反射 → AOT（GraalVM Native Image）友好
+- 注解在 `orm-annotation` 模块：`@Table/@Id/@Column/@GeneratedValue/@Transient`（可标注在接口方法上）+ `@Dao/@Query/@Bind/@ReturnGeneratedKeys`
+- 测试：`mvn test -pl orm`（内存 H2，`BIGSERIAL` 自增，PostgreSQL 模式）；详情见 `ORM_PLAN.md`
 
 ### 代码规范
 

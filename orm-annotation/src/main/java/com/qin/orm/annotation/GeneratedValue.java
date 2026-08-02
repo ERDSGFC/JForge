@@ -10,6 +10,6 @@ import java.lang.annotation.Target;
  * After insert, the generated key is written back into the entity field.
  */
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.FIELD)
+@Target({ElementType.FIELD, ElementType.METHOD})
 public @interface GeneratedValue {
 }
