@@ -1,11 +1,7 @@
 package com.qin.orm.core;
 
 import com.qin.orm.OrmException;
-import com.qin.orm.annotation.Column;
-import com.qin.orm.annotation.GeneratedValue;
-import com.qin.orm.annotation.Id;
-import com.qin.orm.annotation.Table;
-import com.qin.orm.annotation.Transient;
+import com.qin.orm.annotation.*;
 import com.qin.orm.generated.GeneratedMetadataRegistry;
 
 import java.lang.invoke.MethodHandle;
@@ -15,7 +11,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
 import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDate;

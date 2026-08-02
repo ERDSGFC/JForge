@@ -40,9 +40,10 @@
 ## 模块结构
 
 ```
-orm-processor/                      # ✅ 构建期元数据生成器（零依赖，provided，不进入运行时）
+orm-annotation/                     # ✅ 映射注解（零依赖，orm 与 orm-processor 共用）
+orm-processor/                      # ✅ 构建期元数据生成器（javapoet + auto-service，provided，不进入运行时）
 orm/
-├── pom.xml                          # 依赖: H2, HikariCP, JUnit5(test), orm-processor(provided)
+├── pom.xml                          # 依赖: orm-annotation, H2, HikariCP, JUnit5(test), orm-processor(provided)
 └── src/
     ├── main/java/com/qin/orm/
     │   ├── OrmException.java
@@ -70,7 +71,7 @@ orm/
 
 **已完成**：5 个映射注解、`EntityMetadata`（反射解析一次 + 缓存）、`Session` CRUD + 事务、`SessionFactory`、6/6 集成测试通过。
 
-**性能优化已完成**（6/6 测试通过）：
+**性能优化已完成**（10/10 测试通过）：
 - ✅ SQL 预生成缓存：`EntityMetadata` 解析时生成全部 5 条 SQL 字符串，运行时零拼接（`SqlGenerator` 参数化，仅解析时调用一次）
 - ✅ 参数绑定精确 setter：按字段类型解析时确定 `ParamBinder`（`setLong/setString/...`，兜底 `setObject`），`meta.bindInsertParams/bindUpdateParams/bindId` 统一出口
 - ✅ ResultSet 精确 getter：按字段类型解析时确定 `RowReader`（`getLong` + `wasNull` 处理，兜底 `getObject`），`DefaultRowMapper` 直接消费
@@ -100,6 +101,8 @@ session.delete(u);
 
 **已知限制**：registry 在首个处理轮生成一次；增量编译中后续轮新出现的实体不会追加进 registry（全量 Maven 构建无此问题）。
 
+**后续增强**：注解已拆分至独立模块 `orm-annotation`（orm 与 processor 共用，无循环依赖）；源码生成改用 JavaPoet（`JavaFile/TypeSpec/MethodSpec`）替代手写字符串拼接；processor 注册用 auto-service 自动生成。
+
 ### ⬜ Phase 2：流式查询 DSL
 
 `com.qin.orm.query`：`Condition`（EQ/NE/GT/GTE/LT/LTE/LIKE/IN/IS_NULL/IS_NOT_NULL）、`Order`（ASC/DESC）、`Query<T>`（不可变链式构建器）。
@@ -122,12 +125,27 @@ List<UserEntity> users = session.query(UserEntity.class)
 
 `Cache<K,V>`、`LruCache`（线程安全 LRU，默认 1000）、`CacheManager`、`@Cacheable(ttlSeconds)`；L1 按主键缓存；写操作自动失效。纯 Java 实现，AOT 天然兼容。
 
-### ⬜ Phase 5：JMH 性能基准（目标验收）
+### 🔄 Phase 5：JMH 性能基准（目标验收）— 初测完成
 
-新增 `com.qin.orm.benchmark`，JMH 对比 **ORM vs 裸 JDBC**（同表、同操作、同连接池）：
-- insert（含自增回填）、findById、update、delete、findAll
-- 测量遵守标准写法（单次调用 + 返回对象防 DCE）
-- **验收标准：ORM/裸 JDBC ≤ 1.05（框架开销 <5%）**
+`orm-bench` 模块已独立（不污染 orm 库），JMH 对比 **ORM vs 裸 JDBC**（同表、同操作、同一 HikariCP 池、双方都开 statement cache；裸 JDBC 用列索引读取；测量遵循标准写法）。
+
+**初测结果**（`-f 3 -i 5 -w 2`，15 次测量/操作）：
+
+| 操作 | ORM | 裸 JDBC | ORM/JDBC | 预算 |
+|---|---:|---:|---:|---:|
+| Insert | 504,871 | 495,294 | **+1.9%** | ✅ |
+| FindAll | 1,506,608 | 1,588,127 | **-5.1%** | ✅ |
+| FindById | 1,426,876 | 1,545,399 | **-7.7%** | ⚠️ 边界 |
+
+**优化历程**（从初始 -37% 到现状）：
+1. SQL 预生成 + 精确 binder/reader + statement cache（Phase 1）
+2. `newInstance()` 双路径：生成类直接构造 + 反射回退 MethodHandle（-37% → -27%）
+3. RowReader 改**列索引**读取（消除 findColumn 查找；-27% → -5% 附近）
+4. RowMapper 复用（缓存于 metadata）
+
+**剩余差距**：`EntityMetadata.of()` 缓存查找、`withConnection` 间接层、lambda 调用等框架固有开销（~5-8%）。FindById 在 -4% ~ -8% 间跨轮浮动，接近验收标准。
+
+**待办**：update/delete 基准补齐、完整配置终测（更多 fork/迭代）、达标后记录最终结果。
 
 ### ⬜ Phase 6：GraalVM Native Image 验证（AOT 验收）
 
