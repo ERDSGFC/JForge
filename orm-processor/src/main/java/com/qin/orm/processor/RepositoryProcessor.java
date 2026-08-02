@@ -79,14 +79,11 @@ public class RepositoryProcessor extends AbstractProcessor {
         if (roundEnv.processingOver()) {
             return true;
         }
-        for (Element root : roundEnv.getRootElements()) {
-            if (root.getKind() != ElementKind.INTERFACE) {
+        for (Element element : roundEnv.getElementsAnnotatedWith(Dao.class)) {
+            if (element.getKind() != ElementKind.INTERFACE) {
                 continue;
             }
-            TypeElement typeElement = (TypeElement) root;
-            if (typeElement.getAnnotation(Dao.class) != null) {
-                processDao(typeElement);
-            }
+            processDao((TypeElement) element);
         }
         if (daos.size() != lastFactoriesSize) {
             writeFactories();

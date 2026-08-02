@@ -43,7 +43,7 @@ public class EntityProcessor extends AbstractProcessor {
      */
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-        for (Element root : roundEnv.getRootElements()) {
+        for (Element root : roundEnv.getElementsAnnotatedWith(Table.class)) {
             if (root.getKind() != ElementKind.INTERFACE) {
                 continue;
             }
