@@ -1,41 +1,18 @@
 package com.qin.orm.processor;
 
 import com.google.auto.service.AutoService;
-import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.CodeBlock;
-import com.palantir.javapoet.FieldSpec;
-import com.palantir.javapoet.JavaFile;
-import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.ParameterizedTypeName;
-import com.palantir.javapoet.TypeName;
-import com.palantir.javapoet.TypeSpec;
-import com.qin.orm.annotation.Bind;
-import com.qin.orm.annotation.Dao;
-import com.qin.orm.annotation.Query;
-import com.qin.orm.annotation.ReturnGeneratedKeys;
-import com.qin.orm.annotation.Table;
+import com.palantir.javapoet.*;
+import com.qin.orm.annotation.*;
 
-import javax.annotation.processing.AbstractProcessor;
-import javax.annotation.processing.RoundEnvironment;
-import javax.annotation.processing.SupportedAnnotationTypes;
-import javax.annotation.processing.SupportedSourceVersion;
+import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
-import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
-import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.Modifier;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.VariableElement;
+import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Generates the concrete implementation for each {@code @Dao} repository interface:
@@ -50,9 +27,17 @@ public class RepositoryProcessor extends AbstractProcessor {
 
     private static final String BASE_REPOSITORY = "com.qin.orm.core.BaseRepository";
     private static final ClassName ORM_EXCEPTION = ClassName.get("com.qin.orm", "OrmException");
+    private static final ClassName TX_MANAGER = ClassName.get("com.qin.orm", "TransactionManager");
 
     private final List<DaoInfo> daos = new ArrayList<>();
     private int lastFactoriesSize;
+    private OrmConfigHelper configHelper;
+
+    @Override
+    public synchronized void init(ProcessingEnvironment processingEnv) {
+        super.init(processingEnv);
+        configHelper = new OrmConfigHelper(processingEnv);
+    }
 
     private static final class DaoInfo {
         TypeElement element;
@@ -132,7 +117,7 @@ public class RepositoryProcessor extends AbstractProcessor {
             return;
         }
         EntityModel model = EntityModel.parse(entityElement, processingEnv.getTypeUtils(),
-                Diagnostic.Kind.ERROR, processingEnv.getMessager());
+                Diagnostic.Kind.ERROR, processingEnv.getMessager(), configHelper);
         if (model == null) {
             return;
         }
@@ -167,7 +152,7 @@ public class RepositoryProcessor extends AbstractProcessor {
         ClassName daoClass = ClassName.get(info.daoPackage, info.daoSimpleName);
         ClassName dataSource = ClassName.get("javax.sql", "DataSource");
         ClassName entityImpl = ClassName.get(info.model.entityPackage(),
-                EntityModel.implNameOf(info.model.entitySimpleName()));
+                EntityModel.implNameOf(info.model.entitySimpleName(), info.model.implSuffix()));
         ClassName connection = ClassName.get("java.sql", "Connection");
         ClassName preparedStatement = ClassName.get("java.sql", "PreparedStatement");
         ClassName resultSet = ClassName.get("java.sql", "ResultSet");
@@ -923,11 +908,11 @@ public class RepositoryProcessor extends AbstractProcessor {
             boolean isList) {
         TypeElement entityElement = (TypeElement) ((DeclaredType) entityType).asElement();
         EntityModel model = EntityModel.parse(entityElement, processingEnv.getTypeUtils(),
-                Diagnostic.Kind.ERROR, processingEnv.getMessager());
+                Diagnostic.Kind.ERROR, processingEnv.getMessager(), configHelper);
         if (model == null) {
             return;
         }
-        ClassName impl = ClassName.get(model.entityPackage(), EntityModel.implNameOf(model.entitySimpleName()));
+        ClassName impl = ClassName.get(model.entityPackage(), EntityModel.implNameOf(model.entitySimpleName(), model.implSuffix()));
         if (isList) {
             spec.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class),
                     TypeNameUtils.toTypeName(entityType.toString()), ClassName.get("java.util", "ArrayList"));

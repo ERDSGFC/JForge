@@ -23,10 +23,11 @@ public final class EntityModel {
      * Returns the generated impl class name for an entity interface.
      *
      * @param entitySimpleName the simple name of the entity interface (e.g. {@code UserEntity})
+     * @param suffix the configured impl suffix (e.g. {@code "_Impl"})
      * @return the impl simple name (e.g. {@code UserEntity_Impl})
      */
-    public static String implNameOf(String entitySimpleName) {
-        return entitySimpleName + "_Impl";
+    public static String implNameOf(String entitySimpleName, String suffix) {
+        return entitySimpleName + suffix;
     }
 
     private TypeElement element;
@@ -34,6 +35,7 @@ public final class EntityModel {
     private final List<ColumnModel> columns = new ArrayList<>();
     private ColumnModel idColumn;
     private boolean idGenerated;
+    private OrmConfigHelper config;
 
     public static final class ColumnModel {
         final String fieldName;
@@ -62,12 +64,14 @@ public final class EntityModel {
      * @param types     the type utilities (unused placeholder for future resolution)
      * @param errorKind the diagnostic kind used to report mapping errors
      * @param messager  the annotation-processing messager for compile-time errors
+     * @param config    the ORM configuration helper for the entity's package
      * @return the parsed model, or {@code null} if the entity is not valid (error reported)
      */
     public static EntityModel parse(TypeElement entity, Types types, Diagnostic.Kind errorKind,
-            javax.annotation.processing.Messager messager) {
+            javax.annotation.processing.Messager messager, OrmConfigHelper config) {
         EntityModel model = new EntityModel();
         model.element = entity;
+        model.config = config;
         Table table = entity.getAnnotation(Table.class);
         if (table == null || table.name().isEmpty()) {
             messager.printMessage(errorKind, "@Table(name=...) is required on " + entity.getQualifiedName(), entity);
@@ -125,7 +129,9 @@ public final class EntityModel {
             Diagnostic.Kind errorKind) {
         String fieldName = method.getSimpleName().toString();
         Column column = method.getAnnotation(Column.class);
-        String columnName = column != null ? column.name() : fieldName;
+        String columnName = column != null
+                ? column.name()                                         // explicit @Column
+                : config.columnName(element, fieldName);               // naming strategy
         boolean isId = method.getAnnotation(Id.class) != null;
         boolean generated = method.getAnnotation(GeneratedValue.class) != null;
 
@@ -179,9 +185,21 @@ public final class EntityModel {
         return dot < 0 ? "" : qualified.substring(0, dot);
     }
 
+    /** The active impl suffix (from @OrmConfig or default "_Impl"). */
+    public String implSuffix() {
+        return config.implSuffix(element);
+    }
+
     /** Full qualified name of the generated impl class. */
     public String implQualifiedName() {
         String pkg = entityPackage();
-        return pkg.isEmpty() ? implNameOf(entitySimpleName()) : pkg + "." + implNameOf(entitySimpleName());
+        String suffix = implSuffix();
+        String name = implNameOf(entitySimpleName(), suffix);
+        return pkg.isEmpty() ? name : pkg + "." + name;
+    }
+
+    /** Package of the entity interface (or custom generated-package from @OrmConfig). */
+    public String generatedPackage() {
+        return config.generatedPackage(element);
     }
 }

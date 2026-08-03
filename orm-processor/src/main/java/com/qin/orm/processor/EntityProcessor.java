@@ -1,19 +1,10 @@
 package com.qin.orm.processor;
 
 import com.google.auto.service.AutoService;
-import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.FieldSpec;
-import com.palantir.javapoet.JavaFile;
-import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.TypeName;
-import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.*;
 import com.qin.orm.annotation.Table;
 
-import javax.annotation.processing.AbstractProcessor;
-import javax.annotation.processing.ProcessingEnvironment;
-import javax.annotation.processing.RoundEnvironment;
-import javax.annotation.processing.SupportedAnnotationTypes;
-import javax.annotation.processing.SupportedSourceVersion;
+import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -41,6 +32,14 @@ public class EntityProcessor extends AbstractProcessor {
      * @param roundEnv    the current processing round
      * @return {@code true} (the @Table annotation is claimed by this processor)
      */
+    private OrmConfigHelper configHelper;
+
+    @Override
+    public synchronized void init(ProcessingEnvironment processingEnv) {
+        super.init(processingEnv);
+        configHelper = new OrmConfigHelper(processingEnv);
+    }
+
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         for (Element root : roundEnv.getElementsAnnotatedWith(Table.class)) {
@@ -62,13 +61,18 @@ public class EntityProcessor extends AbstractProcessor {
      */
     private void processEntity(TypeElement entity) {
         EntityModel model = EntityModel.parse(entity, processingEnv.getTypeUtils(),
-                Diagnostic.Kind.ERROR, processingEnv.getMessager());
+                Diagnostic.Kind.ERROR, processingEnv.getMessager(), configHelper);
         if (model == null) {
             return;
         }
         TypeSpec typeSpec = buildImpl(model);
+        // Package from @OrmConfig.generatedPackage (or same package as entity).
+        String outputPkg = model.generatedPackage();
+        if (outputPkg.isEmpty()) {
+            outputPkg = model.entityPackage();
+        }
         try {
-            JavaFile.builder(model.entityPackage(), typeSpec)
+            JavaFile.builder(outputPkg, typeSpec)
                     .addFileComment("Generated at compile time by EntityProcessor. Do not edit.")
                     .build()
                     .writeTo(processingEnv.getFiler());
@@ -86,7 +90,8 @@ public class EntityProcessor extends AbstractProcessor {
      */
     static TypeSpec buildImpl(EntityModel model) {
         ClassName entityClass = ClassName.get(model.entityPackage(), model.entitySimpleName());
-        TypeSpec.Builder builder = TypeSpec.classBuilder(EntityModel.implNameOf(model.entitySimpleName()))
+        TypeSpec.Builder builder = TypeSpec.classBuilder(
+                EntityModel.implNameOf(model.entitySimpleName(), model.implSuffix()))
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .addSuperinterface(entityClass);
 
