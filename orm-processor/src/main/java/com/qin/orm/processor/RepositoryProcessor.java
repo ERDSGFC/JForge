@@ -169,6 +169,18 @@ public class RepositoryProcessor extends AbstractProcessor {
                         .addStatement("this.dataSource = dataSource")
                         .build());
 
+        // Transaction-aware connection helpers.
+        builder.addMethod(MethodSpec.methodBuilder("getConnection")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(connection)
+                .addStatement("return $T.connection(dataSource)", TX_MANAGER)
+                .build());
+        builder.addMethod(MethodSpec.methodBuilder("releaseConnection")
+                .addModifiers(Modifier.PRIVATE)
+                .addParameter(connection, "conn")
+                .addStatement("$T.release(conn)", TX_MANAGER)
+                .build());
+
         // Shared private row mapper for entity rows (column order = field order).
         builder.addMethod(rowMapperMethod(info, entityImpl, sqlException, resultSet));
         builder.addMethod(countByIdMethod(info, sqlException, connection, preparedStatement, resultSet));
@@ -226,8 +238,9 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .returns(TypeName.LONG)
                 .addParameter(TypeNameUtils.toTypeName(info.idTypeName), "id")
                 .addException(sqlException);
-        method.beginControlFlow("try ($T conn = dataSource.getConnection(); $T ps = conn.prepareStatement($S))",
-                connection, preparedStatement,
+        method.addStatement("$T conn = getConnection()", connection);
+        method.beginControlFlow("try");
+        method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement,
                 "SELECT COUNT(*) FROM " + info.model.tableName() + " WHERE " + info.model.idColumn().columnName + "=?");
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
         method.addCode("\n");
@@ -237,6 +250,8 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.endControlFlow();
         method.nextControlFlow("catch ($T e)", sqlException);
         method.addStatement("throw new $T($S, e)", ORM_EXCEPTION, "count failed");
+        method.nextControlFlow("finally");
+        method.addStatement("releaseConnection(conn)");
         method.endControlFlow();
         return method.build();
     }
@@ -314,12 +329,12 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(info.entityType)
                 .addParameter(info.entityType, "entity");
+        beginTxBlock(method, connection);
         if (model.idGenerated()) {
-            method.beginControlFlow("try ($T conn = dataSource.getConnection(); $T ps = conn.prepareStatement($S, $T.RETURN_GENERATED_KEYS))",
-                    connection, preparedStatement, sql, statement);
+            method.addStatement("$T ps = conn.prepareStatement($S, $T.RETURN_GENERATED_KEYS)",
+                    preparedStatement, sql, statement);
         } else {
-            method.beginControlFlow("try ($T conn = dataSource.getConnection(); $T ps = conn.prepareStatement($S))",
-                    connection, preparedStatement, sql);
+            method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
         }
         int index = 1;
         for (EntityModel.ColumnModel column : insertColumns) {
@@ -336,9 +351,7 @@ public class RepositoryProcessor extends AbstractProcessor {
             method.endControlFlow();
         }
         method.addStatement("return entity");
-        method.nextControlFlow("catch ($T e)", sqlException);
-        method.addStatement("throw new $T($S, e)", ORM_EXCEPTION, "save failed");
-        method.endControlFlow();
+        endTxBlock(method, sqlException, "save");
         return method.build();
     }
 
@@ -418,7 +431,7 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
                 .addParameter(info.idType, "id");
-        method.beginControlFlow("try ($T conn = dataSource.getConnection(); $T ps = conn.prepareStatement($S))",
+        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement($S))",
                 connection, preparedStatement, sql);
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
         method.addCode("\n");
@@ -459,7 +472,7 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.addStatement("sql.append($S)", "?");
         method.endControlFlow();
         method.addStatement("sql.append($S)", ")");
-        method.beginControlFlow("try ($T conn = dataSource.getConnection(); $T ps = conn.prepareStatement(sql.toString()))",
+        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement(sql.toString()))",
                 connection, preparedStatement);
         method.addStatement("int i = 1");
         method.beginControlFlow("for ($T id : ids)", info.idType);
@@ -508,7 +521,7 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
                 .addParameter(info.entityType, "entity");
-        method.beginControlFlow("try ($T conn = dataSource.getConnection(); $T ps = conn.prepareStatement($S))",
+        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement($S))",
                 connection, preparedStatement, sql);
         int index = 1;
         for (EntityModel.ColumnModel column : updateColumns) {
@@ -546,7 +559,7 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(info.entityType)
                 .addParameter(info.idType, "id");
-        method.beginControlFlow("try ($T conn = dataSource.getConnection(); $T ps = conn.prepareStatement($S))",
+        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement($S))",
                 connection, preparedStatement, sql);
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
         method.addCode("\n");
@@ -594,7 +607,7 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.addStatement("sql.append($S)", "?");
         method.endControlFlow();
         method.addStatement("sql.append($S)", ")");
-        method.beginControlFlow("try ($T conn = dataSource.getConnection(); $T ps = conn.prepareStatement(sql.toString()))",
+        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement(sql.toString()))",
                 connection, preparedStatement);
         method.addStatement("int i = 1");
         method.beginControlFlow("for ($T id : ids)", info.idType);
@@ -635,7 +648,7 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType));
-        method.beginControlFlow("try ($T conn = dataSource.getConnection(); $T ps = conn.prepareStatement($S))",
+        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement($S))",
                 connection, preparedStatement, sql);
         method.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class), info.entityType,
                 ClassName.get("java.util", "ArrayList"));
@@ -668,7 +681,7 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.LONG);
-        method.beginControlFlow("try ($T conn = dataSource.getConnection(); $T ps = conn.prepareStatement($S))",
+        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement($S))",
                 connection, preparedStatement, sql);
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
         method.addStatement("rs.next()");
@@ -779,12 +792,12 @@ public class RepositoryProcessor extends AbstractProcessor {
         }
 
         boolean generatedKeys = method.getAnnotation(ReturnGeneratedKeys.class) != null;
+        beginTxBlock(spec, connection);
         if (generatedKeys) {
-            spec.beginControlFlow("try ($T conn = dataSource.getConnection(); $T ps = conn.prepareStatement($S, $T.RETURN_GENERATED_KEYS))",
-                    connection, preparedStatement, sql, statement);
+            spec.addStatement("$T ps = conn.prepareStatement($S, $T.RETURN_GENERATED_KEYS)",
+                    preparedStatement, sql, statement);
         } else {
-            spec.beginControlFlow("try ($T conn = dataSource.getConnection(); $T ps = conn.prepareStatement($S))",
-                    connection, preparedStatement, sql);
+            spec.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
         }
 
         for (int i = 0; i < placeholders.size(); i++) {
@@ -1081,6 +1094,22 @@ public class RepositoryProcessor extends AbstractProcessor {
     private static String packageOf(String qualifiedName) {
         int dot = qualifiedName.lastIndexOf('.');
         return dot < 0 ? "" : qualifiedName.substring(0, dot);
+    }
+
+    // ---- Tx block helpers ---------------------------------------------------
+
+    /** Starts a tx-aware try block in the generated method: {@code Connection conn = getConnection(); try \{}. */
+    private MethodSpec.Builder beginTxBlock(MethodSpec.Builder method, ClassName connection) {
+        return method.addStatement("$T conn = getConnection()", connection).beginControlFlow("try");
+    }
+
+    /** Closes the tx-aware try block with catch + finally. */
+    private void endTxBlock(MethodSpec.Builder method, ClassName sqlException, String operation) {
+        method.nextControlFlow("catch ($T e)", sqlException)
+                .addStatement("throw new $T($S, e)", ORM_EXCEPTION, operation + " failed")
+                .nextControlFlow("finally")
+                .addStatement("releaseConnection(conn)")
+                .endControlFlow();
     }
 
     /**

@@ -140,6 +140,18 @@ public final class SqlCodegen {
         return out.toString();
     }
 
+    /** Expression for the transaction-aware private {@code getConnection()} call. */
+    public static CodeBlock acquireConnection() {
+        return CodeBlock.of("$T.current().connection(dataSource)",
+                ClassName.get("com.qin.orm", "TransactionManager"));
+    }
+
+    /** Statement for releasing a connection: {@code TransactionManager.current().release(conn)}. */
+    public static CodeBlock releaseConnection() {
+        return CodeBlock.of("$T.current().release(conn)",
+                ClassName.get("com.qin.orm", "TransactionManager"));
+    }
+
     private static String capitalize(String s) {
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
