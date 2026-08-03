@@ -109,4 +109,14 @@ public interface BaseRepository<T, ID> {
      * @return {@code true} if a row with the id exists
      */
     boolean existsById(ID id);
+
+    /**
+     * Creates a new empty entity with all fields at their default values.
+     * Useful as a factory when callers cannot (or must not) reference the
+     * generated impl class directly.
+     *
+     * @return a new entity instance of type {@code T}
+     */
+    T createEntity();
+
 }

@@ -158,7 +158,7 @@ public class RepositoryProcessor extends AbstractProcessor {
 
     /**
      * Assembles the repository implementation class: data source field, constructor,
-     * shared row mapper, count helper, the 12 CRUD methods, and the {@code @Query} methods.
+     * shared row mapper, count helper, the 13 CRUD methods, and the {@code @Query} methods.
      *
      * @param info the parsed repository info
      * @return the generated class specification
@@ -257,7 +257,7 @@ public class RepositoryProcessor extends AbstractProcessor {
     }
 
     /**
-     * Builds all 12 CRUD methods inherited from {@code BaseRepository}.
+     * Builds all 13 CRUD methods inherited from {@code BaseRepository}.
      *
      * @param info             the repository info
      * @param entityImpl       the generated entity impl class
@@ -284,7 +284,25 @@ public class RepositoryProcessor extends AbstractProcessor {
         methods.add(findAllMethod(info, entityImpl, connection, preparedStatement, resultSet, sqlException));
         methods.add(countMethod(info, connection, preparedStatement, resultSet, sqlException));
         methods.add(existsByIdMethod(info, connection, preparedStatement, sqlException));
+        methods.add(createEntityMethod(info, entityImpl));
         return methods;
+    }
+
+    /**
+     * Builds {@code createEntity()}: returns a new empty entity impl instance —
+     * the entity factory for callers that must not reference the impl class directly.
+     *
+     * @param info       the repository info
+     * @param entityImpl the generated entity impl class
+     * @return the createEntity method specification
+     */
+    private MethodSpec createEntityMethod(DaoInfo info, ClassName entityImpl) {
+        return MethodSpec.methodBuilder("createEntity")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(info.entityType)
+                .addStatement("return new $T()", entityImpl)
+                .build();
     }
 
     /**

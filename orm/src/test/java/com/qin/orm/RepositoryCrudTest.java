@@ -46,7 +46,7 @@ class RepositoryCrudTest {
 
     @Test
     void saveWritesBackGeneratedId() {
-        UserEntity user = new UserEntity_Impl()
+        UserEntity user = repo.createEntity()
                 .name("qin")
                 .age(25);
 
@@ -59,23 +59,23 @@ class RepositoryCrudTest {
 
     @Test
     void findByIdAndUpdate() {
-        UserEntity user = new UserEntity_Impl().name("qin").age(25);
+        UserEntity user = repo.createEntity().name("qin").age(25);
         repo.save(user);
 
         UserEntity found = repo.findById(user.id());
         assertNotNull(found);
         assertEquals("qin", found.name());
 
-        boolean updated = repo.update(new UserEntity_Impl().id(user.id()).name("qin").age(26));
+        boolean updated = repo.update(repo.createEntity().id(user.id()).name("qin").age(26));
         assertTrue(updated);
         assertEquals(26, repo.findById(user.id()).age());
     }
 
     @Test
     void findAllAndDelete() {
-        repo.save(new UserEntity_Impl().name("a").age(1));
-        repo.save(new UserEntity_Impl().name("b").age(2));
-        repo.save(new UserEntity_Impl().name("c").age(3));
+        repo.save(repo.createEntity().name("a").age(1));
+        repo.save(repo.createEntity().name("b").age(2));
+        repo.save(repo.createEntity().name("c").age(3));
 
         assertEquals(3, repo.findAll().size());
         assertTrue(repo.existsById(1L));
@@ -89,9 +89,9 @@ class RepositoryCrudTest {
     @Test
     void batchOperations() {
         repo.save(List.of(
-                new UserEntity_Impl().name("a").age(1),
-                new UserEntity_Impl().name("b").age(2),
-                new UserEntity_Impl().name("c").age(3)));
+                repo.createEntity().name("a").age(1),
+                repo.createEntity().name("b").age(2),
+                repo.createEntity().name("c").age(3)));
 
         assertEquals(3, repo.findByIds(List.of(1L, 2L, 3L)).size());
         assertEquals(2, repo.deleteByIds(List.of(1L, 3L)));
@@ -103,11 +103,21 @@ class RepositoryCrudTest {
     }
 
     @Test
+    void createEntityReturnsEmptyInstance() {
+        UserEntity user = repo.createEntity();
+
+        assertNotNull(user);
+        assertNull(user.id());
+        assertNull(user.name());
+        assertNull(user.age());
+    }
+
+    @Test
     void queryFullEntityByCondition() {
         repo.save(List.of(
-                new UserEntity_Impl().name("a").age(10),
-                new UserEntity_Impl().name("b").age(20),
-                new UserEntity_Impl().name("c").age(30)));
+                repo.createEntity().name("a").age(10),
+                repo.createEntity().name("b").age(20),
+                repo.createEntity().name("c").age(30)));
 
         List<UserEntity> adults = repo.findByAgeGreaterThan(15);
 
@@ -117,7 +127,7 @@ class RepositoryCrudTest {
 
     @Test
     void queryDtoProjection() {
-        repo.save(new UserEntity_Impl().name("qin").age(25));
+        repo.save(repo.createEntity().name("qin").age(25));
 
         UserNameDto dto = repo.findNameById(1L);
 
@@ -129,8 +139,8 @@ class RepositoryCrudTest {
     @Test
     void queryScalarAndUpdate() {
         repo.save(List.of(
-                new UserEntity_Impl().name("a").age(10),
-                new UserEntity_Impl().name("b").age(20)));
+                repo.createEntity().name("a").age(10),
+                repo.createEntity().name("b").age(20)));
 
         assertEquals(1, repo.countByAge(10));
 

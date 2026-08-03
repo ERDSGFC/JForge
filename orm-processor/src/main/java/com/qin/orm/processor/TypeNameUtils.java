@@ -20,26 +20,17 @@ public final class TypeNameUtils {
         if (typeName.equals("byte[]")) {
             return ArrayTypeName.of(TypeName.BYTE);
         }
-        switch (typeName) {
-            case "byte":
-                return TypeName.BYTE;
-            case "short":
-                return TypeName.SHORT;
-            case "int":
-                return TypeName.INT;
-            case "long":
-                return TypeName.LONG;
-            case "float":
-                return TypeName.FLOAT;
-            case "double":
-                return TypeName.DOUBLE;
-            case "boolean":
-                return TypeName.BOOLEAN;
-            case "char":
-                return TypeName.CHAR;
-            default:
-                return ClassName.bestGuess(typeName);
-        }
+        return switch (typeName) {
+            case "byte" -> TypeName.BYTE;
+            case "short" -> TypeName.SHORT;
+            case "int" -> TypeName.INT;
+            case "long" -> TypeName.LONG;
+            case "float" -> TypeName.FLOAT;
+            case "double" -> TypeName.DOUBLE;
+            case "boolean" -> TypeName.BOOLEAN;
+            case "char" -> TypeName.CHAR;
+            default -> ClassName.bestGuess(typeName);
+        };
     }
 
     /**
