@@ -17,8 +17,18 @@ public interface TransactionManager {
     /** Returns the current transaction connection, or a fresh auto-commit connection from the pool. */
     Connection connection(DataSource dataSource);
 
-    /** Releases a connection obtained via {@link #connection(DataSource)}. */
-    void release(Connection conn);
+    /**
+     * Releases a connection obtained via {@link #connection(DataSource)}.
+     *
+     * <p>The data source is passed so a Spring-backed implementation can delegate
+     * to {@code DataSourceUtils.releaseConnection(conn, dataSource)} — which needs
+     * the data source to decide whether the connection is the transaction-bound one
+     * (kept open for the transaction) or a pooled connection to hand back.</p>
+     *
+     * @param conn       the connection to release
+     * @param dataSource the data source the connection was obtained from
+     */
+    void release(Connection conn, DataSource dataSource);
 
     /** Starts a new transaction. */
     void begin(DataSource dataSource);

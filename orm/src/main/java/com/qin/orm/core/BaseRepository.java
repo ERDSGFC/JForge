@@ -11,10 +11,14 @@ import java.util.List;
  * {@code @Dao} interface, inheriting the CRUD behaviour below and adding derived
  * query methods declared on the interface (e.g. {@code findByAgeGreaterThan}).</p>
  *
+ * <p>Every repository also exposes the {@link TransactionOperations} contract —
+ * programmatic {@code beginTransaction/commit/rollback} and the {@code execute}
+ * template — so multi-statement work can run inside a single transaction.</p>
+ *
  * @param <T>  the entity type
  * @param <ID> the primary-key type
  */
-public interface BaseRepository<T, ID> {
+public interface BaseRepository<T, ID> extends TransactionOperations {
 
     /**
      * Inserts the entity and writes back a generated id into it.

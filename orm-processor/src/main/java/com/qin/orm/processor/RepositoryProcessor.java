@@ -173,13 +173,18 @@ public class RepositoryProcessor extends AbstractProcessor {
         builder.addMethod(MethodSpec.methodBuilder("getConnection")
                 .addModifiers(Modifier.PRIVATE)
                 .returns(connection)
-                .addStatement("return $T.connection(dataSource)", TX_MANAGER)
+                .addStatement("return $T.current().connection(dataSource)", TX_MANAGER)
                 .build());
         builder.addMethod(MethodSpec.methodBuilder("releaseConnection")
                 .addModifiers(Modifier.PRIVATE)
                 .addParameter(connection, "conn")
-                .addStatement("$T.release(conn)", TX_MANAGER)
+                .addStatement("$T.current().release(conn, dataSource)", TX_MANAGER)
                 .build());
+
+        // Programmatic transaction methods inherited from TransactionOperations.
+        for (MethodSpec method : txMethods()) {
+            builder.addMethod(method);
+        }
 
         // Shared private row mapper for entity rows (column order = field order).
         builder.addMethod(rowMapperMethod(info, entityImpl, sqlException, resultSet));
@@ -254,6 +259,40 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.addStatement("releaseConnection(conn)");
         method.endControlFlow();
         return method.build();
+    }
+
+    /**
+     * Builds the four programmatic-transaction methods inherited from
+     * {@code TransactionOperations}: begin/commit/rollback/isTransactionActive,
+     * delegating to the global {@link TransactionManager}. The {@code execute}
+     * template is a {@code default} interface method and therefore needs no
+     * generated implementation.
+     *
+     * @return the four transaction method specifications
+     */
+    private List<MethodSpec> txMethods() {
+        return List.of(
+                MethodSpec.methodBuilder("beginTransaction")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .addStatement("$T.current().begin(dataSource)", TX_MANAGER)
+                        .build(),
+                MethodSpec.methodBuilder("commit")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .addStatement("$T.current().commit()", TX_MANAGER)
+                        .build(),
+                MethodSpec.methodBuilder("rollback")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .addStatement("$T.current().rollback()", TX_MANAGER)
+                        .build(),
+                MethodSpec.methodBuilder("isTransactionActive")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(TypeName.BOOLEAN)
+                        .addStatement("return $T.current().isActive()", TX_MANAGER)
+                        .build());
     }
 
     /**
@@ -431,8 +470,8 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
                 .addParameter(info.idType, "id");
-        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement($S))",
-                connection, preparedStatement, sql);
+        beginTxBlock(method, connection);
+        method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
@@ -472,8 +511,8 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.addStatement("sql.append($S)", "?");
         method.endControlFlow();
         method.addStatement("sql.append($S)", ")");
-        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement(sql.toString()))",
-                connection, preparedStatement);
+        beginTxBlock(method, connection);
+        method.addStatement("$T ps = conn.prepareStatement(sql.toString())", preparedStatement);
         method.addStatement("int i = 1");
         method.beginControlFlow("for ($T id : ids)", info.idType);
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", "i"));
@@ -521,8 +560,8 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
                 .addParameter(info.entityType, "entity");
-        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement($S))",
-                connection, preparedStatement, sql);
+        beginTxBlock(method, connection);
+        method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
         int index = 1;
         for (EntityModel.ColumnModel column : updateColumns) {
             method.addCode(SqlCodegen.bindParam(column.typeName, "entity." + column.getterName + "()", index++));
@@ -559,8 +598,8 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(info.entityType)
                 .addParameter(info.idType, "id");
-        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement($S))",
-                connection, preparedStatement, sql);
+        beginTxBlock(method, connection);
+        method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
         method.addCode("\n");
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
@@ -607,8 +646,8 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.addStatement("sql.append($S)", "?");
         method.endControlFlow();
         method.addStatement("sql.append($S)", ")");
-        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement(sql.toString()))",
-                connection, preparedStatement);
+        beginTxBlock(method, connection);
+        method.addStatement("$T ps = conn.prepareStatement(sql.toString())", preparedStatement);
         method.addStatement("int i = 1");
         method.beginControlFlow("for ($T id : ids)", info.idType);
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", "i"));
@@ -648,8 +687,8 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType));
-        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement($S))",
-                connection, preparedStatement, sql);
+        beginTxBlock(method, connection);
+        method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
         method.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class), info.entityType,
                 ClassName.get("java.util", "ArrayList"));
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
@@ -681,8 +720,8 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.LONG);
-        beginTxBlock(method, connection); method.addStatement("$T ps = conn.prepareStatement($S))",
-                connection, preparedStatement, sql);
+        beginTxBlock(method, connection);
+        method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
         method.addStatement("rs.next()");
         method.addStatement("return rs.getLong(1)");

@@ -146,9 +146,9 @@ public final class SqlCodegen {
                 ClassName.get("com.qin.orm", "TransactionManager"));
     }
 
-    /** Statement for releasing a connection: {@code TransactionManager.current().release(conn)}. */
+    /** Statement for releasing a connection: {@code TransactionManager.current().release(conn, dataSource)}. */
     public static CodeBlock releaseConnection() {
-        return CodeBlock.of("$T.current().release(conn)",
+        return CodeBlock.of("$T.current().release(conn, dataSource)",
                 ClassName.get("com.qin.orm", "TransactionManager"));
     }
 
