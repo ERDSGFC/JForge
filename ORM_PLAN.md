@@ -165,12 +165,14 @@ ORM 自身的 `repo.execute(...)` / `beginTransaction()` 与上述方式**可混
 
 **关键约束（延续本项目性能原则）**：
 - **仅事务激活时启用**：未开启事务（自动提交）时零开销——不分配缓存结构、不查缓存，保持裸 JDBC 等价
-- **回滚一致性**：`rollback` 时缓存必须清空，否则已回滚的行仍会被后续查询读到（脏数据）
+- **生命周期一致性**：缓存必须随事务结束而清空，否则已回滚/过期数据会被后续查询读到（脏数据）。"**谁驱动事务，谁负责告诉缓存事务结束了**"：
+  - 内置 `SimpleTransactionManager`：缓存挂 ORM 事务状态，`begin` 创建、`commit/rollback` 清空——无需 Spring
+  - **Spring 路径（starter）**：事务由 Spring 驱动（`@Transactional`/`TransactionTemplate`/`PlatformTransactionManager` 任一种），ORM 的 `commit()/rollback()` 不会被调用 → 必须用 `TransactionSynchronizationManager.registerSynchronization()` 注册 `afterCompletion` 回调清空；三种方式都经 `AbstractPlatformTransactionManager` 触发 synchronizations，一个回调全覆盖
 - 保持 AOT 友好：纯内存结构（`HashMap`），无反射
 
-**待决实现位置**（实现时二选一）：
-1. 挂在 `TransactionManager` 事务状态上，生成代码 `findById/save/update/delete` 显式读写缓存——对"仅事务激活生效"最直接
-2. 独立 `L1Cache` 组件 + `TransactionManager` 生命周期钩子，生成代码经静态入口查询——SPI 更干净
+**实现位置**（结合上面的生命周期约束）：
+- 独立 `L1Cache` 组件 + `TransactionManager` 暴露"按线程取/建缓存 + 事务完成回调"的生命周期钩子，生成代码经静态入口读写——SPI 干净
+- **钩子的 Spring 实现即 `TransactionSynchronizationManager`**（仅 starter 模块依赖 Spring），核心 `orm` 保持零 Spring 依赖：内置实现由 ORM 管理器驱动，`SpringTransactionManager` 内部用 `registerSynchronization` 驱动
 
 **验收标准**：
 - 事务内同主键多次 `findById` 只发一次 SQL（mock/统计 PreparedStatement 执行次数验证）
