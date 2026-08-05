@@ -35,6 +35,7 @@ orm-processor/       # 编译期生成器（javapoet + auto-service，provided�
   └── TypeNameUtils.java        # 类型 → javapoet TypeName / JDBC getter/setter 映射
 orm/                 # 框架库：BaseRepository（用户文件）、OrmException
 orm-bench/           # ORM vs 裸 JDBC 基准
+orm-spring-boot-starter/  # Spring Boot starter：SpringTransactionManager 包装 PlatformTransactionManager + 自动配置
 ```
 
 ## 用法示例
@@ -91,7 +92,7 @@ if (repo.isTransactionActive()) { ... }
 - **不支持嵌套**：事务已激活时再次 `begin` 抛 `OrmException`
 - **跨 DataSource 隔离**：`connection(ds)` 仅当 `ds` 与事务来源 DataSource 相同才复用事务连接
 
-已知限制（内置 `SimpleTransactionManager`，后续由 Spring starter 补齐）：
+已知限制（内置 `SimpleTransactionManager`；引入 `orm-spring-boot-starter` 后由 Spring 补齐）：
 - **无隔离级别参数**：`begin` 固定使用 DataSource/连接池默认隔离级别（HikariCP 默认 `READ_COMMITTED`），不提供 `setIsolation` 入口
 - **无事务超时**：不限制事务最长时长；手动 `beginTransaction()` 后忘记 `commit/rollback`（异常路径漏收尾）时连接会一直留在线程上——线程池场景即永久泄漏，推荐统一用 `execute` 模板自动收尾
 - **无 savepoint**：不支持部分回滚，与"不支持嵌套事务"一致
@@ -111,7 +112,7 @@ if (repo.isTransactionActive()) { ... }
 - ✅ **Repository 架构重构**（原 Phase 1/1.5 全部替换）：实体接口 + @Dao 仓库 + 编译期生成（CRUD 12 方法 + @Query + DTO 投影 + Repositories 工厂）
 - ✅ **基准验证**：ORM vs 裸 JDBC 全部达标
 - ✅ **编程式事务**：`BaseRepository` 继承 `TransactionOperations`（begin/commit/rollback/isTransactionActive + `execute` 模板）；ThreadLocal 共享、跨仓库原子；`@Transactional` 注解已移除（项目不做声明式事务）
-- ⬜ **Spring Starter 接入**：`orm-spring-boot-starter` 在启动时把全局 `TransactionManager` 替换为 Spring `PlatformTransactionManager` 的包装器——生成代码经 `TransactionManager.current()` 无感切换，从而获得隔离级别、事务超时、savepoint 与 Spring 声明式事务能力；用户的事务代码（`execute`/`beginTransaction` 等）无需改动
+- ✅ **Spring Starter 接入**（`orm-spring-boot-starter`）：启动时把全局 `TransactionManager` 替换为 Spring `PlatformTransactionManager` 的包装器（`SpringTransactionManager` + `OrmTransactionAutoConfiguration`，经 `AutoConfiguration.imports` 注册）——生成代码经 `TransactionManager.current()` 无感切换，`execute`/`beginTransaction` 可 join 外部 Spring 事务；`@Transactional` 声明式能力由 Spring 提供；自动配置测试 + 集成测试全绿（依赖 Spring Boot 3.5.6 BOM，仅该模块引入）
 - ⬜ **Phase 3 关联映射**：实体是接口 → 懒加载用 `java.lang.reflect.Proxy`（无需字节码库）
 - ⬜ **Phase 4 缓存层**：L1 按主键缓存，写操作失效
 - ⬜ **Phase 6 GraalVM 验证**：native-image 构建 + native 下测试（生成代码零反射，预期直接通过）

@@ -30,6 +30,7 @@ mvn test -pl orm
 
 - **`lambda`** — JVM 对象创建策略的 JMH 基准（10 字段 `User` POJO）。每个 benchmark 方法只创建 **1 个** `User` 并返回，由 JMH 自动循环调用并消费返回值（禁止手写循环——见 `BENCHMARK_RESULTS.md` 的"方法学教训"）。
 - **`orm`** — 性能优先的微型 ORM（目标：与裸 JDBC 一样快），H2 PostgreSQL 兼容模式 + HikariCP。开发计划与性能原则见 `ORM_PLAN.md`。
+- **`orm-spring-boot-starter`** — Spring Boot starter：启动时把全局 `TransactionManager` 替换为 Spring `PlatformTransactionManager` 的包装器（`SpringTransactionManager` + `OrmTransactionAutoConfiguration`），ORM 编程式事务无缝接入 Spring 事务管理；自动配置经 `META-INF/spring/...AutoConfiguration.imports` 注册，依赖 Spring Boot 3.5.6 BOM
 
 ### 关键文件
 
@@ -48,7 +49,7 @@ mvn test -pl orm
 ### orm 模块（Repository 接口 + 编译期生成架构）
 
 - **用户 API**：`@Table` 实体**接口**（getter + builder setter）+ `@Dao` 仓库接口继承 `BaseRepository<T, ID>`（com.qin.orm.core，用户定义）；自定义查询用 `@Query("SQL :param")` + `@Bind`
-- **编程式事务**：`BaseRepository` 继承 `TransactionOperations`（com.qin.orm.core）——`beginTransaction/commit/rollback/isTransactionActive` + `execute(TransactionCallback)` 模板。事务基于 ThreadLocal（`TransactionManager` 全局单例），同 DataSource 的多个仓库共享同一连接与事务边界；**不支持嵌套事务**。生成代码经 `getConnection()/releaseConnection()` 自动加入激活事务，未开启事务时等价于裸 JDBC（零开销）
+- **编程式事务**：`BaseRepository` 继承 `TransactionOperations`（com.qin.orm.core）——`beginTransaction/commit/rollback/isTransactionActive` + `execute(TransactionCallback)` 模板。内置默认 `SimpleTransactionManager` 基于 ThreadLocal（`TransactionManager` 全局单例），同 DataSource 的多个仓库共享同一连接与事务边界；**不支持嵌套事务**。生成代码经 `getConnection()/releaseConnection()` 自动加入激活事务，未开启事务时等价于裸 JDBC（零开销）。引入 `orm-spring-boot-starter` 后自动替换为 Spring `PlatformTransactionManager` 包装器，用户事务代码零改动
 - **`orm-processor`** 编译期生成直写 JDBC 的实现类：`EntityProcessor`（实体接口 → `Xxx_Impl`）、`RepositoryProcessor`（@Dao → `XxxRepository_Impl`，BaseRepository 13 个 CRUD 方法 + @Query 方法 + DTO record 投影）、`Repositories` 工厂（`Repositories.createXxxRepository(DataSource)`）
 - **性能**：生成代码与手写 JDBC 等价（基准实测 -0.1% ~ +3.5%）；运行时零反射 → AOT（GraalVM Native Image）友好
 - 注解在 `orm-annotation` 模块：`@Table/@Id/@Column/@GeneratedValue/@Transient`（可标注在接口方法上）+ `@Dao/@Query/@Bind/@ReturnGeneratedKeys`

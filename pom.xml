@@ -13,6 +13,7 @@
     <module>orm-processor</module>
     <module>orm</module>
     <module>orm-bench</module>
+    <module>orm-spring-boot-starter</module>
   </modules>
 
   <properties>
