@@ -3,12 +3,15 @@ package com.qin.orm.starter;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.context.annotation.ImportCandidates;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.sql.DataSource;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -49,5 +52,14 @@ class OrmTransactionAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).doesNotHaveBean(SpringTransactionManager.class);
                 });
+    }
+
+    @Test
+    void autoConfigurationDiscoveredViaImportsFile() {
+        // Proves the META-INF/spring/...AutoConfiguration.imports file is packaged and
+        // loadable, so a real @SpringBootApplication picks up the configuration.
+        List<String> candidates = ImportCandidates.load(AutoConfiguration.class, getClass().getClassLoader())
+                .getCandidates();
+        assertThat(candidates).contains("com.qin.orm.starter.OrmTransactionAutoConfiguration");
     }
 }

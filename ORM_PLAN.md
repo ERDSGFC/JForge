@@ -97,6 +97,42 @@ if (repo.isTransactionActive()) { ... }
 - **无事务超时**：不限制事务最长时长；手动 `beginTransaction()` 后忘记 `commit/rollback`（异常路径漏收尾）时连接会一直留在线程上——线程池场景即永久泄漏，推荐统一用 `execute` 模板自动收尾
 - **无 savepoint**：不支持部分回滚，与"不支持嵌套事务"一致
 
+## Spring 事务控制（orm-spring-boot-starter）
+
+引入 starter 后，仓库操作可直接由 **Spring 的三种事务机制**控制，无需调用 ORM 的 `beginTransaction/commit`：
+
+前置条件：
+- 应用已有 `DataSource` 与 `PlatformTransactionManager` bean（典型做法：依赖 `spring-boot-starter-jdbc`，由 `DataSourceAutoConfiguration` + `DataSourceTransactionManagerAutoConfiguration` 自动配置）
+- 仓库用**同一个** `DataSource` 创建（`Repositories.createXxxRepository(ds)`）
+- starter 的自动配置检测到 `PlatformTransactionManager` 后，把全局 ORM `TransactionManager` 替换为 Spring 包装器
+
+**为什么能 join**：生成代码取连接走 `TransactionManager.current().connection(ds)` → `DataSourceUtils.getConnection(ds)`；Spring 通过 `TransactionSynchronizationManager` 把事务连接绑定到当前线程，所以以下三种方式激活的事务，仓库操作自动复用同一连接：
+
+```java
+// 1. 声明式：@Transactional（服务方法上，隔离级别/超时/savepoint 全部可用）
+@Transactional
+public void transfer() {
+    repoA.save(a); repoB.save(b);   // 同线程 join 同一事务
+}
+
+// 2. 编程式模板：TransactionTemplate
+transactionTemplate.execute(status -> {
+    repoA.save(a);
+    return null;
+});
+
+// 3. 底层手动：PlatformTransactionManager
+TransactionStatus s = txManager.getTransaction(new DefaultTransactionDefinition());
+try { repoA.save(a); txManager.commit(s); }
+catch (Exception e) { txManager.rollback(s); throw e; }
+```
+
+ORM 自身的 `repo.execute(...)` / `beginTransaction()` 与上述方式**可混用且正确组合**：在 Spring 事务内调用会 join（`PROPAGATION_REQUIRED`），不会开新事务。
+
+测试覆盖：`SpringTransactionControlTest`（三种机制提交/回滚端到端）、`OrmTransactionAutoConfigurationTest`（自动配置注册 + imports 文件发现）、`SpringTransactionManagerTest`（包装器单元集成）。
+
+⚠️ 若未引入 starter（全局仍是 `SimpleTransactionManager`），`@Transactional` 等**不会**生效——仓库会拿到独立连接、脱离 Spring 事务边界。这是 starter 存在的意义。
+
 ## 基准结果（ORM vs 裸 JDBC，`-f 3 -i 5`，15 次测量）
 
 | 操作 | ORM（生成代码） | 裸 JDBC | ORM/JDBC | 状态 |
@@ -114,8 +150,33 @@ if (repo.isTransactionActive()) { ... }
 - ✅ **编程式事务**：`BaseRepository` 继承 `TransactionOperations`（begin/commit/rollback/isTransactionActive + `execute` 模板）；ThreadLocal 共享、跨仓库原子；`@Transactional` 注解已移除（项目不做声明式事务）
 - ✅ **Spring Starter 接入**（`orm-spring-boot-starter`）：启动时把全局 `TransactionManager` 替换为 Spring `PlatformTransactionManager` 的包装器（`SpringTransactionManager` + `OrmTransactionAutoConfiguration`，经 `AutoConfiguration.imports` 注册）——生成代码经 `TransactionManager.current()` 无感切换，`execute`/`beginTransaction` 可 join 外部 Spring 事务；`@Transactional` 声明式能力由 Spring 提供；自动配置测试 + 集成测试全绿（依赖 Spring Boot 3.5.6 BOM，仅该模块引入）
 - ⬜ **Phase 3 关联映射**：实体是接口 → 懒加载用 `java.lang.reflect.Proxy`（无需字节码库）
-- ⬜ **Phase 4 缓存层**：L1 按主键缓存，写操作失效
+- ⬜ **Phase 4 一级缓存（L1 Cache）**：事务级 identity map——`findById` 按 (实体, 主键) 缓存，事务内重复查询只发一次 SQL 且返回同一实例；写操作失效/更新；`rollback` 清空缓存；**仅事务激活时生效，未开启事务零开销**（详细设计见下节）
 - ⬜ **Phase 6 GraalVM 验证**：native-image 构建 + native 下测试（生成代码零反射，预期直接通过）
+
+## Phase 4 一级缓存（L1 Cache）设计
+
+**目标**：事务内的 identity map——同一事务内对同一主键的 `findById` 只发一次 SQL，且多次返回**同一实例**（对象身份一致）。与 Hibernate Session 一级缓存同思路；**不做跨事务的二级缓存**（如需，另立 Phase 规划）。
+
+**范围与语义**：
+- **事务级**：缓存生命周期跟随当前线程的事务（挂 ThreadLocal），`begin` 时创建、`commit/rollback` 时销毁——绝不跨事务复用，避免把已回滚/过期数据暴露给后续事务
+- **键**：`(实体类型, 主键值)`；值：实体实例
+- **命中路径**：`findById(id)` 命中 → 直接返回缓存实例，不查库
+- **写路径**：`save`（写回生成主键后入缓存）、`update`（更新缓存或失效）、`delete`/`deleteById`（失效）
+
+**关键约束（延续本项目性能原则）**：
+- **仅事务激活时启用**：未开启事务（自动提交）时零开销——不分配缓存结构、不查缓存，保持裸 JDBC 等价
+- **回滚一致性**：`rollback` 时缓存必须清空，否则已回滚的行仍会被后续查询读到（脏数据）
+- 保持 AOT 友好：纯内存结构（`HashMap`），无反射
+
+**待决实现位置**（实现时二选一）：
+1. 挂在 `TransactionManager` 事务状态上，生成代码 `findById/save/update/delete` 显式读写缓存——对"仅事务激活生效"最直接
+2. 独立 `L1Cache` 组件 + `TransactionManager` 生命周期钩子，生成代码经静态入口查询——SPI 更干净
+
+**验收标准**：
+- 事务内同主键多次 `findById` 只发一次 SQL（mock/统计 PreparedStatement 执行次数验证）
+- 事务内 `save` 后 `findById` 返回同一实例（identity guarantee）
+- `rollback` 后缓存清空，后续事务查不到已回滚数据
+- 未开启事务时与现有基准持平（框架开销不增加）
 
 ## 性能设计原则（源自本项目 JMH 基准结论）
 

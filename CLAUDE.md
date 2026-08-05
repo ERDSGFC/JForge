@@ -30,7 +30,7 @@ mvn test -pl orm
 
 - **`lambda`** — JVM 对象创建策略的 JMH 基准（10 字段 `User` POJO）。每个 benchmark 方法只创建 **1 个** `User` 并返回，由 JMH 自动循环调用并消费返回值（禁止手写循环——见 `BENCHMARK_RESULTS.md` 的"方法学教训"）。
 - **`orm`** — 性能优先的微型 ORM（目标：与裸 JDBC 一样快），H2 PostgreSQL 兼容模式 + HikariCP。开发计划与性能原则见 `ORM_PLAN.md`。
-- **`orm-spring-boot-starter`** — Spring Boot starter：启动时把全局 `TransactionManager` 替换为 Spring `PlatformTransactionManager` 的包装器（`SpringTransactionManager` + `OrmTransactionAutoConfiguration`），ORM 编程式事务无缝接入 Spring 事务管理；自动配置经 `META-INF/spring/...AutoConfiguration.imports` 注册，依赖 Spring Boot 3.5.6 BOM
+- **`orm-spring-boot-starter`** — Spring Boot starter：启动时把全局 `TransactionManager` 替换为 Spring `PlatformTransactionManager` 的包装器（`SpringTransactionManager` + `OrmTransactionAutoConfiguration`），ORM 编程式事务无缝接入 Spring 事务管理，且用户可直接用 Spring 的 `@Transactional` / `TransactionTemplate` / `PlatformTransactionManager` 控制仓库操作（生成代码经 `DataSourceUtils.getConnection` 自动 join）；自动配置经 `META-INF/spring/...AutoConfiguration.imports` 注册，依赖 Spring Boot 3.5.6 BOM
 
 ### 关键文件
 
