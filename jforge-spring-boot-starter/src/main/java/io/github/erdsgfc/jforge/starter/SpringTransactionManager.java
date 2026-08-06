@@ -4,6 +4,7 @@ import io.github.erdsgfc.jforge.OrmException;
 import io.github.erdsgfc.jforge.TransactionManager;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
+import org.springframework.jdbc.datasource.ConnectionHolder;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -14,6 +15,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.SQLException;
 
 /**
  * {@link TransactionManager} backed by Spring's {@link PlatformTransactionManager},
@@ -60,6 +62,16 @@ public final class SpringTransactionManager implements TransactionManager, Smart
      * the same ownership model as {@code SimpleTransactionManager}.
      */
     private final ThreadLocal<TransactionStatus> status = new ThreadLocal<>();
+
+    /**
+     * Thread-bound nesting depth of connection scopes begun by this wrapper. Only
+     * scopes that bound their own {@link ConnectionHolder} (no active Spring
+     * transaction) are counted, so {@link #endScope} can tell "still inside an
+     * outer scope" (decrement) from "scope joined a transaction" (nothing bound,
+     * nothing to clean). Scope state itself lives in Spring's
+     * {@code TransactionSynchronizationManager}, keyed by data source.
+     */
+    private final ThreadLocal<Integer> scopeDepth = new ThreadLocal<>();
 
     /**
      * Creates a wrapper around the given Spring transaction manager.
@@ -243,5 +255,80 @@ public final class SpringTransactionManager implements TransactionManager, Smart
     public boolean isRollbackOnly() {
         TransactionStatus txStatus = status.get();
         return txStatus != null && txStatus.isRollbackOnly();
+    }
+
+    // ---- Connection scope (no transaction) ----------------------------------
+
+    /**
+     * Begins a connection scope: binds a fresh pooled connection to this thread
+     * (as a {@link ConnectionHolder}) so every repository call on the data source
+     * shares it, until {@link #endScope}. The connection keeps auto-commit
+     * enabled — a scope only saves pool round-trips, it provides no atomicity.
+     *
+     * <p>When a Spring transaction is already active on this data source, the
+     * scope becomes a no-op and returns the transaction connection — the same
+     * join semantics as {@link #begin}. When an outer scope already bound a
+     * holder (nested scope), the outer connection is reused and the nesting is
+     * counted in {@link #scopeDepth}. Binding a plain holder without an active
+     * transaction is the same mechanism MyBatis-Spring uses for non-transactional
+     * sessions; {@code DataSourceUtils} treats it as the shared connection and
+     * {@code releaseConnection} keeps it open until the holder is unbound.</p>
+     *
+     * @param dataSource the data source the scope's connection is borrowed from
+     * @return the shared scope connection, owned by the scope — do not close it
+     *         directly, and do not use it after {@link #endScope}
+     * @throws OrmException if the connection cannot be obtained
+     */
+    @Override
+    public Connection beginScope(DataSource dataSource) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()
+                && TransactionSynchronizationManager.hasResource(dataSource)) {
+            // An active Spring transaction owns the connection for this data
+            // source: the scope is a no-op — endScope() is then also a no-op.
+            return DataSourceUtils.getConnection(dataSource);
+        }
+        if (TransactionSynchronizationManager.hasResource(dataSource)) {
+            // No active transaction but a holder is bound: an outer scope on this
+            // thread. Reuse its connection and count the nesting.
+            scopeDepth.set(scopeDepth.get() + 1);
+            return DataSourceUtils.getConnection(dataSource);
+        }
+        try {
+            Connection conn = dataSource.getConnection();
+            TransactionSynchronizationManager.bindResource(dataSource, new ConnectionHolder(conn));
+            scopeDepth.set(1);
+            return conn;
+        } catch (SQLException e) {
+            throw new OrmException("Cannot obtain connection", e);
+        }
+    }
+
+    /**
+     * Ends the connection scope begun by {@link #beginScope}: unbinds the holder
+     * this wrapper bound and returns the connection to the pool. A no-op when the
+     * scope joined an active Spring transaction (nothing was bound), or when the
+     * thread is still inside an outer scope (nesting decremented only).
+     *
+     * @param dataSource the data source the scope was begun on
+     */
+    @Override
+    public void endScope(DataSource dataSource) {
+        Integer depth = scopeDepth.get();
+        if (depth == null) {
+            return; // scope joined an active Spring transaction — nothing of ours to clean
+        }
+        if (depth > 1) {
+            scopeDepth.set(depth - 1);
+            return; // still inside an outer scope on this thread
+        }
+        scopeDepth.remove();
+        Object resource = TransactionSynchronizationManager.unbindResourceIfPossible(dataSource);
+        if (resource instanceof ConnectionHolder holder) {
+            try {
+                holder.getConnection().close();
+            } catch (SQLException ignored) {
+                // best effort: a failed close must not mask the caller's result
+            }
+        }
     }
 }

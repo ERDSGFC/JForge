@@ -202,6 +202,68 @@ public interface TransactionOperations {
         });
     }
 
+    // ---- Connection scope (no transaction) ----------------------------------
+
+    /**
+     * Begins a connection scope on the current thread: borrows a single connection
+     * from the repository's data source and binds it to the thread so all
+     * repository calls share it until {@link #endConnectionScope()}. The generated
+     * implementation delegates to {@code TransactionManager.beginScope(dataSource)}.
+     *
+     * <p>Unlike {@link #beginTransaction()} the connection keeps auto-commit
+     * enabled: a scope only saves pool round-trips, it does not provide atomicity.
+     * A scope begun inside an active transaction (or Spring {@code @Transactional})
+     * reuses the transaction connection and needs no cleanup.</p>
+     *
+     * @return the shared scope connection, owned by the scope — do not close it
+     *         directly, and do not use it after {@link #endConnectionScope()}
+     * @throws io.github.erdsgfc.jforge.OrmException if the connection cannot be obtained
+     */
+    Connection beginConnectionScope();
+
+    /**
+     * Ends the connection scope begun by {@link #beginConnectionScope()}: returns
+     * the scope connection to the pool. A no-op when the thread has no active
+     * scope (e.g. a scope that joined an active transaction).
+     */
+    void endConnectionScope();
+
+    /**
+     * Runs {@code callback} on a single shared connection but without a
+     * transaction: the ORM borrows one connection from the pool, the callback's
+     * repository calls reuse it, and the connection is returned to the pool when
+     * the callback finishes — success or failure. The connection keeps auto-commit
+     * enabled, so every SQL statement commits independently: unlike
+     * {@link #execute(TransactionCallback)} there is <em>no atomicity</em> —
+     * statements executed before the callback throws stay committed.
+     *
+     * <p>Use this for multi-statement work that only wants to avoid a pool
+     * round-trip per statement and needs no rollback semantics; use
+     * {@link #execute(TransactionCallback)} when the statements must commit or
+     * roll back together. A transaction cannot be begun inside the scope
+     * (it throws {@link io.github.erdsgfc.jforge.OrmException}).</p>
+     *
+     * @param callback the work to run on the shared connection
+     * @param <T>      the callback's return type
+     * @return the callback's result, or {@code null} for side-effect-only bodies
+     * @throws io.github.erdsgfc.jforge.OrmException if the connection cannot be obtained,
+     *                                  or the callback throws {@link SQLException}
+     */
+    default <T> T executeWithoutTransaction(ConnectionScopeCallback<T> callback) {
+        Connection conn = beginConnectionScope();
+        try {
+            return callback.doInScope(conn);
+        } catch (SQLException e) {
+            // Match the execute() contract: JDBC failures from the callback are
+            // wrapped into OrmException. The scope connection is still returned to
+            // the pool by the finally block.
+            throw new OrmException(
+                    "Connection scope failed" + (e.getMessage() != null ? ": " + e.getMessage() : ""), e);
+        } finally {
+            endConnectionScope();
+        }
+    }
+
     /**
      * Rolls back the active transaction, swallowing a "no transaction" failure.
      * Used by {@link #execute} so a commit failure does not hide the primary error.

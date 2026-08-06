@@ -10,6 +10,7 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.DefaultTransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -135,6 +136,46 @@ class SpringTransactionManagerTest {
         txManager.rollback(outer);
 
         assertEquals(0, repo.count(), "work joined the outer tx, so the rollback discards it");
+    }
+
+    @Test
+    void scopeSharesOneConnectionWithoutTransaction() {
+        int activeBefore = ds.getHikariPoolMXBean().getActiveConnections();
+        repo.executeWithoutTransaction(conn -> {
+            assertEquals(1, ds.getHikariPoolMXBean().getActiveConnections(),
+                    "the scope must borrow exactly one connection");
+            repo.save(repo.createEntity().name("s1").age(1));
+            repo.save(repo.createEntity().name("s2").age(2));
+            assertFalse(repo.isTransactionActive(), "a scope is not a transaction");
+            return null;
+        });
+
+        assertEquals(2, repo.count(), "no transaction: both inserts are committed independently");
+        assertEquals(activeBefore, ds.getHikariPoolMXBean().getActiveConnections(),
+                "scope connection must be returned to the pool");
+        assertFalse(TransactionSynchronizationManager.hasResource(ds),
+                "the scope holder must be unbound");
+    }
+
+    @Test
+    void scopeInsideOuterSpringTransactionJoinsIt() {
+        TransactionStatus outer = txManager.getTransaction(new DefaultTransactionDefinition());
+        try {
+            repo.executeWithoutTransaction(conn -> {
+                assertTrue(repo.isTransactionActive(), "the outer Spring tx must stay active");
+                assertEquals(1, ds.getHikariPoolMXBean().getActiveConnections(),
+                        "the scope must reuse the transaction connection, not borrow another");
+                repo.save(repo.createEntity().name("joined").age(3));
+                return null;
+            });
+        } finally {
+            txManager.rollback(outer);
+        }
+
+        assertEquals(0, repo.count(), "the scope's work joined the outer tx and was rolled back");
+        assertEquals(0, ds.getHikariPoolMXBean().getActiveConnections());
+        assertFalse(TransactionSynchronizationManager.hasResource(ds),
+                "the scope must not have unbound the transaction's connection");
     }
 
     @Test

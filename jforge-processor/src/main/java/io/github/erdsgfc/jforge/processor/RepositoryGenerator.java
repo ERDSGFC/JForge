@@ -245,14 +245,18 @@ final class RepositoryGenerator {
     // ==================== 事务方法 ====================
 
     /**
-     * Builds the six programmatic-transaction methods inherited from
-     * {@code TransactionOperations}: begin/commit/rollback/isTransactionActive/
-     * markRollbackOnly/isRollbackOnly, delegating to the global {@code TransactionManager}.
-     * {@code beginTransaction} returns the transaction-bound connection so the inherited
-     * {@code execute} default template can hand it to the callback.
+     * Builds the programmatic-transaction and connection-scope methods inherited
+     * from {@code TransactionOperations}: begin/commit/rollback/isTransactionActive/
+     * markRollbackOnly/isRollbackOnly plus beginConnectionScope/endConnectionScope,
+     * all delegating to the global {@code TransactionManager}.
+     * {@code beginTransaction} returns the transaction-bound connection so the
+     * inherited {@code execute} default template can hand it to the callback;
+     * {@code beginConnectionScope} returns the shared scope connection so the
+     * inherited {@code executeWithoutTransaction} template can hand it to its
+     * callback.
      *
      * @param connection the Connection class
-     * @return the six transaction method specifications
+     * @return the transaction and connection-scope method specifications
      */
     private List<MethodSpec> txMethods(ClassName connection) {
         return List.of(
@@ -289,6 +293,17 @@ final class RepositoryGenerator {
                         .addModifiers(Modifier.PUBLIC)
                         .returns(TypeName.BOOLEAN)
                         .addStatement("return $T.current().isRollbackOnly()", TX_MANAGER)
+                        .build(),
+                MethodSpec.methodBuilder("beginConnectionScope")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(connection)
+                        .addStatement("return $T.current().beginScope(dataSource)", TX_MANAGER)
+                        .build(),
+                MethodSpec.methodBuilder("endConnectionScope")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .addStatement("$T.current().endScope(dataSource)", TX_MANAGER)
                         .build());
     }
 

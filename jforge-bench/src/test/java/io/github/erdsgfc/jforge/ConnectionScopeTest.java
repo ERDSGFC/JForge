@@ -1,0 +1,225 @@
+package io.github.erdsgfc.jforge;
+
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import javax.sql.DataSource;
+import java.io.PrintWriter;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Logger;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Integration tests for the connection scope API — {@code executeWithoutTransaction}
+ * and its underlying beginConnectionScope/endConnectionScope — which shares one
+ * connection across repository calls on the same thread without any transaction
+ * semantics. The pool borrow counter proves exactly one connection is used per
+ * scope, and the Hikari pool MXBean proves it is returned when the scope ends.
+ */
+class ConnectionScopeTest {
+
+    private HikariDataSource pool;
+    private CountingDataSource ds;
+    private UserRepository repo;
+
+    @BeforeEach
+    void setUp() throws SQLException {
+        HikariConfig config = new HikariConfig();
+        config.setJdbcUrl("jdbc:h2:mem:orm_scope;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
+        pool = new HikariDataSource(config);
+        try (Connection conn = pool.getConnection(); java.sql.Statement st = conn.createStatement()) {
+            st.execute("DROP TABLE IF EXISTS users");
+            st.execute("CREATE TABLE users (" +
+                    "id BIGSERIAL PRIMARY KEY," +
+                    "user_name VARCHAR(100)," +
+                    "age INT)");
+        }
+        ds = new CountingDataSource(pool);
+        repo = Repositories.createUserRepository(ds);
+    }
+
+    @AfterEach
+    void tearDown() {
+        pool.close();
+    }
+
+    /** Number of connections currently borrowed from the pool (0 when all returned). */
+    private int activeConnections() {
+        return pool.getHikariPoolMXBean().getActiveConnections();
+    }
+
+    @Test
+    void multipleCallsShareOneConnection() {
+        String result = repo.executeWithoutTransaction(conn -> {
+            repo.save(repo.createEntity().name("a").age(1));
+            repo.save(repo.createEntity().name("b").age(2));
+            repo.save(repo.createEntity().name("c").age(3));
+            return "done";
+        });
+
+        assertEquals("done", result);
+        assertEquals(1, ds.borrows(), "all three saves must reuse the single scope connection");
+        assertEquals(3, repo.count());
+        assertEquals(0, activeConnections(), "scope connection must be returned to the pool");
+    }
+
+    @Test
+    void autocommitStaysEnabled() throws SQLException {
+        repo.executeWithoutTransaction(conn -> {
+            assertTrue(conn.getAutoCommit(), "a scope must not disable auto-commit");
+            return null;
+        });
+    }
+
+    @Test
+    void noAtomicityStatementsBeforeThrowStayCommitted() {
+        assertThrows(IllegalStateException.class, () -> repo.executeWithoutTransaction(conn -> {
+            repo.save(repo.createEntity().name("kept").age(1));
+            throw new IllegalStateException("boom");
+        }));
+
+        assertEquals(1, repo.count(), "no transaction: the insert before the throw must stay committed");
+        assertEquals(0, activeConnections(), "scope connection must be returned even on failure");
+    }
+
+    @Test
+    void connectionReleasedOnException() {
+        assertThrows(IllegalStateException.class, () -> repo.executeWithoutTransaction(conn -> {
+            throw new IllegalStateException("boom");
+        }));
+
+        assertEquals(0, activeConnections());
+        assertFalse(repo.isTransactionActive(), "a scope must not look like a transaction");
+    }
+
+    @Test
+    void nestedScopeReusesOuterConnection() {
+        repo.executeWithoutTransaction(conn -> {
+            assertEquals(1, ds.borrows());
+            repo.executeWithoutTransaction(inner -> {
+                repo.save(repo.createEntity().name("nested").age(1));
+                assertEquals(1, ds.borrows(), "nested scope must reuse the outer connection");
+                return null;
+            });
+            assertEquals(1, ds.borrows(), "connection must survive the inner scope's end");
+            return null;
+        });
+
+        assertEquals(0, activeConnections(), "connection returned only when the outermost scope ends");
+        assertEquals(1, repo.count());
+    }
+
+    @Test
+    void beginTransactionInsideScopeRejected() {
+        OrmException ex = assertThrows(OrmException.class, () -> repo.executeWithoutTransaction(conn -> {
+            repo.beginTransaction();
+            return null;
+        }));
+
+        assertTrue(ex.getMessage().contains("connection scope"), ex.getMessage());
+        assertFalse(repo.isTransactionActive());
+        assertEquals(0, activeConnections(), "the scope must still be cleaned up after the rejected begin");
+    }
+
+    @Test
+    void scopeInsideTransactionJoinsTransactionConnection() {
+        repo.beginTransaction();
+        try {
+            repo.executeWithoutTransaction(conn -> {
+                assertEquals(1, ds.borrows(), "scope must reuse the transaction connection, not borrow");
+                repo.save(repo.createEntity().name("in-tx").age(1));
+                return null;
+            });
+        } finally {
+            repo.rollback();
+        }
+
+        assertEquals(0, repo.count(), "the scope's insert joined the transaction and was rolled back");
+        assertEquals(0, activeConnections());
+    }
+
+    @Test
+    void scopeReturnsCallbackResult() {
+        Long id = repo.executeWithoutTransaction(conn ->
+                repo.save(repo.createEntity().name("r").age(1)).id());
+
+        assertNotNull(id);
+        assertEquals(1, repo.count());
+    }
+
+    /**
+     * DataSource decorator counting {@link #getConnection()} borrows, so tests can
+     * prove a scope borrowed exactly one pooled connection. Every other method
+     * delegates to the wrapped Hikari pool.
+     */
+    private static final class CountingDataSource implements DataSource {
+        private final DataSource delegate;
+        private final AtomicInteger borrows = new AtomicInteger();
+
+        CountingDataSource(DataSource delegate) {
+            this.delegate = delegate;
+        }
+
+        int borrows() {
+            return borrows.get();
+        }
+
+        @Override
+        public Connection getConnection() throws SQLException {
+            borrows.incrementAndGet();
+            return delegate.getConnection();
+        }
+
+        @Override
+        public Connection getConnection(String username, String password) throws SQLException {
+            borrows.incrementAndGet();
+            return delegate.getConnection(username, password);
+        }
+
+        @Override
+        public PrintWriter getLogWriter() throws SQLException {
+            return delegate.getLogWriter();
+        }
+
+        @Override
+        public void setLogWriter(PrintWriter out) throws SQLException {
+            delegate.setLogWriter(out);
+        }
+
+        @Override
+        public void setLoginTimeout(int seconds) throws SQLException {
+            delegate.setLoginTimeout(seconds);
+        }
+
+        @Override
+        public int getLoginTimeout() throws SQLException {
+            return delegate.getLoginTimeout();
+        }
+
+        @Override
+        public Logger getParentLogger() throws SQLFeatureNotSupportedException {
+            return delegate.getParentLogger();
+        }
+
+        @Override
+        public <T> T unwrap(Class<T> iface) throws SQLException {
+            return delegate.unwrap(iface);
+        }
+
+        @Override
+        public boolean isWrapperFor(Class<?> iface) throws SQLException {
+            return delegate.isWrapperFor(iface);
+        }
+    }
+}

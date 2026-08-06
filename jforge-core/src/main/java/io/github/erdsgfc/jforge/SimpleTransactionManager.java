@@ -23,10 +23,16 @@ public final class SimpleTransactionManager implements TransactionManager {
      * came from. Tying them together prevents a repository bound to another
      * data source from accidentally running its SQL on this transaction's
      * connection.
+     *
+     * <p>{@code rollbackOnly} lives on the state (not in a thread-local of its
+     * own) because it is a property of the transaction: it can only be set while
+     * a transaction is active and is discarded together with the state when the
+     * transaction completes, so it can never leak across transactions.</p>
      */
     private static final class TxState {
         final DataSource dataSource;
         final Connection connection;
+        boolean rollbackOnly;
 
         TxState(DataSource dataSource, Connection connection) {
             this.dataSource = dataSource;
@@ -37,17 +43,35 @@ public final class SimpleTransactionManager implements TransactionManager {
     private final ThreadLocal<TxState> tx = new ThreadLocal<>();
 
     /**
-     * Thread-bound rollback-only flag: when {@code true} the transaction is rolled
-     * back on completion instead of committed. Set through {@link #markRollbackOnly()}
-     * and cleared in {@link #closeAndClear} so it never leaks across transactions.
+     * Thread-bound connection-scope state: the borrowed connection plus the data
+     * source it came from, mirroring {@link TxState}. {@code depth} counts nested
+     * {@link #beginScope(DataSource)} calls on the same data source so an inner
+     * scope's {@link #endScope(DataSource)} does not release the outer scope's
+     * connection early.
      */
-    private final ThreadLocal<Boolean> rollbackOnly = new ThreadLocal<>();
+    private static final class ScopeState {
+        final DataSource dataSource;
+        final Connection connection;
+        int depth;
+
+        ScopeState(DataSource dataSource, Connection connection, int depth) {
+            this.dataSource = dataSource;
+            this.connection = connection;
+            this.depth = depth;
+        }
+    }
+
+    private final ThreadLocal<ScopeState> scope = new ThreadLocal<>();
 
     @Override
     public Connection connection(DataSource dataSource) {
         TxState state = tx.get();
         if (state != null && state.dataSource == dataSource) {
             return state.connection;
+        }
+        ScopeState scoped = scope.get();
+        if (scoped != null && scoped.dataSource == dataSource) {
+            return scoped.connection;
         }
         try {
             return dataSource.getConnection();
@@ -59,16 +83,21 @@ public final class SimpleTransactionManager implements TransactionManager {
     @Override
     public void release(Connection conn, DataSource dataSource) {
         // dataSource is unused here: an identity comparison with the thread-bound
-        // transaction connection already decides whether to close. The parameter is
-        // kept for signature symmetry so a Spring-backed TransactionManager can
-        // delegate to DataSourceUtils.releaseConnection(conn, dataSource).
+        // transaction or scope connection already decides whether to close. The
+        // parameter is kept for signature symmetry so a Spring-backed
+        // TransactionManager can delegate to DataSourceUtils.releaseConnection(conn, dataSource).
         TxState state = tx.get();
-        if (state == null || conn != state.connection) {
-            try {
-                conn.close();
-            } catch (SQLException ignored) {
-                // best effort
-            }
+        ScopeState scoped = scope.get();
+        if (state != null && conn == state.connection) {
+            return; // the transaction owns the connection
+        }
+        if (scoped != null && conn == scoped.connection) {
+            return; // the scope owns the connection
+        }
+        try {
+            conn.close();
+        } catch (SQLException ignored) {
+            // best effort
         }
     }
 
@@ -76,6 +105,13 @@ public final class SimpleTransactionManager implements TransactionManager {
     public void begin(DataSource dataSource) {
         if (tx.get() != null) {
             throw new OrmException("A transaction is already active on this thread");
+        }
+        if (scope.get() != null) {
+            // Upgrading the scope's auto-commit connection into a transaction (and
+            // restoring it afterwards) is more complexity than it is worth; fail
+            // fast so the caller restructures the scope boundaries.
+            throw new OrmException(
+                    "Cannot begin a transaction while a connection scope is active on this thread");
         }
         Connection conn = null;
         try {
@@ -102,7 +138,7 @@ public final class SimpleTransactionManager implements TransactionManager {
         if (state == null) {
             throw new OrmException("No active transaction to commit");
         }
-        if (Boolean.TRUE.equals(rollbackOnly.get())) {
+        if (state.rollbackOnly) {
             // The transaction was marked rollback-only: discard it instead of
             // committing, without throwing — the caller returned normally.
             rollback();
@@ -138,16 +174,65 @@ public final class SimpleTransactionManager implements TransactionManager {
     }
 
     @Override
+    public Connection beginScope(DataSource dataSource) {
+        TxState state = tx.get();
+        if (state != null && state.dataSource == dataSource) {
+            // An active transaction already shares its connection on this thread:
+            // the scope becomes a no-op. endScope() must then also be a no-op —
+            // which it is, because no scope state was bound.
+            return state.connection;
+        }
+        ScopeState existing = scope.get();
+        if (existing != null) {
+            if (existing.dataSource != dataSource) {
+                throw new OrmException(
+                        "A connection scope is already active on this thread for a different data source");
+            }
+            existing.depth++;
+            return existing.connection; // nested scope: reuse the outer connection
+        }
+        try {
+            Connection conn = dataSource.getConnection();
+            scope.set(new ScopeState(dataSource, conn, 1));
+            return conn;
+        } catch (SQLException e) {
+            throw new OrmException("Cannot obtain connection", e);
+        }
+    }
+
+    @Override
+    public void endScope(DataSource dataSource) {
+        ScopeState state = scope.get();
+        if (state == null) {
+            return; // no-op: the scope joined a transaction, or no scope is active
+        }
+        if (state.dataSource != dataSource) {
+            throw new OrmException("Connection scope data source mismatch");
+        }
+        if (--state.depth > 0) {
+            return; // still inside an outer scope on this thread
+        }
+        scope.remove();
+        try {
+            state.connection.close();
+        } catch (SQLException ignored) {
+            // best effort
+        }
+    }
+
+    @Override
     public void markRollbackOnly() {
-        if (tx.get() == null) {
+        TxState state = tx.get();
+        if (state == null) {
             throw new OrmException("No active transaction to mark rollback-only");
         }
-        rollbackOnly.set(true);
+        state.rollbackOnly = true;
     }
 
     @Override
     public boolean isRollbackOnly() {
-        return tx.get() != null && Boolean.TRUE.equals(rollbackOnly.get());
+        TxState state = tx.get();
+        return state != null && state.rollbackOnly;
     }
 
     /**
@@ -159,7 +244,6 @@ public final class SimpleTransactionManager implements TransactionManager {
      */
     private void closeAndClear(TxState state) {
         tx.remove();
-        rollbackOnly.remove();
         try {
             state.connection.close();
         } catch (SQLException ignored) {

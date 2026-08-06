@@ -60,6 +60,38 @@ public interface TransactionManager {
      */
     boolean isRollbackOnly();
 
+    // ---- Connection scope (no transaction) ----------------------------------
+
+    /**
+     * Begins a connection scope on the current thread: borrows a single connection
+     * from the data source and binds it to the thread so all subsequent repository
+     * calls share it until {@link #endScope(DataSource)}. Unlike a transaction the
+     * connection keeps its auto-commit setting, so each SQL statement commits
+     * independently — a scope only saves pool round-trips, it does not provide
+     * atomicity.
+     *
+     * <p>A scope begun while a transaction is active on the same data source returns
+     * the transaction connection and binds nothing — the scope becomes a no-op and
+     * {@link #endScope(DataSource)} has nothing to clean up. Nested scopes on the
+     * same data source reuse the outer scope's connection. Starting a transaction
+     * while a scope is active is rejected.</p>
+     *
+     * @param dataSource the data source the scope's connection is borrowed from
+     * @return the shared scope connection, owned by the scope — do not close it
+     *         directly, and do not use it after {@link #endScope(DataSource)}
+     * @throws OrmException if the connection cannot be obtained
+     */
+    Connection beginScope(DataSource dataSource);
+
+    /**
+     * Ends the connection scope begun by {@link #beginScope(DataSource)}: unbinds
+     * the scope connection and returns it to the pool. A no-op when the thread has
+     * no active scope (e.g. a scope that joined an active transaction).
+     *
+     * @param dataSource the data source the scope was begun on
+     */
+    void endScope(DataSource dataSource);
+
     // ---- Global extension point --------------------------------------------
 
     /**
