@@ -8,6 +8,7 @@ import javax.lang.model.element.Modifier;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import io.github.erdsgfc.jforge.annotation.Dao;
+import io.github.erdsgfc.jforge.annotation.JForgeConfig;
 import io.github.erdsgfc.jforge.annotation.Table;
 
 import javax.annotation.processing.AbstractProcessor;
@@ -46,7 +47,10 @@ import java.util.Set;
  * 但不再需要单独的实体处理器。</p>
  */
 @AutoService(javax.annotation.processing.Processor.class)
-@SupportedAnnotationTypes("io.github.erdsgfc.jforge.annotation.Dao")
+@SupportedAnnotationTypes({
+    "io.github.erdsgfc.jforge.annotation.Dao",
+    "io.github.erdsgfc.jforge.annotation.JForgeConfig"
+})
 @SupportedSourceVersion(SourceVersion.RELEASE_25)
 public class JForgeProcessor extends AbstractProcessor {
 

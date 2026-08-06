@@ -81,15 +81,13 @@ public final class JForgeConfigHelper {
     // ---- Internals ---------------------------------------------------------
 
     private JForgeConfig configFor(Element element) {
-        PackageElement pkg = elementUtils.getPackageOf(element);
-        // Walk up the package hierarchy — outermost first is irrelevant here;
-        // we just want the @JForgeConfig placed on the *exact* package.
-        for (AnnotationMirror mirror : pkg.getAnnotationMirrors()) {
-            if (mirror.getAnnotationType().toString().equals(JForgeConfig.class.getCanonicalName())) {
-                return pkg.getAnnotation(JForgeConfig.class);
-            }
+        // 元素自身的注解优先（可直接把 @JForgeConfig 标在实体/仓库接口上）；
+        // 否则取所在包 package-info 上的注解。
+        JForgeConfig config = element.getAnnotation(JForgeConfig.class);
+        if (config != null) {
+            return config;
         }
-        return null;
+        return elementUtils.getPackageOf(element).getAnnotation(JForgeConfig.class);
     }
 
     private static String camelToSnake(String name) {

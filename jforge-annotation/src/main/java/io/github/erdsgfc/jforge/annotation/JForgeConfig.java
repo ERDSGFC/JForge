@@ -6,24 +6,29 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Per-package configuration for the annotation processor.
+ * Per-package / per-repository configuration for the annotation processor.
  *
- * <p>Place on a {@code package-info.java} file in the package that contains your
- * {@code @Table} entities and/or {@code @Dao} repositories.  Unconfigured options
- * fall back to the defaults documented below.</p>
+ * <p>May be placed either on a {@code package-info.java} (applies to every entity and
+ * repository in the package) or directly on a {@code @Table} entity / {@code @Dao}
+ * repository interface (applies to that element only, overriding the package
+ * configuration).  Unconfigured options fall back to the defaults documented below.</p>
  *
  * <pre>{@code
+ * // 包级（package-info.java）
  * @JForgeConfig(dialect = Dialect.POSTGRESQL,
  *               naming = NamingStrategy.CAMEL_TO_SNAKE,
  *               generatedPackage = "com.example.data.generated",
  *               implSuffix = "Impl",
  *               springBeans = true)
  * package com.example.data;
- * import io.github.erdsgfc.jforge.annotation.*;
+ *
+ * // 或元素级（直接标在接口上，覆盖包级配置）
+ * @JForgeConfig(springBeans = true)
+ * public interface UserRepository extends BaseRepository<UserEntity, Long> { ... }
  * }</pre>
  */
 @Retention(RetentionPolicy.SOURCE)
-@Target(ElementType.PACKAGE)
+@Target({ElementType.PACKAGE, ElementType.TYPE})
 public @interface JForgeConfig {
 
     /** SQL dialect used for generated statements (default {@link Dialect#POSTGRESQL}). */

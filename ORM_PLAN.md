@@ -136,7 +136,7 @@ catch (Exception e) { txManager.rollback(s); throw e; }
 
 ORM 自身的 `repo.execute(...)` / `beginTransaction()` 与上述方式**可混用且正确组合**：在 Spring 事务内调用会 join（`PROPAGATION_REQUIRED`），不会开新事务。
 
-**仓库自动注入**：包级 `@JForgeConfig(springBeans = true)`（`jforge-annotation`，由 `OrmConfig` 改名）让生成的 `XxxRepository_Impl` 标 `@Repository` + `@Autowired` 构造器并去掉 `final`，Spring 组件扫描自动注册为 bean——无需手写 `Repositories.createXxxRepository`。处理器仅用字符串形式的 Spring 类名生成注解，核心模块无 Spring 依赖。
+**仓库自动注入**：`@JForgeConfig(springBeans = true)`（`jforge-annotation`，由 `OrmConfig` 改名）可放 package-info（整包生效）或直接标在接口上（元素级，覆盖包级），生成的 `XxxRepository_Impl` 标 `@Repository` + `@Autowired` 构造器并去掉 `final`，Spring 组件扫描自动注册为 bean——无需手写 `Repositories.createXxxRepository`。处理器在 `@SupportedAnnotationTypes` 声明 `@JForgeConfig`；仅用字符串形式的 Spring 类名生成注解，核心模块无 Spring 依赖。
 
 测试覆盖：`SpringTransactionControlTest`（三种机制提交/回滚端到端）、`OrmTransactionAutoConfigurationTest`（自动配置注册 + imports 文件发现）、`SpringTransactionManagerTest`（包装器单元集成）。
 
@@ -160,6 +160,7 @@ ORM 自身的 `repo.execute(...)` / `beginTransaction()` 与上述方式**可混
 - ✅ **基准验证**：ORM vs 裸 JDBC 全部达标
 - ✅ **编程式事务**：`BaseRepository` 继承 `TransactionOperations`（begin/commit/rollback/isTransactionActive + `execute` 模板）；ThreadLocal 共享、跨仓库原子；`@Transactional` 注解已移除（项目不做声明式事务）
 - ✅ **Spring Starter 接入**（`jforge-spring-boot-starter`）：启动时把全局 `TransactionManager` 替换为 Spring `PlatformTransactionManager` 的包装器（`SpringTransactionManager` + `OrmTransactionAutoConfiguration`，经 `AutoConfiguration.imports` 注册）——生成代码经 `TransactionManager.current()` 无感切换，`execute`/`beginTransaction` 可 join 外部 Spring 事务；`@Transactional` 声明式能力由 Spring 提供；自动配置测试 + 集成测试全绿（依赖 Spring Boot 3.5.6 BOM，仅该模块引入）
+- ⬜ **多数据源支持**：目前两个相关点都假设单 `DataSource` —— ① `springBeans=true` 生成的仓库 impl 构造器直接注入 `DataSource`（多数据源需 `@Qualifier`/按仓库指定）；② `SpringTransactionManager` 包装单个 `PlatformTransactionManager`（多数据源需扩展为按 `DataSource` 解析，如 `Map<DataSource, PlatformTransactionManager>`，`begin/connection` 已带 ds 可查表）。接入时一并规划
 - ⬜ **Phase 3 关联映射**：实体是接口 → 懒加载用 `java.lang.reflect.Proxy`（无需字节码库）
 - ⬜ **Phase 4 一级缓存（L1 Cache）**：事务级 identity map——`findById` 按 (实体, 主键) 缓存，事务内重复查询只发一次 SQL 且返回同一实例；写操作失效/更新；`rollback` 清空缓存；**仅事务激活时生效，未开启事务零开销**（详细设计见下节）
 - ⬜ **Phase 6 GraalVM 验证**：native-image 构建 + native 下测试（生成代码零反射，预期直接通过）
