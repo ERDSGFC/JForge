@@ -89,4 +89,5 @@ repo.execute(conn -> {
 
 - `ORM_PLAN.md` — 开发计划（架构、事务设计、性能原则、已知限制）
 - `CLAUDE.md` — 项目说明与代码规范
+- `RELEASE.md` — Maven Central 发布流程
 - `JMH_USAGE.md` / `EXECUTION_STEPS.md` / `BENCHMARK_RESULTS.md` — JMH 基准文档

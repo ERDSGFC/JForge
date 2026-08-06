@@ -18,56 +18,188 @@
     <module>jforge-spring-boot-starter</module>
   </modules>
 
+  <!-- Maven Central 发布元数据（发布前按实际仓库信息核对） -->
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>erdsgfc</id>
+      <name>erdsgfc</name>
+    </developer>
+  </developers>
+
+  <scm>
+    <url>https://github.com/erdsgfc/jforge</url>
+    <connection>scm:git:https://github.com/erdsgfc/jforge.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/erdsgfc/jforge.git</developerConnection>
+    <tag>HEAD</tag>
+  </scm>
+
   <properties>
     <maven.compiler.source>25</maven.compiler.source>
     <maven.compiler.target>25</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- 依赖版本统一在此集中管理，子模块不写版本号 -->
+    <jmh.version>1.37</jmh.version>
+    <h2.version>2.3.232</h2.version>
+    <hikaricp.version>5.1.0</hikaricp.version>
+    <junit-jupiter.version>5.10.2</junit-jupiter.version>
+    <auto-service.version>1.1.1</auto-service.version>
+    <javapoet.version>0.18.0</javapoet.version>
+    <spring-boot.version>3.5.6</spring-boot.version>
   </properties>
 
   <dependencyManagement>
     <dependencies>
+      <!-- Spring Boot BOM：统一管理 spring-boot-autoconfigure / spring-tx / spring-jdbc 等版本 -->
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <!-- JMH -->
       <dependency>
         <groupId>org.openjdk.jmh</groupId>
         <artifactId>jmh-core</artifactId>
-        <version>1.37</version>
+        <version>${jmh.version}</version>
         <scope>test</scope>
       </dependency>
       <dependency>
         <groupId>org.openjdk.jmh</groupId>
         <artifactId>jmh-generator-annprocess</artifactId>
-        <version>1.37</version>
+        <version>${jmh.version}</version>
         <scope>test</scope>
       </dependency>
       <!-- jforge -->
       <dependency>
         <groupId>com.h2database</groupId>
         <artifactId>h2</artifactId>
-        <version>2.3.232</version>
+        <version>${h2.version}</version>
       </dependency>
       <dependency>
         <groupId>com.zaxxer</groupId>
         <artifactId>HikariCP</artifactId>
-        <version>5.1.0</version>
+        <version>${hikaricp.version}</version>
       </dependency>
       <dependency>
         <groupId>org.junit.jupiter</groupId>
         <artifactId>junit-jupiter</artifactId>
-        <version>5.10.2</version>
+        <version>${junit-jupiter.version}</version>
         <scope>test</scope>
       </dependency>
       <!-- jforge-processor -->
       <dependency>
         <groupId>com.google.auto.service</groupId>
         <artifactId>auto-service</artifactId>
-        <version>1.1.1</version>
+        <version>${auto-service.version}</version>
         <scope>provided</scope>
       </dependency>
       <dependency>
         <groupId>com.palantir.javapoet</groupId>
         <artifactId>javapoet</artifactId>
-        <version>0.18.0</version>
+        <version>${javapoet.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <!-- 插件版本统一在此管理 -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.13.0</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-shade-plugin</artifactId>
+          <version>3.6.0</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-source-plugin</artifactId>
+          <version>3.3.1</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-javadoc-plugin</artifactId>
+          <version>3.6.3</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-gpg-plugin</artifactId>
+          <version>3.2.7</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+
+  <!-- Maven Central 发布：`mvn -Prelease deploy` 时附加 source/javadoc 并签名。
+       GPG 密钥与 OSSRH/Central Portal 凭证通过 ~/.m2/settings.xml（server id: ossrh）提供。 -->
+  <distributionManagement>
+    <snapshotRepository>
+      <id>ossrh</id>
+      <url>https://s01.oss.sonatype.org/content/repositories/snapshots/</url>
+    </snapshotRepository>
+    <repository>
+      <id>ossrh</id>
+      <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+    </repository>
+  </distributionManagement>
+
+  <profiles>
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
