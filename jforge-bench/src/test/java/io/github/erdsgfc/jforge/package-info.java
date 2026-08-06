@@ -1,0 +1,7 @@
+@io.github.erdsgfc.jforge.annotation.OrmConfig(
+        dialect = io.github.erdsgfc.jforge.annotation.Dialect.POSTGRESQL,
+        naming = io.github.erdsgfc.jforge.annotation.NamingStrategy.CAMEL_TO_SNAKE,
+        generatedPackage = "",
+        implSuffix = "_Impl"
+)
+package io.github.erdsgfc.jforge;

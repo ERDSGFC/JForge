@@ -2,18 +2,20 @@
   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>com.qin</groupId>
-  <artifactId>benchmark</artifactId>
+  <groupId>io.github.erdsgfc</groupId>
+  <artifactId>jforge</artifactId>
   <version>1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
-  <name>benchmark</name>
+  <name>JForge</name>
+  <description>JForge — a Java ultra-fast ORM built on compile-time code generation, zero reflection at
+    runtime, extreme performance (equivalent to hand-written hardcoded JDBC) and AOT-friendly.</description>
   <modules>
-    <module>lambda</module>
-    <module>orm-annotation</module>
-    <module>orm-processor</module>
-    <module>orm</module>
-    <module>orm-bench</module>
-    <module>orm-spring-boot-starter</module>
+    <module>jforge-lambda</module>
+    <module>jforge-annotation</module>
+    <module>jforge-processor</module>
+    <module>jforge-core</module>
+    <module>jforge-bench</module>
+    <module>jforge-spring-boot-starter</module>
   </modules>
 
   <properties>
@@ -37,7 +39,7 @@
         <version>1.37</version>
         <scope>test</scope>
       </dependency>
-      <!-- orm -->
+      <!-- jforge -->
       <dependency>
         <groupId>com.h2database</groupId>
         <artifactId>h2</artifactId>
@@ -54,7 +56,7 @@
         <version>5.10.2</version>
         <scope>test</scope>
       </dependency>
-      <!-- orm-processor -->
+      <!-- jforge-processor -->
       <dependency>
         <groupId>com.google.auto.service</groupId>
         <artifactId>auto-service</artifactId>

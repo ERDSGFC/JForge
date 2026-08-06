@@ -66,7 +66,7 @@
 ## Run 11: 子集轮（仅 4 个 benchmark）
 
 > 用正则筛选只跑 `methodHandleConstructor` / `allArgsConstructor` / `reflectionConstructor` / `noArgConstructorWithSetters`，配置与 Run 10 相同（5×3s 预热 + 10×2s 测量 + 5 forks），验证 Run 10 结论的子集复现。  
-> **命令**：`java -jar lambda/target/benchmarks.jar 'LambdaBenchmark\.(methodHandleConstructor|allArgsConstructor|reflectionConstructor|noArgConstructorWithSetters)$'`  
+> **命令**：`java -jar jforge-lambda/target/benchmarks.jar 'LambdaBenchmark\.(methodHandleConstructor|allArgsConstructor|reflectionConstructor|noArgConstructorWithSetters)$'`  
 > **执行顺序** (字母序): allArgsConstructor → methodHandleConstructor → noArgConstructorWithSetters → reflectionConstructor
 
 | Benchmark | Score (ops/s) | Error | vs Run 10 |

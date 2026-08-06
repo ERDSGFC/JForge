@@ -1,11 +1,11 @@
 # JMH 使用说明
 
-本项目 JMH benchmark 的 CLI 参数与用法速查。完整选项列表可用 `java -jar lambda/target/benchmarks.jar -h` 查看。
+本项目 JMH benchmark 的 CLI 参数与用法速查。完整选项列表可用 `java -jar jforge-lambda/target/benchmarks.jar -h` 查看。
 
 ## 构建
 
 ```bash
-mvn clean package -pl lambda          # 生成 lambda/target/benchmarks.jar
+mvn clean package -pl jforge-lambda          # 生成 jforge-lambda/target/benchmarks.jar
 ```
 
 ## 常用参数
@@ -47,19 +47,19 @@ mvn clean package -pl lambda          # 生成 lambda/target/benchmarks.jar
 
 ```bash
 # 列出当前 jar 里所有 benchmark
-java -jar lambda/target/benchmarks.jar -l
+java -jar jforge-lambda/target/benchmarks.jar -l
 
 # 运行全部
-java -jar lambda/target/benchmarks.jar
+java -jar jforge-lambda/target/benchmarks.jar
 
 # 运行单个
-java -jar lambda/target/benchmarks.jar LambdaBenchmark.allArgsConstructor
+java -jar jforge-lambda/target/benchmarks.jar LambdaBenchmark.allArgsConstructor
 
 # 运行多个（正则筛选）
-java -jar lambda/target/benchmarks.jar 'LambdaBenchmark\.(allArgsConstructor|reflectionConstructor)'
+java -jar jforge-lambda/target/benchmarks.jar 'LambdaBenchmark\.(allArgsConstructor|reflectionConstructor)'
 
 # 覆盖默认参数：10 次测量、5 次预热、3 个 fork、加 GC 剖析、结果导出 JSON
-java -jar lambda/target/benchmarks.jar LambdaBenchmark.allArgsConstructor -i 10 -w 5 -f 3 -prof gc -rf json -rff result.json
+java -jar jforge-lambda/target/benchmarks.jar LambdaBenchmark.allArgsConstructor -i 10 -w 5 -f 3 -prof gc -rf json -rff result.json
 ```
 
 ## 入口（当前配置）
@@ -69,7 +69,7 @@ java -jar lambda/target/benchmarks.jar LambdaBenchmark.allArgsConstructor -i 10 
 | 入口 | 参数解析 | 无参默认行为 |
 |---|---|---|
 | `org.openjdk.jmh.Main`（当前 POM） | 解析完整 JMH CLI | 跑 jar 内所有 benchmark 类 |
-| `com.qin.LambdaBenchmark`（类内 main） | 只把参数当 include 模式，不支持 `-i/-w/-f/-prof/-l` 等 | 只跑 LambdaBenchmark 一个类 |
+| `io.github.erdsgfc.jforge.lambda.LambdaBenchmark`（类内 main） | 只把参数当 include 模式，不支持 `-i/-w/-f/-prof/-l` 等 | 只跑 LambdaBenchmark 一个类 |
 
 两个入口最终都走同一个 `org.openjdk.jmh.runner.Runner`，差异仅在入口 wrapper 的参数处理方式。
 

@@ -21,15 +21,15 @@
 ### 步骤 1：打包
 
 ```bash
-mvn package -pl lambda -q -DskipTests
+mvn package -pl jforge-lambda -q -DskipTests
 ```
 
-产出: `lambda/target/benchmarks.jar`（uber-jar，入口 `org.openjdk.jmh.Main`）
+产出: `jforge-lambda/target/benchmarks.jar`（uber-jar，入口 `org.openjdk.jmh.Main`）
 
 ### 步骤 2：运行全部 benchmark（默认注解配置）
 
 ```bash
-java -jar lambda/target/benchmarks.jar > /tmp/jmh_run8.log 2>&1
+java -jar jforge-lambda/target/benchmarks.jar > /tmp/jmh_run8.log 2>&1
 ```
 
 ### 参数解析（实测，来自日志头）
@@ -97,13 +97,13 @@ grep -E "^LambdaBenchmark" /tmp/jmh_run8.log
 ### 步骤 1：打包（可选，代码未变可跳过）
 
 ```bash
-mvn package -pl lambda -q -DskipTests
+mvn package -pl jforge-lambda -q -DskipTests
 ```
 
 ### 步骤 2：后台启动完整测试
 
 ```bash
-java -jar lambda/target/benchmarks.jar -i 10 -w 5 -f 5 -bs 1000 > /tmp/jmh_run9.log 2>&1
+java -jar jforge-lambda/target/benchmarks.jar -i 10 -w 5 -f 5 -bs 1000 > /tmp/jmh_run9.log 2>&1
 ```
 
 ### 参数解析（实测，来自日志头）
@@ -139,7 +139,7 @@ java -jar lambda/target/benchmarks.jar -i 10 -w 5 -f 5 -bs 1000 > /tmp/jmh_run9.
 grep -E "^LambdaBenchmark" /tmp/jmh_run9.log
 
 # 每 fork 均值（验证 fork 间稳定性）
-awk '/^# Benchmark: com.qin/ { b=$3; sub(/^com[.]qin[.]LambdaBenchmark[.]/, "", b) }
+awk '/^# Benchmark: io.github.erdsgfc.jforge.lambda/ { b=$3; sub(/^io[.]github[.]erdsgfc[.]jforge[.]lambda[.]LambdaBenchmark[.]/, "", b) }
      /^# Fork:/ { f=$3 }
      /^Iteration/ { gsub(":", "", $2); printf "%s,%d,%d,%.3f\n", b, f, $2, $3 }' /tmp/jmh_run9.log
 ```
@@ -195,19 +195,19 @@ return (User) MyState.MH_CONSTRUCTOR_10ARG.invokeExact((Long) 1L, "heihei", (Int
 ### 步骤 1：打包
 
 ```bash
-mvn package -pl lambda -q -DskipTests
+mvn package -pl jforge-lambda -q -DskipTests
 ```
 
 ### 步骤 2：快速验证（确认功能正常，~1 分钟）
 
 ```bash
-java -jar lambda/target/benchmarks.jar -f 1 -i 2 -w 1 -to 120s
+java -jar jforge-lambda/target/benchmarks.jar -f 1 -i 2 -w 1 -to 120s
 ```
 
 ### 步骤 3：完整运行（默认注解配置，后台执行，~21 分钟）
 
 ```bash
-java -jar lambda/target/benchmarks.jar > /tmp/jmh_run12.log 2>&1
+java -jar jforge-lambda/target/benchmarks.jar > /tmp/jmh_run12.log 2>&1
 ```
 
 ### 参数解析（实测，来自日志头）
@@ -269,14 +269,14 @@ grep -E "^LambdaBenchmark" /tmp/jmh_run12.log
 ### 步骤 1：打包 + 快速验证
 
 ```bash
-mvn package -pl lambda -q -DskipTests
-java -jar lambda/target/benchmarks.jar 'LambdaBenchmark\.\w*Instance$' -f 1 -i 2 -w 1 -to 120s
+mvn package -pl jforge-lambda -q -DskipTests
+java -jar jforge-lambda/target/benchmarks.jar 'LambdaBenchmark\.\w*Instance$' -f 1 -i 2 -w 1 -to 120s
 ```
 
 ### 步骤 2：完整运行（11 个 benchmark，~32 分钟）
 
 ```bash
-java -jar lambda/target/benchmarks.jar > /tmp/jmh_run14.log 2>&1
+java -jar jforge-lambda/target/benchmarks.jar > /tmp/jmh_run14.log 2>&1
 # Run complete. Total time: 00:32:19
 ```
 
