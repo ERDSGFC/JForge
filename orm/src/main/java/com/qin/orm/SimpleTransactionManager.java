@@ -36,6 +36,13 @@ public final class SimpleTransactionManager implements TransactionManager {
 
     private final ThreadLocal<TxState> tx = new ThreadLocal<>();
 
+    /**
+     * Thread-bound rollback-only flag: when {@code true} the transaction is rolled
+     * back on completion instead of committed. Set through {@link #markRollbackOnly()}
+     * and cleared in {@link #closeAndClear} so it never leaks across transactions.
+     */
+    private final ThreadLocal<Boolean> rollbackOnly = new ThreadLocal<>();
+
     @Override
     public Connection connection(DataSource dataSource) {
         TxState state = tx.get();
@@ -95,6 +102,12 @@ public final class SimpleTransactionManager implements TransactionManager {
         if (state == null) {
             throw new OrmException("No active transaction to commit");
         }
+        if (Boolean.TRUE.equals(rollbackOnly.get())) {
+            // The transaction was marked rollback-only: discard it instead of
+            // committing, without throwing — the caller returned normally.
+            rollback();
+            return;
+        }
         try {
             state.connection.commit();
         } catch (SQLException e) {
@@ -124,6 +137,19 @@ public final class SimpleTransactionManager implements TransactionManager {
         return tx.get() != null;
     }
 
+    @Override
+    public void markRollbackOnly() {
+        if (tx.get() == null) {
+            throw new OrmException("No active transaction to mark rollback-only");
+        }
+        rollbackOnly.set(true);
+    }
+
+    @Override
+    public boolean isRollbackOnly() {
+        return tx.get() != null && Boolean.TRUE.equals(rollbackOnly.get());
+    }
+
     /**
      * Detaches the thread-local state and closes the connection. Called in the
      * {@code finally} of commit/rollback so the thread never leaks a transaction
@@ -133,6 +159,7 @@ public final class SimpleTransactionManager implements TransactionManager {
      */
     private void closeAndClear(TxState state) {
         tx.remove();
+        rollbackOnly.remove();
         try {
             state.connection.close();
         } catch (SQLException ignored) {

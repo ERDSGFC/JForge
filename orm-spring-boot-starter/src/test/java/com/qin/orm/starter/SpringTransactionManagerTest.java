@@ -194,6 +194,25 @@ class SpringTransactionManagerTest {
     }
 
     @Test
+    void manualBeginLeftToOuterTransactionIsClearedOnCompletion() {
+        // Simulates an outer @Transactional boundary that completes without the ORM
+        // committing/rolling back its joined transaction: the completion hook must
+        // clear the stale ORM status so the same thread does not report a spurious
+        // "already active" on its next transaction.
+        TransactionStatus outer = txManager.getTransaction(new DefaultTransactionDefinition());
+        repo.beginTransaction();               // joins the outer tx, stores status
+        assertTrue(repo.isTransactionActive());
+        txManager.commit(outer);               // outer completes; ORM status must be cleared
+
+        assertFalse(repo.isTransactionActive(), "stale status must be cleared by the completion hook");
+        repo.execute(conn -> {                 // must not report "already active"
+            repo.save(repo.createEntity().name("after").age(10));
+            return null;
+        });
+        assertEquals(1, repo.count());
+    }
+
+    @Test
     void runWithoutReturnValue() {
         repo.run(conn -> {
             repo.save(repo.createEntity().name("no-return").age(8));
@@ -211,5 +230,28 @@ class SpringTransactionManagerTest {
 
         assertEquals(1, repo.count());
         assertEquals("param-name", repo.findAll().get(0).name());
+    }
+
+    @Test
+    void markRollbackOnlyRollsBackButReturnsResult() {
+        String result = repo.execute(conn -> {
+            repo.save(repo.createEntity().name("discard").age(1));
+            repo.markRollbackOnly();
+            return "aborted";
+        });
+
+        assertEquals("aborted", result, "execute must return normally despite the rollback");
+        assertEquals(0, repo.count(), "the marked transaction must be rolled back");
+        assertFalse(repo.isTransactionActive());
+    }
+
+    @Test
+    void isRollbackOnlyReflectsMark() {
+        repo.beginTransaction();
+        assertFalse(repo.isRollbackOnly());
+        repo.markRollbackOnly();
+        assertTrue(repo.isRollbackOnly());
+        repo.rollback();
+        assertFalse(repo.isRollbackOnly());
     }
 }

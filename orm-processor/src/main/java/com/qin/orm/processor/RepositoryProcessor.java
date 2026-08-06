@@ -264,15 +264,16 @@ public class RepositoryProcessor extends AbstractProcessor {
     }
 
     /**
-     * Builds the four programmatic-transaction methods inherited from
-     * {@code TransactionOperations}: begin/commit/rollback/isTransactionActive,
-     * delegating to the global {@link TransactionManager}. {@code beginTransaction}
-     * returns the transaction-bound connection so the inherited {@code execute}
-     * default template can hand it to the callback — {@code execute} itself needs
-     * no generated implementation.
+     * Builds the six programmatic-transaction methods inherited from
+     * {@code TransactionOperations}: begin/commit/rollback/isTransactionActive/
+     * markRollbackOnly/isRollbackOnly, delegating to the global
+     * {@link TransactionManager}. {@code beginTransaction} returns the
+     * transaction-bound connection so the inherited {@code execute} default template
+     * can hand it to the callback — {@code execute} itself needs no generated
+     * implementation.
      *
      * @param connection the Connection class
-     * @return the four transaction method specifications
+     * @return the six transaction method specifications
      */
     private List<MethodSpec> txMethods(ClassName connection) {
         return List.of(
@@ -298,6 +299,17 @@ public class RepositoryProcessor extends AbstractProcessor {
                         .addModifiers(Modifier.PUBLIC)
                         .returns(TypeName.BOOLEAN)
                         .addStatement("return $T.current().isActive()", TX_MANAGER)
+                        .build(),
+                MethodSpec.methodBuilder("markRollbackOnly")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .addStatement("$T.current().markRollbackOnly()", TX_MANAGER)
+                        .build(),
+                MethodSpec.methodBuilder("isRollbackOnly")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(TypeName.BOOLEAN)
+                        .addStatement("return $T.current().isRollbackOnly()", TX_MANAGER)
                         .build());
     }
 

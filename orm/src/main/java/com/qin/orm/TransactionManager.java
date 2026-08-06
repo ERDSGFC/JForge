@@ -42,6 +42,24 @@ public interface TransactionManager {
     /** Returns {@code true} when a transaction is active on this thread. */
     boolean isActive();
 
+    /**
+     * Marks the active transaction for rollback without throwing: the transaction is
+     * rolled back when it completes even if the caller returns normally. Used to
+     * abort on a business rule while still returning a result from a transactional
+     * callback.
+     *
+     * @throws OrmException if no transaction is active on this thread
+     */
+    void markRollbackOnly();
+
+    /**
+     * Returns whether the active transaction has been marked for rollback via
+     * {@link #markRollbackOnly()}.
+     *
+     * @return {@code true} when the active transaction is marked for rollback
+     */
+    boolean isRollbackOnly();
+
     // ---- Global extension point --------------------------------------------
 
     /**

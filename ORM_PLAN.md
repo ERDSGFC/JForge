@@ -91,6 +91,7 @@ if (repo.isTransactionActive()) { ... }
 - **零开销**：未开启事务时 `getConnection()` 从池取连接，生成代码与裸 JDBC 等价
 - **不支持嵌套**：事务已激活时再次 `begin` 抛 `OrmException`
 - **跨 DataSource 隔离**：`connection(ds)` 仅当 `ds` 与事务来源 DataSource 相同才复用事务连接
+- **条件性回滚**：`markRollbackOnly()` 标记当前事务回滚但不抛异常——`execute`/`run` 回调正常返回结果，事务在完成点回滚（适合业务规则判定中止）；`isRollbackOnly()` 查询标记（Spring 路径下 join 的外层事务被标记也算）
 
 **Connection 访问（`beginTransaction` 返回连接，`execute` 回调接收）**：为补齐"核心不加事务参数控制"的取舍，`beginTransaction()` 返回**事务绑定**的 `Connection`，`execute(TransactionCallback)`（default 模板）把它传给回调——用于设隔离级别、savepoint、只读、查询超时、裸 SQL 等原生 JDBC 控制（裸 SQL 自动 join 当前事务）。另提供 `execute(param, TransactionParamCallback)` 重载，支持把**外部参数**传入事务回调（连接 + 参数一起交给回调）；以及**无返回值版本** `run(TransactionRunnable)` / `run(param, TransactionParamRunnable)`（对应 `execute`，回调无需 `return null`）。连接所有权由事务管理（commit/rollback 释放、事务连接保持不关），回调可抛 `SQLException` 由框架包装为 `OrmException`；`getConnection`/`releaseConnection` 保持生成实现私有、不暴露。测试：`TransactionTest`/`SpringTransactionManagerTest` 的 savepoint + 裸 SQL + 外部参数 + `run` 用例（内置与 Spring 两条路径）。
 
@@ -99,7 +100,7 @@ if (repo.isTransactionActive()) { ... }
 > **设计决策（已确认）：核心 orm 有意不加事务参数控制（隔离级别/只读/超时）**——保持"最小 + 性能优先"定位，这些能力由 starter（Spring 的 `@Transactional`/`TransactionTemplate`）提供；纯 orm 用户可用 `execute` 回调接收的 `Connection` 参数通过原生 JDBC 自行施加（见上）。默认 `begin()` 固定用 DataSource/连接池默认值，零开销路径不受影响。
 
 - **无隔离级别参数**：`begin` 固定使用 DataSource/连接池默认隔离级别（HikariCP 默认 `READ_COMMITTED`），不提供 `setIsolation` 入口
-- **无事务超时**：不限制事务最长时长；手动 `beginTransaction()` 后忘记 `commit/rollback`（异常路径漏收尾）时连接会一直留在线程上——线程池场景即永久泄漏，推荐统一用 `execute` 模板自动收尾
+- **无事务超时**：不限制事务最长时长；内置 `SimpleTransactionManager` 下手动 `beginTransaction()` 忘 `commit/rollback`（异常路径漏收尾）时连接会一直留在线程上——线程池场景即永久泄漏，推荐统一用 `execute`/`run` 模板自动收尾；Spring 路径下 `SpringTransactionManager` 已注册事务完成钩子（`TransactionSynchronization.afterCompletion`），外层 Spring 事务收尾时自动清理 ORM 状态（连接由 Spring 释放），不会跨事务误报 "already active"
 - **无 savepoint**：不支持部分回滚，与"不支持嵌套事务"一致
 
 ## Spring 事务控制（orm-spring-boot-starter）

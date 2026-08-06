@@ -16,9 +16,12 @@ import java.sql.SQLException;
  * bound to the same {@code DataSource} share one connection and one transaction
  * boundary, so multi-repository work can be wrapped in a single transaction.</p>
  *
- * <p>Nested transactions are not supported: calling {@link #beginTransaction()}
- * while a transaction is already active on the thread throws an
- * {@link com.qin.orm.OrmException}.</p>
+ * <p>Nested ORM-level transactions are not supported: calling {@link #beginTransaction()}
+ * while a transaction begun via this API is still active on the thread throws an
+ * {@link com.qin.orm.OrmException}. With the {@code orm-spring-boot-starter}
+ * installed, calling it inside an outer Spring transaction (e.g. a
+ * {@code @Transactional} service method) instead joins that transaction
+ * ({@code PROPAGATION_REQUIRED}).</p>
  */
 public interface TransactionOperations {
 
@@ -33,9 +36,15 @@ public interface TransactionOperations {
      * transaction: do not close it directly, and do not use it after
      * {@link #commit()} or {@link #rollback()}.</p>
      *
+     * <p>With the {@code orm-spring-boot-starter} installed, calling this inside an
+     * already-active Spring transaction joins it ({@code PROPAGATION_REQUIRED})
+     * instead of throwing; the throw is reserved for a second ORM-level begin
+     * without an intervening commit/rollback.</p>
+     *
      * @return the connection bound to the newly started transaction
-     * @throws com.qin.orm.OrmException if a transaction is already active on this
-     *                                  thread, or the connection cannot be obtained
+     * @throws com.qin.orm.OrmException if another ORM-level transaction is already
+     *                                  active on this thread, or the connection
+     *                                  cannot be obtained
      */
     Connection beginTransaction();
 
@@ -54,11 +63,35 @@ public interface TransactionOperations {
     void rollback();
 
     /**
-     * Returns whether a transaction is currently active on this thread.
+     * Returns whether a transaction is currently active on this thread. With the
+     * built-in {@code SimpleTransactionManager} this is true only for a transaction
+     * begun via {@link #beginTransaction()}; with the {@code orm-spring-boot-starter}
+     * installed it is also true while the thread participates in an outer Spring
+     * transaction (e.g. a {@code @Transactional} service method), detected through
+     * Spring's {@code TransactionSynchronizationManager}.
      *
-     * @return {@code true} when a transaction was begun and not yet committed/rolled back
+     * @return {@code true} when a transaction is active on this thread
      */
     boolean isTransactionActive();
+
+    /**
+     * Marks the active transaction for rollback without throwing: the transaction is
+     * rolled back when it completes, even if {@link #execute} returns normally. Used
+     * to abort on a business rule while still returning a result from the callback.
+     *
+     * @throws com.qin.orm.OrmException if no transaction is active
+     */
+    void markRollbackOnly();
+
+    /**
+     * Returns whether the active transaction has been marked for rollback via
+     * {@link #markRollbackOnly()}. With the Spring starter installed this is also
+     * {@code true} when the outer Spring transaction the ORM joined has been marked
+     * rollback-only.
+     *
+     * @return {@code true} when the active transaction is marked for rollback
+     */
+    boolean isRollbackOnly();
 
     /**
      * Runs {@code callback} inside a transaction: begins a transaction, invokes the
@@ -91,7 +124,10 @@ public interface TransactionOperations {
      * {@code param} alongside the transaction-bound {@link Connection}. Behaviour is
      * identical to {@link #execute(TransactionCallback)}: commit on success, rollback
      * and propagate on any exception (an {@link SQLException} from the callback is
-     * wrapped into {@link OrmException}).
+     * wrapped into {@link OrmException}). The parameter must be a typed value so the
+     * compiler can infer {@code P}; a literal {@code null} requires an explicit type
+     * (a cast or an explicitly-typed lambda parameter). To run a transaction without
+     * a parameter, use {@link #execute(TransactionCallback)}.
      *
      * @param param    the externally supplied parameter, forwarded to the callback
      * @param callback the transactional work, receiving the connection and the parameter
@@ -105,13 +141,21 @@ public interface TransactionOperations {
         Connection conn = beginTransaction();
         try {
             T result = callback.doInTransaction(conn, param);
-            commit();
+            if (isRollbackOnly()) {
+                // The callback (or an outer Spring transaction) marked the transaction
+                // rollback-only to abort without throwing: roll back, but still return
+                // the callback's result normally.
+                rollback();
+            } else {
+                commit();
+            }
             return result;
         } catch (SQLException e) {
             // Wrap JDBC failures from the callback, matching the ORM's
-            // no-checked-exceptions contract.
+            // no-checked-exceptions contract; keep the JDBC error message as context.
             rollbackQuietly();
-            throw new OrmException("Transaction failed", e);
+            throw new OrmException(
+                    "Transaction failed" + (e.getMessage() != null ? ": " + e.getMessage() : ""), e);
         } catch (RuntimeException | Error ex) {
             // Roll back the partially-executed body; a failed commit has already
             // released the connection, so a quiet rollback prevents masking the

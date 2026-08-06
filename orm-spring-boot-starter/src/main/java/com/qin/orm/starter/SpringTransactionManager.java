@@ -9,6 +9,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.DefaultTransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import javax.sql.DataSource;
@@ -134,6 +135,11 @@ public final class SpringTransactionManager implements TransactionManager, Smart
      * rollback-only marker. A nested ORM-level begin (another {@code begin} without
      * an intervening commit/rollback) is rejected.</p>
      *
+     * <p>Registers a transaction completion hook so a transaction begun manually and
+     * left to an outer Spring {@code @Transactional} boundary (no {@code commit()/
+     * rollback()} call) cannot leak a stale status: without it, the same pooled
+     * thread would report a spurious "already active" on its next transaction.</p>
+     *
      * @param dataSource the data source the transaction belongs to (unused)
      * @throws OrmException if a transaction is already active on this thread, or the
      *                      transaction cannot be started
@@ -147,6 +153,18 @@ public final class SpringTransactionManager implements TransactionManager, Smart
             status.set(delegate.getTransaction(DEFINITION));
         } catch (RuntimeException e) {
             throw new OrmException("Cannot begin transaction", e);
+        }
+        // Synchronizations are active right after getTransaction (Spring initialized
+        // them), so registration is safe. The hook clears our status when the Spring
+        // transaction completes — however it ends — even if the caller never called
+        // commit()/rollback().
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int completionStatus) {
+                    status.remove();
+                }
+            });
         }
     }
 
@@ -208,5 +226,22 @@ public final class SpringTransactionManager implements TransactionManager, Smart
     @Override
     public boolean isActive() {
         return status.get() != null || TransactionSynchronizationManager.isActualTransactionActive();
+    }
+
+    @Override
+    public void markRollbackOnly() {
+        TransactionStatus txStatus = status.get();
+        if (txStatus == null) {
+            throw new OrmException("No active transaction to mark rollback-only");
+        }
+        // On a participating status (joined an outer @Transactional transaction) this
+        // marks the outer transaction rollback-only — standard Spring semantics.
+        txStatus.setRollbackOnly();
+    }
+
+    @Override
+    public boolean isRollbackOnly() {
+        TransactionStatus txStatus = status.get();
+        return txStatus != null && txStatus.isRollbackOnly();
     }
 }

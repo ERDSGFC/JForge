@@ -202,4 +202,27 @@ class TransactionTest {
         assertEquals(1, repo.count());
         assertEquals("param-name", repo.findAll().get(0).name());
     }
+
+    @Test
+    void markRollbackOnlyRollsBackButReturnsResult() {
+        String result = repo.execute(conn -> {
+            repo.save(repo.createEntity().name("discard").age(1));
+            repo.markRollbackOnly();
+            return "aborted";
+        });
+
+        assertEquals("aborted", result, "execute must return normally despite the rollback");
+        assertEquals(0, repo.count(), "the marked transaction must be rolled back");
+        assertFalse(repo.isTransactionActive());
+    }
+
+    @Test
+    void isRollbackOnlyReflectsMark() {
+        repo.beginTransaction();
+        assertFalse(repo.isRollbackOnly());
+        repo.markRollbackOnly();
+        assertTrue(repo.isRollbackOnly());
+        repo.rollback();
+        assertFalse(repo.isRollbackOnly());
+    }
 }
