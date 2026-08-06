@@ -180,4 +180,36 @@ class SpringTransactionManagerTest {
         assertEquals(1, repo.count());
         assertEquals("keep", repo.findAll().get(0).name());
     }
+
+    @Test
+    void executeWithExternalParameter() {
+        String result = repo.execute("external", (conn, param) -> {
+            repo.save(repo.createEntity().name(param).age(7));
+            return "done:" + param;
+        });
+
+        assertEquals("done:external", result);
+        assertEquals(1, repo.count());
+        assertEquals("external", repo.findAll().get(0).name());
+    }
+
+    @Test
+    void runWithoutReturnValue() {
+        repo.run(conn -> {
+            repo.save(repo.createEntity().name("no-return").age(8));
+        });
+
+        assertEquals(1, repo.count());
+        assertEquals("no-return", repo.findAll().get(0).name());
+    }
+
+    @Test
+    void runWithExternalParameter() {
+        repo.run("param-name", (conn, param) -> {
+            repo.save(repo.createEntity().name(param).age(9));
+        });
+
+        assertEquals(1, repo.count());
+        assertEquals("param-name", repo.findAll().get(0).name());
+    }
 }

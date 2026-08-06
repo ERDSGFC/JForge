@@ -81,9 +81,30 @@ public interface TransactionOperations {
      *                      or the callback throws SQLException
      */
     default <T> T execute(TransactionCallback<T> callback) {
+        // Delegate to the parameterised overload with a null Void parameter, so the
+        // commit/rollback logic lives in exactly one place.
+        return execute((Void) null, (conn, ignored) -> callback.doInTransaction(conn));
+    }
+
+    /**
+     * Runs {@code callback} inside a transaction, passing it the externally supplied
+     * {@code param} alongside the transaction-bound {@link Connection}. Behaviour is
+     * identical to {@link #execute(TransactionCallback)}: commit on success, rollback
+     * and propagate on any exception (an {@link SQLException} from the callback is
+     * wrapped into {@link OrmException}).
+     *
+     * @param param    the externally supplied parameter, forwarded to the callback
+     * @param callback the transactional work, receiving the connection and the parameter
+     * @param <T>      the callback's return type
+     * @param <P>      the parameter type
+     * @return the callback's result, or {@code null} for side-effect-only bodies
+     * @throws OrmException if the transaction cannot be begun, committed or rolled back,
+     *                      or the callback throws SQLException
+     */
+    default <T, P> T execute(P param, TransactionParamCallback<T, P> callback) {
         Connection conn = beginTransaction();
         try {
-            T result = callback.doInTransaction(conn);
+            T result = callback.doInTransaction(conn, param);
             commit();
             return result;
         } catch (SQLException e) {
@@ -98,6 +119,43 @@ public interface TransactionOperations {
             rollbackQuietly();
             throw ex;
         }
+    }
+
+    /**
+     * Runs {@code runnable} inside a transaction without a return value — the
+     * void counterpart of {@link #execute(TransactionCallback)}, for side-effect-only
+     * bodies that need no {@code return null}. Behaviour is identical: commit on
+     * success, rollback and propagate on any exception (an {@link SQLException} from
+     * the body is wrapped into {@link OrmException}).
+     *
+     * @param runnable the transactional work
+     * @throws OrmException if the transaction cannot be begun, committed or rolled back,
+     *                      or the body throws SQLException
+     */
+    default void run(TransactionRunnable runnable) {
+        execute(conn -> {
+            runnable.doInTransaction(conn);
+            return null;
+        });
+    }
+
+    /**
+     * Runs {@code runnable} inside a transaction, passing it the externally supplied
+     * {@code param} alongside the transaction-bound {@link Connection}, without a
+     * return value — the void counterpart of
+     * {@link #execute(Object, TransactionParamCallback)}.
+     *
+     * @param param    the externally supplied parameter, forwarded to the body
+     * @param runnable the transactional work, receiving the connection and the parameter
+     * @param <P>      the parameter type
+     * @throws OrmException if the transaction cannot be begun, committed or rolled back,
+     *                      or the body throws SQLException
+     */
+    default <P> void run(P param, TransactionParamRunnable<P> runnable) {
+        execute(param, (conn, p) -> {
+            runnable.doInTransaction(conn, p);
+            return null;
+        });
     }
 
     /**
