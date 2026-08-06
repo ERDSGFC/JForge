@@ -76,8 +76,7 @@
                         </path>
                     </annotationProcessorPaths>
                     <annotationProcessors>
-                        <annotationProcessor>io.github.erdsgfc.jforge.processor.EntityProcessor</annotationProcessor>
-                        <annotationProcessor>io.github.erdsgfc.jforge.processor.RepositoryProcessor</annotationProcessor>
+                        <annotationProcessor>io.github.erdsgfc.jforge.processor.JForgeProcessor</annotationProcessor>
                     </annotationProcessors>
                 </configuration>
             </plugin>

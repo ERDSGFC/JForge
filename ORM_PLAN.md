@@ -28,8 +28,9 @@ UserEntity (interface)              UserEntity_Impl
 jforge-annotation/      # 注解：@Table/@Id/@Column/@GeneratedValue/@Transient（METHOD 作用域）
                      #       @Dao/@Query/@Bind/@ReturnGeneratedKeys
 jforge-processor/       # 编译期生成器（javapoet + auto-service，provided，不进运行时）
-  ├── EntityProcessor.java      # @Table 接口 → UserEntity_Impl（字段 + getter + builder setter）
-  ├── RepositoryProcessor.java  # @Dao 接口 → UserRepository_Impl（CRUD 12 方法 + @Query）
+  ├── JForgeProcessor.java      # 入口：只处理 @Dao，经 BaseRepository<T,ID> 定位实体并生成实体 impl（去重）
+  ├── EntityGenerator.java      # 实体接口 → UserEntity_Impl（字段 + getter + builder setter）
+  ├── RepositoryGenerator.java  # @Dao → UserRepository_Impl（CRUD 13 方法 + @Query + 固定 SQL 常量字段）
   ├── EntityModel.java          # 共享实体模型解析
   ├── SqlCodegen.java           # 绑定/读取代码块生成（编译期类型决策）
   └── TypeNameUtils.java        # 类型 → javapoet TypeName / JDBC getter/setter 映射
@@ -153,7 +154,7 @@ ORM 自身的 `repo.execute(...)` / `beginTransaction()` 与上述方式**可混
 
 ## 阶段状态
 
-- ✅ **Repository 架构重构**（原 Phase 1/1.5 全部替换）：实体接口 + @Dao 仓库 + 编译期生成（CRUD 12 方法 + @Query + DTO 投影 + Repositories 工厂）
+- ✅ **Repository 架构重构**（原 Phase 1/1.5 全部替换）：实体接口 + @Dao 仓库 + 编译期生成（CRUD 13 方法 + @Query + DTO 投影 + Repositories 工厂；只处理 @Dao，实体 impl 经仓库类型参数定位并生成）
 - ✅ **基准验证**：ORM vs 裸 JDBC 全部达标
 - ✅ **编程式事务**：`BaseRepository` 继承 `TransactionOperations`（begin/commit/rollback/isTransactionActive + `execute` 模板）；ThreadLocal 共享、跨仓库原子；`@Transactional` 注解已移除（项目不做声明式事务）
 - ✅ **Spring Starter 接入**（`jforge-spring-boot-starter`）：启动时把全局 `TransactionManager` 替换为 Spring `PlatformTransactionManager` 的包装器（`SpringTransactionManager` + `OrmTransactionAutoConfiguration`，经 `AutoConfiguration.imports` 注册）——生成代码经 `TransactionManager.current()` 无感切换，`execute`/`beginTransaction` 可 join 外部 Spring 事务；`@Transactional` 声明式能力由 Spring 提供；自动配置测试 + 集成测试全绿（依赖 Spring Boot 3.5.6 BOM，仅该模块引入）

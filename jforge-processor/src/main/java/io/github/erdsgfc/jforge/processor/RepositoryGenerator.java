@@ -1,154 +1,77 @@
 package io.github.erdsgfc.jforge.processor;
 
-import com.google.auto.service.AutoService;
-import com.palantir.javapoet.*;
-import io.github.erdsgfc.jforge.annotation.*;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.JavaFile;
+import com.palantir.javapoet.MethodSpec;
+import javax.lang.model.element.Modifier;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
+import io.github.erdsgfc.jforge.annotation.Bind;
+import io.github.erdsgfc.jforge.annotation.Query;
+import io.github.erdsgfc.jforge.annotation.ReturnGeneratedKeys;
+import io.github.erdsgfc.jforge.annotation.Table;
 
-import javax.annotation.processing.*;
-import javax.lang.model.SourceVersion;
-import javax.lang.model.element.*;
+import javax.annotation.processing.ProcessingEnvironment;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
- * Generates the concrete implementation for each {@code @Dao} repository interface:
- * CRUD methods inherited from {@code io.github.erdsgfc.jforge.core.BaseRepository} (parameterized
- * with the entity and id types) plus {@link Query}-annotated custom methods. The
- * generated code is direct JDBC with type-exact binders/readers — no reflection.
+ * 生成 {@code @Dao} 仓库的实现类 {@code XxxRepository_Impl}：直写 JDBC 的 CRUD 方法（继承自
+ * {@code BaseRepository}）+ {@code @Query} 自定义方法 + 事务方法。固定的 SQL 生成
+ * {@code private final String xxxSql = "..."} 字段（命名、可读，避免散落字面量），方法体引用之。
  */
-@AutoService(javax.annotation.processing.Processor.class)
-@SupportedAnnotationTypes("io.github.erdsgfc.jforge.annotation.Dao")
-@SupportedSourceVersion(SourceVersion.RELEASE_25)
-public class RepositoryProcessor extends AbstractProcessor {
+final class RepositoryGenerator {
 
-    private static final String BASE_REPOSITORY = "io.github.erdsgfc.jforge.core.BaseRepository";
     private static final ClassName ORM_EXCEPTION = ClassName.get("io.github.erdsgfc.jforge", "OrmException");
     private static final ClassName TX_MANAGER = ClassName.get("io.github.erdsgfc.jforge", "TransactionManager");
 
-    private final List<DaoInfo> daos = new ArrayList<>();
-    private int lastFactoriesSize;
-    private OrmConfigHelper configHelper;
+    private final ProcessingEnvironment processingEnv;
+    private final OrmConfigHelper configHelper;
 
-    @Override
-    public synchronized void init(ProcessingEnvironment processingEnv) {
-        super.init(processingEnv);
-        configHelper = new OrmConfigHelper(processingEnv);
-    }
-
-    private static final class DaoInfo {
-        TypeElement element;
-        String daoQualifiedName;
-        String daoSimpleName;
-        String daoPackage;
-        TypeName entityType;
-        TypeName idType;
-        String idTypeName;
-        EntityModel model;
-        String implName;
+    RepositoryGenerator(ProcessingEnvironment processingEnv, OrmConfigHelper configHelper) {
+        this.processingEnv = processingEnv;
+        this.configHelper = configHelper;
     }
 
     /**
-     * Scans the current round's root elements for {@code @Dao} interfaces and
-     * generates their implementation classes, plus the {@code Repositories} factory.
+     * 为一个 {@code @Dao} 生成仓库实现类并写入源文件。
      *
-     * @param annotations the annotation types requested by this processor
-     * @param roundEnv    the current processing round
-     * @return {@code true} (the @Dao annotation is claimed by this processor)
+     * @param info the parsed repository info
      */
-    @Override
-    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-        if (roundEnv.processingOver()) {
-            return true;
-        }
-        for (Element element : roundEnv.getElementsAnnotatedWith(Dao.class)) {
-            if (element.getKind() != ElementKind.INTERFACE) {
-                continue;
-            }
-            processDao((TypeElement) element);
-        }
-        if (daos.size() != lastFactoriesSize) {
-            writeFactories();
-            lastFactoriesSize = daos.size();
-        }
-        return true;
-    }
-
-    /**
-     * Generates the implementation class for one {@code @Dao} repository interface:
-     * resolves the entity/id types from {@code BaseRepository<T, ID>}, parses the
-     * entity model, and emits the CRUD + {@code @Query} methods.
-     *
-     * @param dao the {@code @Dao} repository interface
-     */
-    private void processDao(TypeElement dao) {
-        DaoInfo info = new DaoInfo();
-        info.element = dao;
-        info.daoQualifiedName = dao.getQualifiedName().toString();
-        info.daoSimpleName = dao.getSimpleName().toString();
-        info.daoPackage = packageOf(info.daoQualifiedName);
-        info.implName = info.daoSimpleName + "_Impl";
-
-        // Resolve BaseRepository<T, ID> type arguments.
-        TypeMirror entityMirror = null;
-        TypeMirror idMirror = null;
-        for (TypeMirror iface : dao.getInterfaces()) {
-            if (iface.getKind() == TypeKind.DECLARED) {
-                DeclaredType declared = (DeclaredType) iface;
-                TypeElement ifaceElement = (TypeElement) declared.asElement();
-                if (ifaceElement.getQualifiedName().contentEquals(BASE_REPOSITORY)
-                        && declared.getTypeArguments().size() == 2) {
-                    entityMirror = declared.getTypeArguments().get(0);
-                    idMirror = declared.getTypeArguments().get(1);
-                }
-            }
-        }
-        if (entityMirror == null || idMirror == null) {
-            error(dao, "@Dao interface must extend BaseRepository<T, ID>");
-            return;
-        }
-
-        TypeElement entityElement = (TypeElement) ((DeclaredType) entityMirror).asElement();
-        if (entityElement.getAnnotation(Table.class) == null) {
-            error(dao, "Entity type " + entityElement.getQualifiedName() + " must be annotated with @Table");
-            return;
-        }
-        EntityModel model = EntityModel.parse(entityElement, processingEnv.getTypeUtils(),
-                Diagnostic.Kind.ERROR, processingEnv.getMessager(), configHelper);
-        if (model == null) {
-            return;
-        }
-
-        info.model = model;
-        info.entityType = ClassName.get(model.entityPackage(), model.entitySimpleName());
-        info.idType = TypeNameUtils.toTypeName(idMirror.toString());
-        info.idTypeName = idMirror.toString();
-
+    void generate(JForgeProcessor.DaoInfo info) {
         TypeSpec typeSpec = buildImpl(info);
         try {
             JavaFile.builder(info.daoPackage, typeSpec)
-                    .addFileComment("Generated at compile time by RepositoryProcessor. Do not edit.")
+                    .addFileComment("Generated at compile time by JForgeProcessor. Do not edit.")
                     .build()
                     .writeTo(processingEnv.getFiler());
         } catch (IOException e) {
-            error(dao, "Failed to generate " + info.implName + ": " + e.getMessage());
+            error(info.element, "Failed to generate " + info.implName + ": " + e.getMessage());
         }
-        daos.add(info);
     }
 
-    // ==================== Implementation class ====================
-
     /**
-     * Assembles the repository implementation class: data source field, constructor,
-     * shared row mapper, count helper, the 13 CRUD methods, and the {@code @Query} methods.
+     * 组装仓库实现类：dataSource 字段、固定 SQL 常量字段、构造器、连接 helper、事务方法、
+     * 行映射、CRUD 方法与 {@code @Query} 方法。
      *
      * @param info the parsed repository info
      * @return the generated class specification
      */
-    private TypeSpec buildImpl(DaoInfo info) {
+    private TypeSpec buildImpl(JForgeProcessor.DaoInfo info) {
         ClassName daoClass = ClassName.get(info.daoPackage, info.daoSimpleName);
         ClassName dataSource = ClassName.get("javax.sql", "DataSource");
         ClassName entityImpl = ClassName.get(info.model.entityPackage(),
@@ -157,7 +80,6 @@ public class RepositoryProcessor extends AbstractProcessor {
         ClassName preparedStatement = ClassName.get("java.sql", "PreparedStatement");
         ClassName resultSet = ClassName.get("java.sql", "ResultSet");
         ClassName sqlException = ClassName.get("java.sql", "SQLException");
-        ClassName statement = ClassName.get("java.sql", "Statement");
 
         TypeSpec.Builder builder = TypeSpec.classBuilder(info.implName)
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
@@ -168,6 +90,11 @@ public class RepositoryProcessor extends AbstractProcessor {
                         .addParameter(dataSource, "dataSource")
                         .addStatement("this.dataSource = dataSource")
                         .build());
+
+        // 固定 SQL 常量字段（命名引用，避免方法体内散落字符串字面量）。
+        for (FieldSpec field : sqlFields(info)) {
+            builder.addField(field);
+        }
 
         // Transaction-aware connection helpers; private implementation detail used by
         // the generated CRUD methods and beginTransaction — never exposed on the
@@ -192,85 +119,122 @@ public class RepositoryProcessor extends AbstractProcessor {
         builder.addMethod(rowMapperMethod(info, entityImpl, sqlException, resultSet));
         builder.addMethod(countByIdMethod(info, sqlException, connection, preparedStatement, resultSet));
         for (MethodSpec method : crudMethods(info, entityImpl, connection, preparedStatement, resultSet,
-                sqlException, statement)) {
+                sqlException)) {
             builder.addMethod(method);
         }
-        queryMethods(info, builder, connection, preparedStatement, resultSet, sqlException, statement);
+        queryMethods(info, builder, connection, preparedStatement, resultSet, sqlException);
 
         return builder.build();
     }
 
-    /**
-     * Builds the private {@code mapRow} method: maps the current ResultSet row to a
-     * new entity impl by column index (column order always equals field order).
-     *
-     * @param info         the repository info
-     * @param entityImpl   the generated entity impl class
-     * @param sqlException the SQLException class
-     * @param resultSet    the ResultSet class
-     * @return the mapRow method specification
-     */
-    private MethodSpec rowMapperMethod(DaoInfo info, ClassName entityImpl,
-            ClassName sqlException, ClassName resultSet) {
-        MethodSpec.Builder method = MethodSpec.methodBuilder("mapRow")
-                .addModifiers(Modifier.PRIVATE)
-                .returns(entityImpl)
-                .addParameter(resultSet, "rs")
-                .addException(sqlException)
-                .addStatement("$T e = new $T()", entityImpl, entityImpl);
-        List<EntityModel.ColumnModel> columns = info.model.columns();
-        for (int i = 0; i < columns.size(); i++) {
-            EntityModel.ColumnModel column = columns.get(i);
-            method.addCode(SqlCodegen.readColumn(column.typeName, "e", column.setterName, i + 1));
-            method.addCode("\n");
-        }
-        method.addStatement("return e");
-        return method.build();
-    }
+    // ==================== 固定 SQL 常量字段 ====================
 
     /**
-     * Builds the private {@code countById} helper used by {@code existsById}.
+     * 收集仓库类的固定 SQL 常量字段：CRUD 各方法的 SQL + 每个 {@code @Query} 方法的 SQL。
+     * IN 查询（findByIds/deleteByIds）只把固定前缀提取为常量，占位符部分仍在方法内动态拼接。
      *
-     * @param info             the repository info
-     * @param sqlException     the SQLException class
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param resultSet        the ResultSet class
-     * @return the countById method specification
+     * @param info the parsed repository info
+     * @return the SQL constant field specifications
      */
-    private MethodSpec countByIdMethod(DaoInfo info, ClassName sqlException,
-            ClassName connection, ClassName preparedStatement, ClassName resultSet) {
-        MethodSpec.Builder method = MethodSpec.methodBuilder("countById")
-                .addModifiers(Modifier.PRIVATE)
-                .returns(TypeName.LONG)
-                .addParameter(TypeNameUtils.toTypeName(info.idTypeName), "id")
-                .addException(sqlException);
-        method.addStatement("$T conn = getConnection()", connection);
-        method.beginControlFlow("try");
-        method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement,
-                "SELECT COUNT(*) FROM " + info.model.tableName() + " WHERE " + info.model.idColumn().columnName + "=?");
-        method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
-        method.addCode("\n");
-        method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
-        method.addStatement("rs.next()");
-        method.addStatement("return rs.getLong(1)");
-        method.endControlFlow();
-        method.nextControlFlow("catch ($T e)", sqlException);
-        method.addStatement("throw new $T($S, e)", ORM_EXCEPTION, "count failed");
-        method.nextControlFlow("finally");
-        method.addStatement("releaseConnection(conn)");
-        method.endControlFlow();
-        return method.build();
+    private List<FieldSpec> sqlFields(JForgeProcessor.DaoInfo info) {
+        List<FieldSpec> fields = new ArrayList<>();
+        fields.add(sqlField("saveSql", saveSql(info)));
+        fields.add(sqlField("deleteByIdSql", deleteByIdSql(info)));
+        fields.add(sqlField("deleteByIdsBaseSql", deleteByIdsBaseSql(info)));
+        fields.add(sqlField("updateSql", updateSql(info)));
+        fields.add(sqlField("findByIdSql", findByIdSql(info)));
+        fields.add(sqlField("findByIdsBaseSql", findByIdsBaseSql(info)));
+        fields.add(sqlField("findAllSql", findAllSql(info)));
+        fields.add(sqlField("countSql", countSql(info)));
+        fields.add(sqlField("countByIdSql", countByIdSql(info)));
+        for (Element enclosed : info.element.getEnclosedElements()) {
+            if (enclosed.getKind() == ElementKind.METHOD) {
+                ExecutableElement method = (ExecutableElement) enclosed;
+                if (method.getAnnotation(Query.class) != null) {
+                    fields.add(sqlField(method.getSimpleName() + "Sql", querySql(method)));
+                }
+            }
+        }
+        return fields;
     }
+
+    /** 构造一个 {@code private final String name = "sql";} 字段。 */
+    private static FieldSpec sqlField(String name, String sql) {
+        return FieldSpec.builder(String.class, name, Modifier.PRIVATE, Modifier.FINAL)
+                .initializer("$S", sql)
+                .build();
+    }
+
+    private static String saveSql(JForgeProcessor.DaoInfo info) {
+        EntityModel model = info.model;
+        List<EntityModel.ColumnModel> insertColumns = insertColumns(model);
+        return "INSERT INTO " + model.tableName() + " ("
+                + SqlCodegen.joinColumns(namesOf(insertColumns)) + ") VALUES ("
+                + SqlCodegen.placeholders(insertColumns.size()) + ")";
+    }
+
+    private static String deleteByIdSql(JForgeProcessor.DaoInfo info) {
+        return "DELETE FROM " + info.model.tableName() + " WHERE "
+                + info.model.idColumn().columnName + "=?";
+    }
+
+    private static String deleteByIdsBaseSql(JForgeProcessor.DaoInfo info) {
+        return "DELETE FROM " + info.model.tableName() + " WHERE "
+                + info.model.idColumn().columnName + " IN (";
+    }
+
+    private static String updateSql(JForgeProcessor.DaoInfo info) {
+        EntityModel model = info.model;
+        StringBuilder sets = new StringBuilder();
+        for (EntityModel.ColumnModel column : model.columns()) {
+            if (!column.isId) {
+                if (sets.length() > 0) {
+                    sets.append(",");
+                }
+                sets.append(column.columnName).append("=?");
+            }
+        }
+        return "UPDATE " + model.tableName() + " SET " + sets + " WHERE "
+                + model.idColumn().columnName + "=?";
+    }
+
+    private static String findByIdSql(JForgeProcessor.DaoInfo info) {
+        return "SELECT " + SqlCodegen.joinColumns(namesOf(info.model.columns())) + " FROM "
+                + info.model.tableName() + " WHERE " + info.model.idColumn().columnName + "=?";
+    }
+
+    private static String findByIdsBaseSql(JForgeProcessor.DaoInfo info) {
+        return "SELECT " + SqlCodegen.joinColumns(namesOf(info.model.columns())) + " FROM "
+                + info.model.tableName() + " WHERE " + info.model.idColumn().columnName + " IN (";
+    }
+
+    private static String findAllSql(JForgeProcessor.DaoInfo info) {
+        return "SELECT " + SqlCodegen.joinColumns(namesOf(info.model.columns())) + " FROM "
+                + info.model.tableName();
+    }
+
+    private static String countSql(JForgeProcessor.DaoInfo info) {
+        return "SELECT COUNT(*) FROM " + info.model.tableName();
+    }
+
+    private static String countByIdSql(JForgeProcessor.DaoInfo info) {
+        return "SELECT COUNT(*) FROM " + info.model.tableName() + " WHERE "
+                + info.model.idColumn().columnName + "=?";
+    }
+
+    /** {@code @Query} 方法的 SQL：命名占位符转 {@code ?}（返回转换后的字符串）。 */
+    private static String querySql(ExecutableElement method) {
+        return SqlCodegen.convertPlaceholders(method.getAnnotation(Query.class).value(), new ArrayList<>());
+    }
+
+    // ==================== 事务方法 ====================
 
     /**
      * Builds the six programmatic-transaction methods inherited from
      * {@code TransactionOperations}: begin/commit/rollback/isTransactionActive/
-     * markRollbackOnly/isRollbackOnly, delegating to the global
-     * {@link TransactionManager}. {@code beginTransaction} returns the
-     * transaction-bound connection so the inherited {@code execute} default template
-     * can hand it to the callback — {@code execute} itself needs no generated
-     * implementation.
+     * markRollbackOnly/isRollbackOnly, delegating to the global {@code TransactionManager}.
+     * {@code beginTransaction} returns the transaction-bound connection so the inherited
+     * {@code execute} default template can hand it to the callback.
      *
      * @param connection the Connection class
      * @return the six transaction method specifications
@@ -313,6 +277,8 @@ public class RepositoryProcessor extends AbstractProcessor {
                         .build());
     }
 
+    // ==================== CRUD 方法 ====================
+
     /**
      * Builds all 13 CRUD methods inherited from {@code BaseRepository}.
      *
@@ -322,15 +288,14 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param preparedStatement the PreparedStatement class
      * @param resultSet        the ResultSet class
      * @param sqlException     the SQLException class
-     * @param statement        the Statement class
      * @return the CRUD method specifications
      */
-    private List<MethodSpec> crudMethods(DaoInfo info, ClassName entityImpl,
+    private List<MethodSpec> crudMethods(JForgeProcessor.DaoInfo info, ClassName entityImpl,
             ClassName connection, ClassName preparedStatement, ClassName resultSet,
-            ClassName sqlException, ClassName statement) {
+            ClassName sqlException) {
         List<MethodSpec> methods = new ArrayList<>();
-        methods.add(saveMethod(info, connection, preparedStatement, sqlException, statement));
-        methods.add(saveAllMethod(info, connection, preparedStatement, sqlException, statement));
+        methods.add(saveMethod(info, connection, preparedStatement, sqlException));
+        methods.add(saveAllMethod(info));
         methods.add(deleteMethod(info));
         methods.add(deleteManyMethod(info));
         methods.add(deleteByIdMethod(info, connection, preparedStatement, sqlException));
@@ -340,7 +305,7 @@ public class RepositoryProcessor extends AbstractProcessor {
         methods.add(findByIdsMethod(info, entityImpl, connection, preparedStatement, resultSet, sqlException));
         methods.add(findAllMethod(info, entityImpl, connection, preparedStatement, resultSet, sqlException));
         methods.add(countMethod(info, connection, preparedStatement, resultSet, sqlException));
-        methods.add(existsByIdMethod(info, connection, preparedStatement, sqlException));
+        methods.add(existsByIdMethod(info, sqlException));
         methods.add(createEntityMethod(info, entityImpl));
         return methods;
     }
@@ -353,7 +318,7 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param entityImpl the generated entity impl class
      * @return the createEntity method specification
      */
-    private MethodSpec createEntityMethod(DaoInfo info, ClassName entityImpl) {
+    private MethodSpec createEntityMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl) {
         return MethodSpec.methodBuilder("createEntity")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
@@ -363,36 +328,25 @@ public class RepositoryProcessor extends AbstractProcessor {
     }
 
     /**
-     * Builds {@code save(T)}: INSERT with type-exact binds; when the id is generated,
-     * uses {@code RETURN_GENERATED_KEYS} and writes the key back into the entity.
+     * Builds {@code save(T)}: INSERT (SQL 取 {@code saveSql} 字段) with type-exact binds;
+     * when the id is generated, uses {@code RETURN_GENERATED_KEYS} and writes the key back.
      *
      * @param info             the repository info
      * @param connection       the Connection class
      * @param preparedStatement the PreparedStatement class
      * @param sqlException     the SQLException class
-     * @param statement        the Statement class
      * @return the save method specification
      */
-    private MethodSpec saveMethod(DaoInfo info, ClassName connection, ClassName preparedStatement,
-            ClassName sqlException, ClassName statement) {
+    private MethodSpec saveMethod(JForgeProcessor.DaoInfo info, ClassName connection,
+            ClassName preparedStatement, ClassName sqlException) {
         EntityModel model = info.model;
         List<EntityModel.ColumnModel> insertColumns = insertColumns(model);
-        String sql = "INSERT INTO " + model.tableName() + " ("
-                + SqlCodegen.joinColumns(namesOf(insertColumns)) + ") VALUES ("
-                + SqlCodegen.placeholders(insertColumns.size()) + ")";
-
         MethodSpec.Builder method = MethodSpec.methodBuilder("save")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(info.entityType)
                 .addParameter(info.entityType, "entity");
-        beginTxBlock(method, connection);
-        if (model.idGenerated()) {
-            method.addStatement("$T ps = conn.prepareStatement($S, $T.RETURN_GENERATED_KEYS)",
-                    preparedStatement, sql, statement);
-        } else {
-            method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
-        }
+        beginTxBlock(method, connection, preparedStatement, "saveSql", model.idGenerated());
         int index = 1;
         for (EntityModel.ColumnModel column : insertColumns) {
             method.addCode(SqlCodegen.bindParam(column.typeName, "entity." + column.getterName + "()", index++));
@@ -400,7 +354,7 @@ public class RepositoryProcessor extends AbstractProcessor {
         }
         method.addStatement("ps.executeUpdate()");
         if (model.idGenerated()) {
-            method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", resultSetOf(preparedStatement));
+            method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", ClassName.get("java.sql", "ResultSet"));
             method.beginControlFlow("if (keys.next())");
             method.addStatement("entity.$L(keys.get$L(1))", model.idColumn().setterName,
                     jdbcReturnSuffix(model.idColumn().typeName));
@@ -418,8 +372,7 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param info the repository info
      * @return the batch save method specification
      */
-    private MethodSpec saveAllMethod(DaoInfo info, ClassName connection, ClassName preparedStatement,
-            ClassName sqlException, ClassName statement) {
+    private MethodSpec saveAllMethod(JForgeProcessor.DaoInfo info) {
         return MethodSpec.methodBuilder("save")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
@@ -438,7 +391,7 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param info the repository info
      * @return the delete method specification
      */
-    private MethodSpec deleteMethod(DaoInfo info) {
+    private MethodSpec deleteMethod(JForgeProcessor.DaoInfo info) {
         return MethodSpec.methodBuilder("delete")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
@@ -454,7 +407,7 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param info the repository info
      * @return the batch delete method specification
      */
-    private MethodSpec deleteManyMethod(DaoInfo info) {
+    private MethodSpec deleteManyMethod(JForgeProcessor.DaoInfo info) {
         EntityModel.ColumnModel idColumn = info.model.idColumn();
         MethodSpec.Builder method = MethodSpec.methodBuilder("delete")
                 .addAnnotation(Override.class)
@@ -471,7 +424,7 @@ public class RepositoryProcessor extends AbstractProcessor {
     }
 
     /**
-     * Builds {@code deleteById(ID)}: {@code DELETE ... WHERE id=?}.
+     * Builds {@code deleteById(ID)}: {@code DELETE ... WHERE id=?} (SQL 取 {@code deleteByIdSql}).
      *
      * @param info             the repository info
      * @param connection       the Connection class
@@ -479,29 +432,24 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param sqlException     the SQLException class
      * @return the deleteById method specification
      */
-    private MethodSpec deleteByIdMethod(DaoInfo info, ClassName connection,
+    private MethodSpec deleteByIdMethod(JForgeProcessor.DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName sqlException) {
-        String sql = "DELETE FROM " + info.model.tableName() + " WHERE "
-                + info.model.idColumn().columnName + "=?";
         MethodSpec.Builder method = MethodSpec.methodBuilder("deleteById")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
                 .addParameter(info.idType, "id");
-        beginTxBlock(method, connection);
-        method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
+        beginTxBlock(method, connection, preparedStatement, "deleteByIdSql", false);
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
-        method.nextControlFlow("catch ($T e)", sqlException);
-        method.addStatement("throw new $T($S, e)", ORM_EXCEPTION, "deleteById failed");
-        method.endControlFlow();
+        endTxBlock(method, sqlException, "deleteById");
         return method.build();
     }
 
     /**
-     * Builds {@code deleteByIds(List<ID>)}: {@code DELETE ... WHERE id IN (?,...)} with
-     * a dynamically built placeholder list.
+     * Builds {@code deleteByIds(List<ID>)}: {@code DELETE ... WHERE id IN (?,...)} with a
+     * dynamically built placeholder list (base SQL 取 {@code deleteByIdsBaseSql} 字段)。
      *
      * @param info             the repository info
      * @param connection       the Connection class
@@ -509,7 +457,7 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param sqlException     the SQLException class
      * @return the deleteByIds method specification
      */
-    private MethodSpec deleteByIdsMethod(DaoInfo info, ClassName connection,
+    private MethodSpec deleteByIdsMethod(JForgeProcessor.DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName sqlException) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("deleteByIds")
                 .addAnnotation(Override.class)
@@ -519,9 +467,11 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.beginControlFlow("if (ids.isEmpty())");
         method.addStatement("return 0");
         method.endControlFlow();
-        method.addStatement("$T sql = new $T($S)", ClassName.get("java.lang", "StringBuilder"),
+        // 预分配精确容量：baseSql.length() + ids.size()*2（每个 id 的 "?," + 末尾 ")"），避免扩容拷贝。
+        method.addStatement("$T sql = new $T($N.length() + ids.size() * 2)",
                 ClassName.get("java.lang", "StringBuilder"),
-                "DELETE FROM " + info.model.tableName() + " WHERE " + info.model.idColumn().columnName + " IN (");
+                ClassName.get("java.lang", "StringBuilder"), "deleteByIdsBaseSql");
+        method.addStatement("sql.append($N)", "deleteByIdsBaseSql");
         method.beginControlFlow("for (int i = 0; i < ids.size(); i++)");
         method.beginControlFlow("if (i > 0)");
         method.addStatement("sql.append($S)", ",");
@@ -529,8 +479,7 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.addStatement("sql.append($S)", "?");
         method.endControlFlow();
         method.addStatement("sql.append($S)", ")");
-        beginTxBlock(method, connection);
-        method.addStatement("$T ps = conn.prepareStatement(sql.toString())", preparedStatement);
+        beginTxBlock(method, connection, preparedStatement, "sql.toString()", false);
         method.addStatement("int i = 1");
         method.beginControlFlow("for ($T id : ids)", info.idType);
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", "i"));
@@ -538,15 +487,13 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.addStatement("i++");
         method.endControlFlow();
         method.addStatement("return ps.executeUpdate()");
-        method.nextControlFlow("catch ($T e)", sqlException);
-        method.addStatement("throw new $T($S, e)", ORM_EXCEPTION, "deleteByIds failed");
-        method.endControlFlow();
+        endTxBlock(method, sqlException, "deleteByIds");
         return method.build();
     }
 
     /**
-     * Builds {@code update(T)}: {@code UPDATE t SET c1=?,... WHERE id=?}, binding all
-     * non-id columns then the id.
+     * Builds {@code update(T)}: {@code UPDATE t SET c1=?,... WHERE id=?} (SQL 取 {@code updateSql}),
+     * binding all non-id columns then the id.
      *
      * @param info             the repository info
      * @param connection       the Connection class
@@ -554,7 +501,7 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param sqlException     the SQLException class
      * @return the update method specification
      */
-    private MethodSpec updateMethod(DaoInfo info, ClassName connection,
+    private MethodSpec updateMethod(JForgeProcessor.DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName sqlException) {
         EntityModel model = info.model;
         List<EntityModel.ColumnModel> updateColumns = new ArrayList<>();
@@ -563,41 +510,28 @@ public class RepositoryProcessor extends AbstractProcessor {
                 updateColumns.add(column);
             }
         }
-        StringBuilder sets = new StringBuilder();
-        for (int i = 0; i < updateColumns.size(); i++) {
-            if (i > 0) {
-                sets.append(",");
-            }
-            sets.append(updateColumns.get(i).columnName).append("=?");
-        }
-        String sql = "UPDATE " + model.tableName() + " SET " + sets + " WHERE "
-                + model.idColumn().columnName + "=?";
-
         MethodSpec.Builder method = MethodSpec.methodBuilder("update")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
                 .addParameter(info.entityType, "entity");
-        beginTxBlock(method, connection);
-        method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
+        beginTxBlock(method, connection, preparedStatement, "updateSql", false);
         int index = 1;
         for (EntityModel.ColumnModel column : updateColumns) {
             method.addCode(SqlCodegen.bindParam(column.typeName, "entity." + column.getterName + "()", index++));
             method.addCode("\n");
         }
-        method.addCode(SqlCodegen.bindParam(info.model.idColumn().typeName,
-                "entity." + info.model.idColumn().getterName + "()", index));
+        method.addCode(SqlCodegen.bindParam(model.idColumn().typeName,
+                "entity." + model.idColumn().getterName + "()", index));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
-        method.nextControlFlow("catch ($T e)", sqlException);
-        method.addStatement("throw new $T($S, e)", ORM_EXCEPTION, "update failed");
-        method.endControlFlow();
+        endTxBlock(method, sqlException, "update");
         return method.build();
     }
 
     /**
-     * Builds {@code findById(ID)}: {@code SELECT cols FROM t WHERE id=?}, mapping a
-     * single row via {@code mapRow} or returning {@code null}.
+     * Builds {@code findById(ID)}: {@code SELECT cols FROM t WHERE id=?} (SQL 取 {@code findByIdSql}),
+     * mapping a single row via {@code mapRow} or returning {@code null}.
      *
      * @param info             the repository info
      * @param entityImpl       the generated entity impl class
@@ -607,17 +541,14 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param sqlException     the SQLException class
      * @return the findById method specification
      */
-    private MethodSpec findByIdMethod(DaoInfo info, ClassName entityImpl, ClassName connection,
+    private MethodSpec findByIdMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
-        String sql = "SELECT " + SqlCodegen.joinColumns(namesOf(info.model.columns())) + " FROM "
-                + info.model.tableName() + " WHERE " + info.model.idColumn().columnName + "=?";
         MethodSpec.Builder method = MethodSpec.methodBuilder("findById")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(info.entityType)
                 .addParameter(info.idType, "id");
-        beginTxBlock(method, connection);
-        method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
+        beginTxBlock(method, connection, preparedStatement, "findByIdSql", false);
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
         method.addCode("\n");
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
@@ -626,14 +557,13 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.endControlFlow();
         method.addStatement("return mapRow(rs)");
         method.endControlFlow();
-        method.nextControlFlow("catch ($T e)", sqlException);
-        method.addStatement("throw new $T($S, e)", ORM_EXCEPTION, "findById failed");
-        method.endControlFlow();
+        endTxBlock(method, sqlException, "findById");
         return method.build();
     }
 
     /**
-     * Builds {@code findByIds(List<ID>)}: {@code SELECT cols FROM t WHERE id IN (?,...)}.
+     * Builds {@code findByIds(List<ID>)}: {@code SELECT cols FROM t WHERE id IN (?,...)}
+     * (base SQL 取 {@code findByIdsBaseSql} 字段).
      *
      * @param info             the repository info
      * @param entityImpl       the generated entity impl class
@@ -643,10 +573,8 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param sqlException     the SQLException class
      * @return the findByIds method specification
      */
-    private MethodSpec findByIdsMethod(DaoInfo info, ClassName entityImpl, ClassName connection,
+    private MethodSpec findByIdsMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
-        String select = "SELECT " + SqlCodegen.joinColumns(namesOf(info.model.columns())) + " FROM "
-                + info.model.tableName() + " WHERE " + info.model.idColumn().columnName + " IN (";
         MethodSpec.Builder method = MethodSpec.methodBuilder("findByIds")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
@@ -655,8 +583,11 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.beginControlFlow("if (ids.isEmpty())");
         method.addStatement("return $T.of()", ClassName.get(List.class));
         method.endControlFlow();
-        method.addStatement("$T sql = new $T($S)", ClassName.get("java.lang", "StringBuilder"),
-                ClassName.get("java.lang", "StringBuilder"), select);
+        // 预分配精确容量：baseSql.length() + ids.size()*2（每个 id 的 "?," + 末尾 ")"），避免扩容拷贝。
+        method.addStatement("$T sql = new $T($N.length() + ids.size() * 2)",
+                ClassName.get("java.lang", "StringBuilder"),
+                ClassName.get("java.lang", "StringBuilder"), "findByIdsBaseSql");
+        method.addStatement("sql.append($N)", "findByIdsBaseSql");
         method.beginControlFlow("for (int i = 0; i < ids.size(); i++)");
         method.beginControlFlow("if (i > 0)");
         method.addStatement("sql.append($S)", ",");
@@ -664,8 +595,7 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.addStatement("sql.append($S)", "?");
         method.endControlFlow();
         method.addStatement("sql.append($S)", ")");
-        beginTxBlock(method, connection);
-        method.addStatement("$T ps = conn.prepareStatement(sql.toString())", preparedStatement);
+        beginTxBlock(method, connection, preparedStatement, "sql.toString()", false);
         method.addStatement("int i = 1");
         method.beginControlFlow("for ($T id : ids)", info.idType);
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", "i"));
@@ -680,14 +610,12 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.endControlFlow();
         method.endControlFlow();
         method.addStatement("return result");
-        method.nextControlFlow("catch ($T e)", sqlException);
-        method.addStatement("throw new $T($S, e)", ORM_EXCEPTION, "findByIds failed");
-        method.endControlFlow();
+        endTxBlock(method, sqlException, "findByIds");
         return method.build();
     }
 
     /**
-     * Builds {@code findAll()}: {@code SELECT cols FROM t}, mapping every row.
+     * Builds {@code findAll()}: {@code SELECT cols FROM t} (SQL 取 {@code findAllSql}).
      *
      * @param info             the repository info
      * @param entityImpl       the generated entity impl class
@@ -697,16 +625,13 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param sqlException     the SQLException class
      * @return the findAll method specification
      */
-    private MethodSpec findAllMethod(DaoInfo info, ClassName entityImpl, ClassName connection,
+    private MethodSpec findAllMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
-        String sql = "SELECT " + SqlCodegen.joinColumns(namesOf(info.model.columns())) + " FROM "
-                + info.model.tableName();
         MethodSpec.Builder method = MethodSpec.methodBuilder("findAll")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType));
-        beginTxBlock(method, connection);
-        method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
+        beginTxBlock(method, connection, preparedStatement, "findAllSql", false);
         method.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class), info.entityType,
                 ClassName.get("java.util", "ArrayList"));
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
@@ -715,14 +640,12 @@ public class RepositoryProcessor extends AbstractProcessor {
         method.endControlFlow();
         method.endControlFlow();
         method.addStatement("return result");
-        method.nextControlFlow("catch ($T e)", sqlException);
-        method.addStatement("throw new $T($S, e)", ORM_EXCEPTION, "findAll failed");
-        method.endControlFlow();
+        endTxBlock(method, sqlException, "findAll");
         return method.build();
     }
 
     /**
-     * Builds {@code count()}: {@code SELECT COUNT(*) FROM t}.
+     * Builds {@code count()}: {@code SELECT COUNT(*) FROM t} (SQL 取 {@code countSql}).
      *
      * @param info             the repository info
      * @param connection       the Connection class
@@ -731,36 +654,29 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param sqlException     the SQLException class
      * @return the count method specification
      */
-    private MethodSpec countMethod(DaoInfo info, ClassName connection,
+    private MethodSpec countMethod(JForgeProcessor.DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
-        String sql = "SELECT COUNT(*) FROM " + info.model.tableName();
         MethodSpec.Builder method = MethodSpec.methodBuilder("count")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.LONG);
-        beginTxBlock(method, connection);
-        method.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
+        beginTxBlock(method, connection, preparedStatement, "countSql", false);
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
         method.addStatement("rs.next()");
         method.addStatement("return rs.getLong(1)");
         method.endControlFlow();
-        method.nextControlFlow("catch ($T e)", sqlException);
-        method.addStatement("throw new $T($S, e)", ORM_EXCEPTION, "count failed");
-        method.endControlFlow();
+        endTxBlock(method, sqlException, "count");
         return method.build();
     }
 
     /**
      * Builds {@code existsById(ID)}: delegates to the private {@code countById} helper.
      *
-     * @param info             the repository info
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param sqlException     the SQLException class
+     * @param info         the repository info
+     * @param sqlException the SQLException class
      * @return the existsById method specification
      */
-    private MethodSpec existsByIdMethod(DaoInfo info, ClassName connection,
-            ClassName preparedStatement, ClassName sqlException) {
+    private MethodSpec existsByIdMethod(JForgeProcessor.DaoInfo info, ClassName sqlException) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("existsById")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
@@ -774,10 +690,73 @@ public class RepositoryProcessor extends AbstractProcessor {
         return method.build();
     }
 
-    // ==================== @Query methods ====================
+    /**
+     * Builds the private {@code countById} helper used by {@code existsById}
+     * (SQL 取 {@code countByIdSql} 字段).
+     *
+     * @param info             the repository info
+     * @param sqlException     the SQLException class
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param resultSet        the ResultSet class
+     * @return the countById method specification
+     */
+    private MethodSpec countByIdMethod(JForgeProcessor.DaoInfo info, ClassName sqlException,
+            ClassName connection, ClassName preparedStatement, ClassName resultSet) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("countById")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(TypeName.LONG)
+                .addParameter(TypeNameUtils.toTypeName(info.idTypeName), "id")
+                .addException(sqlException);
+        method.addStatement("$T conn = getConnection()", connection);
+        method.beginControlFlow("try ($T ps = conn.prepareStatement($N))", preparedStatement, "countByIdSql");
+        method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
+        method.addCode("\n");
+        method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
+        method.addStatement("rs.next()");
+        method.addStatement("return rs.getLong(1)");
+        method.endControlFlow();
+        method.nextControlFlow("catch ($T e)", sqlException);
+        method.addStatement("throw new $T($S, e)", ORM_EXCEPTION, "count failed");
+        method.nextControlFlow("finally");
+        method.addStatement("releaseConnection(conn)");
+        method.endControlFlow();
+        return method.build();
+    }
 
     /**
-     * Adds a generated method for every {@code @Query}-annotated method on the repository.
+     * Builds the private {@code mapRow} method: maps the current ResultSet row to a
+     * new entity impl by column index (column order always equals field order).
+     *
+     * @param info         the repository info
+     * @param entityImpl   the generated entity impl class
+     * @param sqlException the SQLException class
+     * @param resultSet    the ResultSet class
+     * @return the mapRow method specification
+     */
+    private MethodSpec rowMapperMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl,
+            ClassName sqlException, ClassName resultSet) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("mapRow")
+                .addModifiers(Modifier.PRIVATE)
+                .returns(entityImpl)
+                .addParameter(resultSet, "rs")
+                .addException(sqlException)
+                .addStatement("$T e = new $T()", entityImpl, entityImpl);
+        List<EntityModel.ColumnModel> columns = info.model.columns();
+        for (int i = 0; i < columns.size(); i++) {
+            EntityModel.ColumnModel column = columns.get(i);
+            method.addCode(SqlCodegen.readColumn(column.typeName, "e", column.setterName, i + 1));
+            method.addCode("\n");
+        }
+        method.addStatement("return e");
+        return method.build();
+    }
+
+    // ==================== @Query 方法 ====================
+
+    /**
+     * Adds a generated method for every {@code @Query}-annotated method on the repository
+     * (SQL 取 {@code <方法名>Sql} 字段).
      *
      * @param info             the repository info
      * @param builder          the impl class builder receiving the methods
@@ -785,11 +764,9 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param preparedStatement the PreparedStatement class
      * @param resultSet        the ResultSet class
      * @param sqlException     the SQLException class
-     * @param statement        the Statement class
      */
-    private void queryMethods(DaoInfo info, TypeSpec.Builder builder, ClassName connection,
-            ClassName preparedStatement, ClassName resultSet, ClassName sqlException,
-            ClassName statement) {
+    private void queryMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder, ClassName connection,
+            ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         for (Element enclosed : info.element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.METHOD) {
                 continue;
@@ -800,7 +777,7 @@ public class RepositoryProcessor extends AbstractProcessor {
                 continue;
             }
             builder.addMethod(queryMethod(info, method, query, connection, preparedStatement,
-                    resultSet, sqlException, statement));
+                    resultSet, sqlException));
         }
     }
 
@@ -816,15 +793,15 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param preparedStatement the PreparedStatement class
      * @param resultSet        the ResultSet class
      * @param sqlException     the SQLException class
-     * @param statement        the Statement class
      * @return the query method specification
      */
-    private MethodSpec queryMethod(DaoInfo info, ExecutableElement method, Query query,
+    private MethodSpec queryMethod(JForgeProcessor.DaoInfo info, ExecutableElement method, Query query,
             ClassName connection, ClassName preparedStatement, ClassName resultSet,
-            ClassName sqlException, ClassName statement) {
+            ClassName sqlException) {
         String methodName = method.getSimpleName().toString();
+        String sqlField = methodName + "Sql";
         List<String> placeholders = new ArrayList<>();
-        String sql = SqlCodegen.convertPlaceholders(query.value(), placeholders);
+        SqlCodegen.convertPlaceholders(query.value(), placeholders);
 
         // Map placeholder name → method parameter (by @Bind).
         Map<String, VariableElement> binds = new HashMap<>();
@@ -849,13 +826,7 @@ public class RepositoryProcessor extends AbstractProcessor {
         }
 
         boolean generatedKeys = method.getAnnotation(ReturnGeneratedKeys.class) != null;
-        beginTxBlock(spec, connection);
-        if (generatedKeys) {
-            spec.addStatement("$T ps = conn.prepareStatement($S, $T.RETURN_GENERATED_KEYS)",
-                    preparedStatement, sql, statement);
-        } else {
-            spec.addStatement("$T ps = conn.prepareStatement($S)", preparedStatement, sql);
-        }
+        beginTxBlock(spec, connection, preparedStatement, sqlField, generatedKeys);
 
         for (int i = 0; i < placeholders.size(); i++) {
             VariableElement parameter = binds.get(placeholders.get(i));
@@ -888,9 +859,7 @@ public class RepositoryProcessor extends AbstractProcessor {
             spec.endControlFlow();
         }
 
-        spec.nextControlFlow("catch ($T e)", sqlException);
-        spec.addStatement("throw new $T($S, e)", ORM_EXCEPTION, methodName + " failed");
-        spec.endControlFlow();
+        endTxBlock(spec, sqlException, methodName);
         return spec.build();
     }
 
@@ -902,7 +871,7 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param method the annotated method
      * @return the write-back expression, or a no-op comment when no entity parameter exists
      */
-    private String generatedKeysWriteback(DaoInfo info, ExecutableElement method) {
+    private String generatedKeysWriteback(JForgeProcessor.DaoInfo info, ExecutableElement method) {
         for (VariableElement parameter : method.getParameters()) {
             TypeMirror type = parameter.asType();
             if (type.getKind() == TypeKind.DECLARED) {
@@ -927,7 +896,7 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param method     the annotated method
      * @param returnType the method's return type
      */
-    private void appendResultMapping(MethodSpec.Builder spec, DaoInfo info, ExecutableElement method,
+    private void appendResultMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info, ExecutableElement method,
             TypeMirror returnType) {
         boolean isList = returnType.getKind() == TypeKind.DECLARED
                 && ((DeclaredType) returnType).asElement().getSimpleName().contentEquals("List");
@@ -974,7 +943,7 @@ public class RepositoryProcessor extends AbstractProcessor {
      * @param entityType the entity interface type
      * @param isList     whether the method returns a list
      */
-    private void appendEntityMapping(MethodSpec.Builder spec, DaoInfo info, TypeMirror entityType,
+    private void appendEntityMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info, TypeMirror entityType,
             boolean isList) {
         TypeElement entityElement = (TypeElement) ((DeclaredType) entityType).asElement();
         EntityModel model = EntityModel.parse(entityElement, processingEnv.getTypeUtils(),
@@ -982,7 +951,8 @@ public class RepositoryProcessor extends AbstractProcessor {
         if (model == null) {
             return;
         }
-        ClassName impl = ClassName.get(model.entityPackage(), EntityModel.implNameOf(model.entitySimpleName(), model.implSuffix()));
+        ClassName impl = ClassName.get(model.entityPackage(),
+                EntityModel.implNameOf(model.entitySimpleName(), model.implSuffix()));
         if (isList) {
             spec.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class),
                     TypeNameUtils.toTypeName(entityType.toString()), ClassName.get("java.util", "ArrayList"));
@@ -1054,43 +1024,6 @@ public class RepositoryProcessor extends AbstractProcessor {
         return sb.toString();
     }
 
-    // ==================== Factories ====================
-
-    /**
-     * Emits one {@code Repositories} factory class per dao package, with a
-     * {@code createXxxRepository(DataSource)} method for each processed dao.
-     */
-    private void writeFactories() {
-        // Group daos by package and emit one Repositories class per package.
-        Map<String, List<DaoInfo>> byPackage = new java.util.LinkedHashMap<>();
-        for (DaoInfo info : daos) {
-            byPackage.computeIfAbsent(info.daoPackage, p -> new ArrayList<>()).add(info);
-        }
-        for (Map.Entry<String, List<DaoInfo>> entry : byPackage.entrySet()) {
-            TypeSpec.Builder factories = TypeSpec.classBuilder("Repositories")
-                    .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-                    .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build());
-            ClassName dataSource = ClassName.get("javax.sql", "DataSource");
-            for (DaoInfo info : entry.getValue()) {
-                ClassName daoClass = ClassName.get(info.daoPackage, info.daoSimpleName);
-                factories.addMethod(MethodSpec.methodBuilder("create" + info.daoSimpleName)
-                        .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                        .returns(daoClass)
-                        .addParameter(dataSource, "dataSource")
-                        .addStatement("return new $T(dataSource)", ClassName.get(info.daoPackage, info.implName))
-                        .build());
-            }
-            try {
-                JavaFile.builder(entry.getKey(), factories.build())
-                        .addFileComment("Generated at compile time by RepositoryProcessor. Do not edit.")
-                        .build()
-                        .writeTo(processingEnv.getFiler());
-            } catch (IOException e) {
-                error(null, "Failed to generate Repositories: " + e.getMessage());
-            }
-        }
-    }
-
     // ==================== Helpers ====================
 
     private static List<EntityModel.ColumnModel> insertColumns(EntityModel model) {
@@ -1116,10 +1049,6 @@ public class RepositoryProcessor extends AbstractProcessor {
         return getter.substring(3); // "getLong" → "Long", "getString" → "String"
     }
 
-    private ClassName resultSetOf(ClassName preparedStatement) {
-        return ClassName.get("java.sql", "ResultSet");
-    }
-
     /**
      * Converts a TypeMirror to a JavaPoet TypeName, preserving generic arguments
      * (e.g. {@code List<UserEntity>}).
@@ -1142,22 +1071,28 @@ public class RepositoryProcessor extends AbstractProcessor {
         return TypeNameUtils.toTypeName(type.toString());
     }
 
-    /**
-     * Extracts the package name from a fully qualified name.
-     *
-     * @param qualifiedName the fully qualified name
-     * @return the package name, or an empty string for the default package
-     */
-    private static String packageOf(String qualifiedName) {
-        int dot = qualifiedName.lastIndexOf('.');
-        return dot < 0 ? "" : qualifiedName.substring(0, dot);
-    }
-
     // ---- Tx block helpers ---------------------------------------------------
 
-    /** Starts a tx-aware try block in the generated method: {@code Connection conn = getConnection(); try \{}. */
-    private MethodSpec.Builder beginTxBlock(MethodSpec.Builder method, ClassName connection) {
-        return method.addStatement("$T conn = getConnection()", connection).beginControlFlow("try");
+    /**
+     * Starts the tx-aware block in the generated method: acquires the connection and opens the
+     * {@code PreparedStatement} as a try-with-resources resource so it is always closed —
+     * {@code Connection conn = getConnection(); try (PreparedStatement ps = conn.prepareStatement(...)) \{}.
+     *
+     * @param method           the method builder
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param sqlExpr          the SQL expression passed to prepareStatement (a SQL field name, or
+     *                         {@code sql.toString()} for dynamically built IN queries)
+     * @param generatedKeys    whether to use {@code RETURN_GENERATED_KEYS}
+     */
+    private MethodSpec.Builder beginTxBlock(MethodSpec.Builder method, ClassName connection,
+            ClassName preparedStatement, String sqlExpr, boolean generatedKeys) {
+        method.addStatement("$T conn = getConnection()", connection);
+        if (generatedKeys) {
+            return method.beginControlFlow("try ($T ps = conn.prepareStatement($L, $T.RETURN_GENERATED_KEYS))",
+                    preparedStatement, sqlExpr, ClassName.get("java.sql", "Statement"));
+        }
+        return method.beginControlFlow("try ($T ps = conn.prepareStatement($L))", preparedStatement, sqlExpr);
     }
 
     /** Closes the tx-aware try block with catch + finally. */
@@ -1170,9 +1105,9 @@ public class RepositoryProcessor extends AbstractProcessor {
     }
 
     /**
-     * Reports a compile-time error attached to the given element (null = global).
+     * Reports a compile-time error attached to the given element.
      *
-     * @param element the offending element, or {@code null}
+     * @param element the offending element
      * @param message the error message
      */
     private void error(Element element, String message) {
