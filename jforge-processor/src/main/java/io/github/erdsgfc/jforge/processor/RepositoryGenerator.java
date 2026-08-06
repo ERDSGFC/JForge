@@ -1,5 +1,6 @@
 package io.github.erdsgfc.jforge.processor;
 
+import com.palantir.javapoet.AnnotationSpec;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.JavaFile;
@@ -40,9 +41,9 @@ final class RepositoryGenerator {
     private static final ClassName TX_MANAGER = ClassName.get("io.github.erdsgfc.jforge", "TransactionManager");
 
     private final ProcessingEnvironment processingEnv;
-    private final OrmConfigHelper configHelper;
+    private final JForgeConfigHelper configHelper;
 
-    RepositoryGenerator(ProcessingEnvironment processingEnv, OrmConfigHelper configHelper) {
+    RepositoryGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper) {
         this.processingEnv = processingEnv;
         this.configHelper = configHelper;
     }
@@ -57,6 +58,7 @@ final class RepositoryGenerator {
         try {
             JavaFile.builder(info.daoPackage, typeSpec)
                     .addFileComment("Generated at compile time by JForgeProcessor. Do not edit.")
+                    .skipJavaLangImports(true)
                     .build()
                     .writeTo(processingEnv.getFiler());
         } catch (IOException e) {
@@ -81,15 +83,28 @@ final class RepositoryGenerator {
         ClassName resultSet = ClassName.get("java.sql", "ResultSet");
         ClassName sqlException = ClassName.get("java.sql", "SQLException");
 
+        // 适配 Spring Boot：配置 springBeans=true 时，生成的 impl 标 @Repository + @Autowired 构造器，
+        // 并去掉 final（final 类无法被 Spring CGLIB 代理），由组件扫描自动注入容器。
+        boolean springBeans = configHelper.springBeans(info.element);
         TypeSpec.Builder builder = TypeSpec.classBuilder(info.implName)
-                .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+                .addModifiers(springBeans
+                        ? new Modifier[] {Modifier.PUBLIC}
+                        : new Modifier[] {Modifier.PUBLIC, Modifier.FINAL})
                 .addSuperinterface(daoClass)
-                .addField(FieldSpec.builder(dataSource, "dataSource", Modifier.PRIVATE, Modifier.FINAL).build())
-                .addMethod(MethodSpec.constructorBuilder()
-                        .addModifiers(Modifier.PUBLIC)
-                        .addParameter(dataSource, "dataSource")
-                        .addStatement("this.dataSource = dataSource")
-                        .build());
+                .addField(FieldSpec.builder(dataSource, "dataSource", Modifier.PRIVATE, Modifier.FINAL).build());
+        if (springBeans) {
+            builder.addAnnotation(AnnotationSpec.builder(
+                    ClassName.get("org.springframework.stereotype", "Repository")).build());
+        }
+        MethodSpec.Builder constructor = MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(dataSource, "dataSource")
+                .addStatement("this.dataSource = dataSource");
+        if (springBeans) {
+            constructor.addAnnotation(AnnotationSpec.builder(
+                    ClassName.get("org.springframework.beans.factory.annotation", "Autowired")).build());
+        }
+        builder.addMethod(constructor.build());
 
         // 固定 SQL 常量字段（命名引用，避免方法体内散落字符串字面量）。
         for (FieldSpec field : sqlFields(info)) {

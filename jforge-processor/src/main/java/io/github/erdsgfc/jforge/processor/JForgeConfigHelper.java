@@ -2,7 +2,7 @@ package io.github.erdsgfc.jforge.processor;
 
 import io.github.erdsgfc.jforge.annotation.Dialect;
 import io.github.erdsgfc.jforge.annotation.NamingStrategy;
-import io.github.erdsgfc.jforge.annotation.OrmConfig;
+import io.github.erdsgfc.jforge.annotation.JForgeConfig;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.AnnotationMirror;
@@ -11,18 +11,18 @@ import javax.lang.model.element.PackageElement;
 import javax.lang.model.util.Elements;
 
 /**
- * Reads per-package {@link OrmConfig} from a {@code package-info.java}.
+ * Reads per-package {@link JForgeConfig} from a {@code package-info.java}.
  *
- * <p>Lookup order: the element's own package first; if no {@code @OrmConfig} is
+ * <p>Lookup order: the element's own package first; if no {@code @JForgeConfig} is
  * found there the defaults are used.  Config values are resolved once per
  * package and cached in processor state.</p>
  */
-public final class OrmConfigHelper {
+public final class JForgeConfigHelper {
 
     private final Elements elementUtils;
 
     /** Creates the helper bound to the given processing environment. */
-    public OrmConfigHelper(ProcessingEnvironment processingEnv) {
+    public JForgeConfigHelper(ProcessingEnvironment processingEnv) {
         this.elementUtils = processingEnv.getElementUtils();
     }
 
@@ -30,13 +30,13 @@ public final class OrmConfigHelper {
 
     /** Reads the configured dialect for the package of {@code element}. */
     public Dialect dialect(Element element) {
-        OrmConfig config = configFor(element);
+        JForgeConfig config = configFor(element);
         return config != null ? config.dialect() : Dialect.POSTGRESQL;
     }
 
     /** Reads the configured naming strategy for the package of {@code element}. */
     public NamingStrategy naming(Element element) {
-        OrmConfig config = configFor(element);
+        JForgeConfig config = configFor(element);
         return config != null ? config.naming() : NamingStrategy.NONE;
     }
 
@@ -45,14 +45,20 @@ public final class OrmConfigHelper {
      * An empty string means "same package as the source".
      */
     public String generatedPackage(Element element) {
-        OrmConfig config = configFor(element);
+        JForgeConfig config = configFor(element);
         return config != null ? config.generatedPackage() : "";
     }
 
     /** Returns the impl class suffix (default {@code "_Impl"}). */
     public String implSuffix(Element element) {
-        OrmConfig config = configFor(element);
+        JForgeConfig config = configFor(element);
         return config != null ? config.implSuffix() : "_Impl";
+    }
+
+    /** Whether generated repository impls should be Spring {@code @Repository} beans. */
+    public boolean springBeans(Element element) {
+        JForgeConfig config = configFor(element);
+        return config != null && config.springBeans();
     }
 
     // ---- Naming ------------------------------------------------------------
@@ -74,13 +80,13 @@ public final class OrmConfigHelper {
 
     // ---- Internals ---------------------------------------------------------
 
-    private OrmConfig configFor(Element element) {
+    private JForgeConfig configFor(Element element) {
         PackageElement pkg = elementUtils.getPackageOf(element);
         // Walk up the package hierarchy — outermost first is irrelevant here;
-        // we just want the @OrmConfig placed on the *exact* package.
+        // we just want the @JForgeConfig placed on the *exact* package.
         for (AnnotationMirror mirror : pkg.getAnnotationMirrors()) {
-            if (mirror.getAnnotationType().toString().equals(OrmConfig.class.getCanonicalName())) {
-                return pkg.getAnnotation(OrmConfig.class);
+            if (mirror.getAnnotationType().toString().equals(JForgeConfig.class.getCanonicalName())) {
+                return pkg.getAnnotation(JForgeConfig.class);
             }
         }
         return null;

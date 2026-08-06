@@ -57,7 +57,7 @@ public class JForgeProcessor extends AbstractProcessor {
     private final List<DaoInfo> daos = new ArrayList<>();
     private int lastFactoriesSize;
 
-    private OrmConfigHelper configHelper;
+    private JForgeConfigHelper configHelper;
     private EntityGenerator entityGenerator;
     private RepositoryGenerator repositoryGenerator;
 
@@ -77,7 +77,7 @@ public class JForgeProcessor extends AbstractProcessor {
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
         super.init(processingEnv);
-        configHelper = new OrmConfigHelper(processingEnv);
+        configHelper = new JForgeConfigHelper(processingEnv);
         entityGenerator = new EntityGenerator(processingEnv, configHelper, generatedEntities);
         repositoryGenerator = new RepositoryGenerator(processingEnv, configHelper);
     }
@@ -190,6 +190,7 @@ public class JForgeProcessor extends AbstractProcessor {
             try {
                 JavaFile.builder(entry.getKey(), factories.build())
                         .addFileComment("Generated at compile time by JForgeProcessor. Do not edit.")
+                        .skipJavaLangImports(true)
                         .build()
                         .writeTo(processingEnv.getFiler());
             } catch (IOException e) {

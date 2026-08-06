@@ -13,17 +13,18 @@ import java.lang.annotation.Target;
  * fall back to the defaults documented below.</p>
  *
  * <pre>{@code
- * @OrmConfig(dialect = Dialect.POSTGRESQL,
- *            naming = NamingStrategy.CAMEL_TO_SNAKE,
- *            generatedPackage = "com.example.data.generated",
- *            implSuffix = "Impl")
+ * @JForgeConfig(dialect = Dialect.POSTGRESQL,
+ *               naming = NamingStrategy.CAMEL_TO_SNAKE,
+ *               generatedPackage = "com.example.data.generated",
+ *               implSuffix = "Impl",
+ *               springBeans = true)
  * package com.example.data;
  * import io.github.erdsgfc.jforge.annotation.*;
  * }</pre>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.PACKAGE)
-public @interface OrmConfig {
+public @interface JForgeConfig {
 
     /** SQL dialect used for generated statements (default {@link Dialect#POSTGRESQL}). */
     Dialect dialect() default Dialect.POSTGRESQL;
@@ -39,4 +40,13 @@ public @interface OrmConfig {
 
     /** Column-name inference strategy used when no {@code @Column} is present (default {@link NamingStrategy#NONE}). */
     NamingStrategy naming() default NamingStrategy.NONE;
+
+    /**
+     * Whether generated repository implementation classes are annotated as Spring
+     * {@code @Repository} beans with an {@code @Autowired} constructor taking the
+     * {@code DataSource}, so Spring Boot component scanning auto-registers them in
+     * the application context. Requires the consuming module to have Spring on the
+     * classpath. Default {@code false}.
+     */
+    boolean springBeans() default false;
 }

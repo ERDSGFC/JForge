@@ -35,7 +35,7 @@ public final class EntityModel {
     private final List<ColumnModel> columns = new ArrayList<>();
     private ColumnModel idColumn;
     private boolean idGenerated;
-    private OrmConfigHelper config;
+    private JForgeConfigHelper config;
 
     public static final class ColumnModel {
         final String fieldName;
@@ -68,7 +68,7 @@ public final class EntityModel {
      * @return the parsed model, or {@code null} if the entity is not valid (error reported)
      */
     public static EntityModel parse(TypeElement entity, Types types, Diagnostic.Kind errorKind,
-            javax.annotation.processing.Messager messager, OrmConfigHelper config) {
+            javax.annotation.processing.Messager messager, JForgeConfigHelper config) {
         EntityModel model = new EntityModel();
         model.element = entity;
         model.config = config;
@@ -185,7 +185,7 @@ public final class EntityModel {
         return dot < 0 ? "" : qualified.substring(0, dot);
     }
 
-    /** The active impl suffix (from @OrmConfig or default "_Impl"). */
+    /** The active impl suffix (from @JForgeConfig or default "_Impl"). */
     public String implSuffix() {
         return config.implSuffix(element);
     }
@@ -198,7 +198,7 @@ public final class EntityModel {
         return pkg.isEmpty() ? name : pkg + "." + name;
     }
 
-    /** Package of the entity interface (or custom generated-package from @OrmConfig). */
+    /** Package of the entity interface (or custom generated-package from @JForgeConfig). */
     public String generatedPackage() {
         return config.generatedPackage(element);
     }

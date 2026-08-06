@@ -24,7 +24,7 @@ import java.util.Set;
 final class EntityGenerator {
 
     private final ProcessingEnvironment processingEnv;
-    private final OrmConfigHelper configHelper;
+    private final JForgeConfigHelper configHelper;
     /** 已生成过的实体 impl 全限定名，避免重复生成。 */
     private final Set<String> generatedEntities;
 
@@ -33,7 +33,7 @@ final class EntityGenerator {
      * @param configHelper    the shared ORM config helper
      * @param generatedEntities the set of already-generated entity impl qualified names
      */
-    EntityGenerator(ProcessingEnvironment processingEnv, OrmConfigHelper configHelper,
+    EntityGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper,
             Set<String> generatedEntities) {
         this.processingEnv = processingEnv;
         this.configHelper = configHelper;
@@ -50,7 +50,7 @@ final class EntityGenerator {
             return; // 已由其他仓库生成过
         }
         TypeSpec typeSpec = buildImpl(model);
-        // 输出包：@OrmConfig.generatedPackage（为空则实体同包）。
+        // 输出包：@JForgeConfig.generatedPackage（为空则实体同包）。
         String outputPkg = model.generatedPackage();
         if (outputPkg.isEmpty()) {
             outputPkg = model.entityPackage();
@@ -58,6 +58,7 @@ final class EntityGenerator {
         try {
             JavaFile.builder(outputPkg, typeSpec)
                     .addFileComment("Generated at compile time by JForgeProcessor. Do not edit.")
+                    .skipJavaLangImports(true)
                     .build()
                     .writeTo(processingEnv.getFiler());
         } catch (IOException e) {

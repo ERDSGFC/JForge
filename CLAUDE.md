@@ -61,6 +61,8 @@ mvn -Prelease deploy
 
 引入 starter 后自动配置把全局 `TransactionManager` 替换为 `SpringTransactionManager`（经 `TransactionSynchronizationManager` 检测，`afterSingletonsInstantiated` 时 `TransactionManager.set(...)`）。用户可直接用 `@Transactional` / `TransactionTemplate` / `PlatformTransactionManager` 控制仓库操作（生成代码经 `DataSourceUtils.getConnection` 自动 join 外层事务）。
 
+**仓库自动注入**：在实体/仓库所在包的 `package-info.java` 加 `@JForgeConfig(springBeans = true)`（`jforge-annotation` 注解，原 `OrmConfig` 已改名），生成的 `XxxRepository_Impl` 会标 `@Repository` + `@Autowired` 构造器（并去掉 `final` 以允许 Spring CGLIB 代理），Spring Boot 组件扫描自动注册为 bean，无需手写 `Repositories.createXxxRepository`。
+
 已知限制：`@Transactional(timeout=…)` 对 ORM 生成的直写 JDBC 语句**不生效**（Spring 靠 `JdbcTemplate`→`applyTimeout` 强制执行，生成代码不经 JdbcTemplate）。
 
 ## 关键文件
