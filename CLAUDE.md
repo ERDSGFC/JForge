@@ -56,6 +56,7 @@ mvn -Prelease deploy
 - **手动**：`beginTransaction()`（返回事务绑定 `Connection`，供原生 JDBC 控制）/ `commit()` / `rollback()` / `isTransactionActive()` / `markRollbackOnly()`（条件性回滚，标记回滚但回调正常返回）/ `isRollbackOnly()`
 - **模板**（default 方法，推荐）：`execute(TransactionCallback<T>)`（回调接收 `Connection`，成功自动 commit、异常自动 rollback 并重抛）、`execute(P, TransactionParamCallback<T,P>)`（外部参数）、无返回值版本 `run(TransactionRunnable)` / `run(P, TransactionParamRunnable)`
 - **连接作用域**（无事务共享连接）：`executeWithoutTransaction(ConnectionScopeCallback<T>)`（回调接收共享 `Connection`）——借用 1 个连接供回调内所有仓库调用共享，autocommit 不变、**无原子性**（异常前的语句保持已提交），finally 总是归还；用于"多 SQL 只需省池往返"的场景。嵌套作用域复用外层连接；事务内开作用域退化为 no-op（复用事务连接）；作用域内 `beginTransaction()` 抛 `OrmException`
+- **JDBC 批处理**：`save(List<T>)` 总是**单连接**（不再每实体借还连接）；`@JForgeConfig(batchSize=N)`（包级/元素级）启用 `addBatch()/executeBatch()` 分块，**默认 50**，每 N 行 flush 一次并把生成键按插入序回写实体。覆盖优先级：方法级 `@BatchSize(N)`（在仓库接口里**重声明** `save(List<T>)`）> 仓库接口类型级 `@BatchSize(N)` > `@JForgeConfig.batchSize` > 默认 50；`batchSize=0`/`@BatchSize(0)` 显式关闭批处理（逐条但单连接）。注意：生成键批处理依赖驱动支持（H2/PostgreSQL 支持；MySQL Connector/J 旧版只返回批量中最后一条的键）
 - 事务/作用域经 `TransactionManager`（全局单例 SPI）驱动，生成代码用 `TransactionManager.current().connection(dataSource)` 取连接；**未开启事务且无作用域时零开销**（等价裸 JDBC）
 
 ## Spring 接入（jforge-spring-boot-starter）

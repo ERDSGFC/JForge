@@ -54,4 +54,24 @@ public @interface JForgeConfig {
      * classpath. Default {@code false}.
      */
     boolean springBeans() default false;
+
+    /**
+     * JDBC batch size for the generated {@code save(List<T>)} method. A positive
+     * value enables {@code PreparedStatement.addBatch()/executeBatch()} in chunks
+     * of that size, so a batch insert is flushed every {@code batchSize} rows with
+     * a single network round-trip each; generated ids are written back to the
+     * entities from the batch's generated-keys result set.
+     *
+     * <p>{@code 50} is the default. {@code 0} disables batching: rows are
+     * inserted one by one, but — unlike earlier versions — still on a single
+     * shared connection.</p>
+     *
+     * <p>Overridable per repository with {@link BatchSize} on the repository
+     * interface, and per method with {@link BatchSize} on a redeclared
+     * {@code save(List<T>)}. Generated-key batching requires driver support for
+     * {@code RETURN_GENERATED_KEYS} with {@code executeBatch} (H2 and PostgreSQL
+     * support it; some drivers, e.g. older MySQL Connector/J, return keys only for
+     * the last statement of a batch).</p>
+     */
+    int batchSize() default 50;
 }

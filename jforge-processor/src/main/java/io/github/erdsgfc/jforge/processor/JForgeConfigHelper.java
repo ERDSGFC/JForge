@@ -61,6 +61,16 @@ public final class JForgeConfigHelper {
         return config != null && config.springBeans();
     }
 
+    /**
+     * Reads the configured JDBC batch size for the package of {@code element}.
+     * The default ({@code 50}) matches {@code JForgeConfig.batchSize()};
+     * {@code 0} means "no batching" (rows inserted one by one on one connection).
+     */
+    public int batchSize(Element element) {
+        JForgeConfig config = configFor(element);
+        return config != null ? config.batchSize() : 50;
+    }
+
     // ---- Naming ------------------------------------------------------------
 
     /**

@@ -9,6 +9,7 @@ import javax.lang.model.element.Modifier;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
+import io.github.erdsgfc.jforge.annotation.BatchSize;
 import io.github.erdsgfc.jforge.annotation.Bind;
 import io.github.erdsgfc.jforge.annotation.Query;
 import io.github.erdsgfc.jforge.annotation.ReturnGeneratedKeys;
@@ -325,7 +326,7 @@ final class RepositoryGenerator {
             ClassName sqlException) {
         List<MethodSpec> methods = new ArrayList<>();
         methods.add(saveMethod(info, connection, preparedStatement, sqlException));
-        methods.add(saveAllMethod(info));
+        methods.add(saveAllMethod(info, connection, preparedStatement, resultSet, sqlException));
         methods.add(deleteMethod(info));
         methods.add(deleteManyMethod(info));
         methods.add(deleteByIdMethod(info, connection, preparedStatement, sqlException));
@@ -397,22 +398,178 @@ final class RepositoryGenerator {
     }
 
     /**
-     * Builds the batch {@code save(List<T>)}: iterates and delegates to the single save.
+     * Builds the batch {@code save(List<T>)}: inserts all entities on a single
+     * connection — with or without batching, so a batch insert never pays a pool
+     * round-trip per row (earlier versions looped {@code save(entity)} and
+     * acquired one connection per entity).
      *
-     * @param info the repository info
+     * <p>With a positive configured batch size (see {@link #batchSizeFor}) the
+     * rows are flushed via {@code addBatch()/executeBatch()} in chunks of that
+     * size; generated ids are written back from each chunk's generated-keys
+     * result set, whose rows drivers return in insertion order (H2 and PostgreSQL
+     * do; see {@code JForgeConfig.batchSize()} for the caveat). With {@code 0}
+     * (no batching) the rows are inserted one by one on the shared connection.</p>
+     *
+     * @param info              the repository info
+     * @param connection        the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param resultSet         the ResultSet class
+     * @param sqlException      the SQLException class
      * @return the batch save method specification
      */
-    private MethodSpec saveAllMethod(JForgeProcessor.DaoInfo info) {
-        return MethodSpec.methodBuilder("save")
+    private MethodSpec saveAllMethod(JForgeProcessor.DaoInfo info, ClassName connection,
+            ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
+        EntityModel model = info.model;
+        List<EntityModel.ColumnModel> insertColumns = insertColumns(model);
+        boolean idGenerated = model.idGenerated();
+        int batchSize = batchSizeFor(info);
+        boolean batch = batchSize > 0;
+
+        MethodSpec.Builder method = MethodSpec.methodBuilder("save")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType))
                 .addParameter(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType), "entities")
-                .beginControlFlow("for ($T entity : entities)", info.entityType)
-                .addStatement("save(entity)")
-                .endControlFlow()
+                .beginControlFlow("if (entities.isEmpty())")
                 .addStatement("return entities")
-                .build();
+                .endControlFlow()
+                .addStatement("$T conn = getConnection()", connection);
+        if (idGenerated) {
+            method.beginControlFlow("try ($T ps = conn.prepareStatement(saveSql, $T.RETURN_GENERATED_KEYS))",
+                    preparedStatement, ClassName.get("java.sql", "Statement"));
+        } else {
+            method.beginControlFlow("try ($T ps = conn.prepareStatement(saveSql))", preparedStatement);
+        }
+
+        if (batch) {
+            // Chunked addBatch/executeBatch: flush every batchSize rows, then the
+            // remainder; read each chunk's generated keys back in insertion order.
+            method.addStatement("int batchSize = $L", batchSize);
+            method.addStatement("int batchStart = 0");
+            method.beginControlFlow("for ($T entity : entities)", info.entityType);
+            bindColumns(method, insertColumns);
+            method.addStatement("ps.addBatch()");
+            method.addStatement("batchStart++");
+            method.beginControlFlow("if (batchStart % batchSize == 0)");
+            method.addStatement("ps.executeBatch()");
+            appendBatchKeysWriteback(method, info, resultSet, "batchStart - batchSize");
+            method.endControlFlow();
+            method.endControlFlow();
+            method.beginControlFlow("if (batchStart % batchSize != 0)");
+            method.addStatement("ps.executeBatch()");
+            appendBatchKeysWriteback(method, info, resultSet, "batchStart - batchStart % batchSize");
+            method.endControlFlow();
+        } else {
+            // No batching: one executeUpdate per row on the shared connection.
+            method.beginControlFlow("for ($T entity : entities)", info.entityType);
+            bindColumns(method, insertColumns);
+            method.addStatement("ps.executeUpdate()");
+            if (idGenerated) {
+                method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", resultSet);
+                method.beginControlFlow("if (keys.next())");
+                method.addStatement("entity.$L(keys.get$L(1))", model.idColumn().setterName,
+                        jdbcReturnSuffix(model.idColumn().typeName));
+                method.endControlFlow();
+                method.endControlFlow();
+            }
+            method.endControlFlow();
+        }
+
+        method.addStatement("return entities");
+        endTxBlock(method, sqlException, "save");
+        return method.build();
+    }
+
+    /**
+     * Appends the {@code PreparedStatement} bind calls for one entity row, in
+     * column order (shared by the single and batch save generators).
+     *
+     * @param method  the method builder
+     * @param columns the insert columns
+     */
+    private void bindColumns(MethodSpec.Builder method, List<EntityModel.ColumnModel> columns) {
+        int index = 1;
+        for (EntityModel.ColumnModel column : columns) {
+            method.addCode(SqlCodegen.bindParam(column.typeName, "entity." + column.getterName + "()", index++));
+            method.addCode("\n");
+        }
+    }
+
+    /**
+     * Appends the generated-keys write-back for one flushed batch chunk: iterates
+     * the chunk's keys result set and assigns each key to the corresponding entity
+     * of the chunk (keys are returned in insertion order), starting at the
+     * chunk-relative index expression {@code startExpr}. Emits nothing when the
+     * entity has no generated id.
+     *
+     * @param method     the method builder
+     * @param info       the repository info
+     * @param resultSet  the ResultSet class
+     * @param startExpr  the list index of the chunk's first entity
+     */
+    private void appendBatchKeysWriteback(MethodSpec.Builder method, JForgeProcessor.DaoInfo info,
+            ClassName resultSet, String startExpr) {
+        if (!info.model.idGenerated()) {
+            return;
+        }
+        method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", resultSet);
+        method.addStatement("int i = $L", startExpr);
+        method.beginControlFlow("while (keys.next())");
+        method.addStatement("entities.get(i).$L(keys.get$L(1))", info.model.idColumn().setterName,
+                jdbcReturnSuffix(info.model.idColumn().typeName));
+        method.addStatement("i++");
+        method.endControlFlow();
+        method.endControlFlow();
+    }
+
+    // ---- Batch size resolution ----------------------------------------------
+
+    /**
+     * Resolves the JDBC batch size for a batchable generated method, in order:
+     * a {@code @BatchSize} on a redeclared batch method (e.g. {@code save(List<T>)}
+     * redeclared on the repository with an identical signature), then a
+     * {@code @BatchSize} on the repository interface itself, then
+     * {@code JForgeConfig.batchSize()} (element or package), then the default
+     * ({@code 50}). Batchable methods are the generated CRUD methods inherited
+     * from {@code BaseRepository}; today only {@code save(List<T>)} batches.
+     *
+     * @param info the repository info
+     * @return the resolved batch size ({@code 0} = no batching)
+     */
+    private int batchSizeFor(JForgeProcessor.DaoInfo info) {
+        for (Element enclosed : info.element.getEnclosedElements()) {
+            if (enclosed.getKind() == ElementKind.METHOD) {
+                ExecutableElement method = (ExecutableElement) enclosed;
+                BatchSize batchSize = method.getAnnotation(BatchSize.class);
+                if (batchSize != null && isBatchableRedeclaration(method)) {
+                    return batchSize.value();
+                }
+            }
+        }
+        BatchSize typeLevel = info.element.getAnnotation(BatchSize.class);
+        if (typeLevel != null) {
+            return typeLevel.value();
+        }
+        return configHelper.batchSize(info.element);
+    }
+
+    /**
+     * Returns whether the user-declared method redeclares a batchable generated
+     * CRUD method — a {@code save} with a single {@code List} parameter. Only such
+     * redeclarations can carry a method-level {@code @BatchSize}; a mismatched
+     * signature would not compile against {@code BaseRepository} anyway.
+     *
+     * @param method the user-declared method
+     * @return {@code true} when the method is a redeclared {@code save(List)}
+     */
+    private static boolean isBatchableRedeclaration(ExecutableElement method) {
+        if (!method.getSimpleName().contentEquals("save")) {
+            return false;
+        }
+        List<? extends VariableElement> params = method.getParameters();
+        return params.size() == 1
+                && params.get(0).asType().getKind() == TypeKind.DECLARED
+                && ((DeclaredType) params.get(0).asType()).asElement().getSimpleName().contentEquals("List");
     }
 
     /**
