@@ -169,7 +169,9 @@ public class RepositoryProcessor extends AbstractProcessor {
                         .addStatement("this.dataSource = dataSource")
                         .build());
 
-        // Transaction-aware connection helpers.
+        // Transaction-aware connection helpers; private implementation detail used by
+        // the generated CRUD methods and beginTransaction — never exposed on the
+        // repository interface so callers cannot leak connection ownership.
         builder.addMethod(MethodSpec.methodBuilder("getConnection")
                 .addModifiers(Modifier.PRIVATE)
                 .returns(connection)
@@ -182,7 +184,7 @@ public class RepositoryProcessor extends AbstractProcessor {
                 .build());
 
         // Programmatic transaction methods inherited from TransactionOperations.
-        for (MethodSpec method : txMethods()) {
+        for (MethodSpec method : txMethods(connection)) {
             builder.addMethod(method);
         }
 
@@ -264,18 +266,22 @@ public class RepositoryProcessor extends AbstractProcessor {
     /**
      * Builds the four programmatic-transaction methods inherited from
      * {@code TransactionOperations}: begin/commit/rollback/isTransactionActive,
-     * delegating to the global {@link TransactionManager}. The {@code execute}
-     * template is a {@code default} interface method and therefore needs no
-     * generated implementation.
+     * delegating to the global {@link TransactionManager}. {@code beginTransaction}
+     * returns the transaction-bound connection so the inherited {@code execute}
+     * default template can hand it to the callback — {@code execute} itself needs
+     * no generated implementation.
      *
+     * @param connection the Connection class
      * @return the four transaction method specifications
      */
-    private List<MethodSpec> txMethods() {
+    private List<MethodSpec> txMethods(ClassName connection) {
         return List.of(
                 MethodSpec.methodBuilder("beginTransaction")
                         .addAnnotation(Override.class)
                         .addModifiers(Modifier.PUBLIC)
+                        .returns(connection)
                         .addStatement("$T.current().begin(dataSource)", TX_MANAGER)
+                        .addStatement("return getConnection()")
                         .build(),
                 MethodSpec.methodBuilder("commit")
                         .addAnnotation(Override.class)

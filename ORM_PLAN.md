@@ -92,7 +92,12 @@ if (repo.isTransactionActive()) { ... }
 - **不支持嵌套**：事务已激活时再次 `begin` 抛 `OrmException`
 - **跨 DataSource 隔离**：`connection(ds)` 仅当 `ds` 与事务来源 DataSource 相同才复用事务连接
 
+**Connection 访问（`beginTransaction` 返回连接，`execute` 回调接收）**：为补齐"核心不加事务参数控制"的取舍，`beginTransaction()` 返回**事务绑定**的 `Connection`，`execute(TransactionCallback)`（default 模板）把它传给回调——用于设隔离级别、savepoint、只读、查询超时、裸 SQL 等原生 JDBC 控制（裸 SQL 自动 join 当前事务）。连接所有权由事务管理（commit/rollback 释放、事务连接保持不关），回调可抛 `SQLException` 由框架包装为 `OrmException`；`getConnection`/`releaseConnection` 保持生成实现私有、不暴露。测试：`TransactionTest`/`SpringTransactionManagerTest` 的 savepoint + 裸 SQL 用例（内置与 Spring 两条路径）。
+
 已知限制（内置 `SimpleTransactionManager`；引入 `orm-spring-boot-starter` 后由 Spring 补齐）：
+
+> **设计决策（已确认）：核心 orm 有意不加事务参数控制（隔离级别/只读/超时）**——保持"最小 + 性能优先"定位，这些能力由 starter（Spring 的 `@Transactional`/`TransactionTemplate`）提供；纯 orm 用户可用 `execute` 回调接收的 `Connection` 参数通过原生 JDBC 自行施加（见上）。默认 `begin()` 固定用 DataSource/连接池默认值，零开销路径不受影响。
+
 - **无隔离级别参数**：`begin` 固定使用 DataSource/连接池默认隔离级别（HikariCP 默认 `READ_COMMITTED`），不提供 `setIsolation` 入口
 - **无事务超时**：不限制事务最长时长；手动 `beginTransaction()` 后忘记 `commit/rollback`（异常路径漏收尾）时连接会一直留在线程上——线程池场景即永久泄漏，推荐统一用 `execute` 模板自动收尾
 - **无 savepoint**：不支持部分回滚，与"不支持嵌套事务"一致
@@ -132,6 +137,8 @@ ORM 自身的 `repo.execute(...)` / `beginTransaction()` 与上述方式**可混
 测试覆盖：`SpringTransactionControlTest`（三种机制提交/回滚端到端）、`OrmTransactionAutoConfigurationTest`（自动配置注册 + imports 文件发现）、`SpringTransactionManagerTest`（包装器单元集成）。
 
 ⚠️ 若未引入 starter（全局仍是 `SimpleTransactionManager`），`@Transactional` 等**不会**生效——仓库会拿到独立连接、脱离 Spring 事务边界。这是 starter 存在的意义。
+
+⚠️ **Spring 路径已知限制——事务超时不强制执行**：隔离级别、只读、传播行为都自动生效（Spring 在 `DataSourceTransactionManager.doBegin()` 直接把隔离级别/只读设置到绑定的连接上，ORM 生成代码 join 同一连接）；但**事务超时（`@Transactional(timeout=…)`、`TransactionTemplate` 超时、`TransactionDefinition.getTimeout()`）对 ORM 生成的直写 JDBC 语句不生效**。原因：Spring 对 JDBC 的事务超时本质是"语句级近似"——把超时记录在 `TransactionSynchronizationManager`，待**每条语句执行时**由 `DataSourceUtils.applyTimeout(ps, ds, timeout)` → `Statement.setQueryTimeout()` 强制应用，而调用它的是 `JdbcTemplate`；生成代码是直写 JDBC（`conn.prepareStatement` + `executeUpdate`），不经 `JdbcTemplate`，也无人调用 `applyTimeout`。后续若需强制执行，要让生成代码识别 Spring 并补调 `applyTimeout`（成本高），当前以文档标注为准。
 
 ## 基准结果（ORM vs 裸 JDBC，`-f 3 -i 5`，15 次测量）
 

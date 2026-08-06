@@ -39,6 +39,16 @@ import java.sql.Connection;
  */
 public final class SpringTransactionManager implements TransactionManager, SmartInitializingSingleton {
 
+    /**
+     * Transaction definition shared by every ORM-level transaction: default
+     * propagation ({@code PROPAGATION_REQUIRED}), no isolation or timeout override.
+     * Effectively immutable (no setter is ever called), so a single {@code static
+     * final} instance is safe to share and avoids a per-call allocation — following
+     * this project's principle that {@code static final} references let the JIT
+     * constant-fold.
+     */
+    private static final TransactionDefinition DEFINITION = new DefaultTransactionDefinition();
+
     /** The Spring transaction manager this wrapper delegates to. */
     private final PlatformTransactionManager delegate;
 
@@ -134,7 +144,7 @@ public final class SpringTransactionManager implements TransactionManager, Smart
             throw new OrmException("A transaction is already active on this thread");
         }
         try {
-            status.set(delegate.getTransaction(new DefaultTransactionDefinition()));
+            status.set(delegate.getTransaction(DEFINITION));
         } catch (RuntimeException e) {
             throw new OrmException("Cannot begin transaction", e);
         }

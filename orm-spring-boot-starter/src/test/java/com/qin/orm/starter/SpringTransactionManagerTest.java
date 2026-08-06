@@ -13,6 +13,7 @@ import org.springframework.transaction.support.DefaultTransactionDefinition;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -61,7 +62,7 @@ class SpringTransactionManagerTest {
 
     @Test
     void executeCommitsOnSuccess() {
-        repo.execute(() -> {
+        repo.execute(conn -> {
             repo.save(repo.createEntity().name("a").age(1));
             repo.save(repo.createEntity().name("b").age(2));
             return null;
@@ -73,7 +74,7 @@ class SpringTransactionManagerTest {
 
     @Test
     void executeReturnsCallbackResult() {
-        String result = repo.execute(() -> "hello-spring-tx");
+        String result = repo.execute(conn -> "hello-spring-tx");
 
         assertEquals("hello-spring-tx", result);
         assertFalse(repo.isTransactionActive());
@@ -81,7 +82,7 @@ class SpringTransactionManagerTest {
 
     @Test
     void executeRollsBackOnException() {
-        assertThrows(IllegalStateException.class, () -> repo.execute(() -> {
+        assertThrows(IllegalStateException.class, () -> repo.execute(conn -> {
             repo.save(repo.createEntity().name("a").age(1));
             throw new IllegalStateException("boom");
         }));
@@ -138,8 +139,8 @@ class SpringTransactionManagerTest {
 
     @Test
     void nestedExecuteRejected() {
-        OrmException ex = assertThrows(OrmException.class, () -> repo.execute(() -> {
-            repo.execute(() -> null); // nested begin must fail fast
+        OrmException ex = assertThrows(OrmException.class, () -> repo.execute(conn -> {
+            repo.execute(ignored -> null); // nested begin must fail fast
             return null;
         }));
 
@@ -152,5 +153,31 @@ class SpringTransactionManagerTest {
         assertThrows(OrmException.class, repo::commit);
         assertThrows(OrmException.class, repo::rollback);
         assertFalse(repo.isTransactionActive());
+    }
+
+    @Test
+    void executeCallbackRawSqlJoinsAndRollsBack() {
+        assertThrows(IllegalStateException.class, () -> repo.execute(conn -> {
+            conn.createStatement().executeUpdate("INSERT INTO test_users (user_name, age) VALUES ('raw', 9)");
+            throw new IllegalStateException("boom");
+        }));
+
+        assertEquals(0, repo.count(), "raw SQL through the execute connection must join and roll back");
+    }
+
+    @Test
+    void executeCallbackAllowsSavepointRollback() {
+        repo.execute(conn -> {
+            repo.save(repo.createEntity().name("keep").age(1));
+
+            Savepoint sp = conn.setSavepoint("after-keep");
+            repo.save(repo.createEntity().name("discard").age(2));
+
+            conn.rollback(sp); // keep the first insert, discard the second
+            return null;
+        });
+
+        assertEquals(1, repo.count());
+        assertEquals("keep", repo.findAll().get(0).name());
     }
 }

@@ -1,5 +1,10 @@
 package com.qin.orm.core;
 
+import com.qin.orm.OrmException;
+
+import java.sql.Connection;
+import java.sql.SQLException;
+
 /**
  * Programmatic transaction contract inherited by every repository.
  *
@@ -22,10 +27,17 @@ public interface TransactionOperations {
      * the repository's data source, disables auto-commit, and binds it to the
      * thread so all subsequent repository calls join the transaction.
      *
+     * <p>Returns the transaction-bound {@link Connection} so callers can apply
+     * raw-JDBC control (isolation, savepoints, direct SQL) — and so the default
+     * {@link #execute} can hand it to the callback. The connection is owned by the
+     * transaction: do not close it directly, and do not use it after
+     * {@link #commit()} or {@link #rollback()}.</p>
+     *
+     * @return the connection bound to the newly started transaction
      * @throws com.qin.orm.OrmException if a transaction is already active on this
-     *                                 thread, or the connection cannot be obtained
+     *                                  thread, or the connection cannot be obtained
      */
-    void beginTransaction();
+    Connection beginTransaction();
 
     /**
      * Commits the active transaction and releases its connection.
@@ -49,25 +61,36 @@ public interface TransactionOperations {
     boolean isTransactionActive();
 
     /**
-     * Runs {@code callback} inside a transaction: begins a transaction, executes
-     * the body, then commits on success. If the body (or the commit itself) throws
-     * any {@link RuntimeException} or {@link Error}, the transaction is rolled back
-     * and the original exception rethrown — the caller never has to remember to
-     * roll back.
+     * Runs {@code callback} inside a transaction: begins a transaction, invokes the
+     * callback with the transaction-bound {@link Connection}, then commits on
+     * success. If the callback or the commit throws, the transaction is rolled back
+     * and the exception propagated — an {@link SQLException} from the callback is
+     * wrapped into {@link OrmException}; any {@link RuntimeException} or
+     * {@link Error} propagates unchanged.
      *
-     * @param callback the transactional work, receiving no status object
+     * <p>The {@code Connection} parameter gives callers the raw-JDBC control the ORM
+     * deliberately does not abstract — isolation level, savepoints, read-only, query
+     * timeouts or direct SQL that participates in the transaction — without exposing
+     * connection ownership: {@code execute} manages the connection's lifecycle, and
+     * the low-level get/release pair stays private in the generated implementation.</p>
+     *
+     * @param callback the transactional work, receiving the transaction-bound connection
      * @param <T>      the callback's return type
      * @return the callback's result, or {@code null} for side-effect-only bodies
-     * @throws com.qin.orm.OrmException if the transaction cannot be begun, committed,
-     *                                  or rolled back; any exception thrown by the
-     *                                  callback propagates unchanged after rollback
+     * @throws OrmException if the transaction cannot be begun, committed or rolled back,
+     *                      or the callback throws SQLException
      */
     default <T> T execute(TransactionCallback<T> callback) {
-        beginTransaction();
+        Connection conn = beginTransaction();
         try {
-            T result = callback.doInTransaction();
+            T result = callback.doInTransaction(conn);
             commit();
             return result;
+        } catch (SQLException e) {
+            // Wrap JDBC failures from the callback, matching the ORM's
+            // no-checked-exceptions contract.
+            rollbackQuietly();
+            throw new OrmException("Transaction failed", e);
         } catch (RuntimeException | Error ex) {
             // Roll back the partially-executed body; a failed commit has already
             // released the connection, so a quiet rollback prevents masking the
