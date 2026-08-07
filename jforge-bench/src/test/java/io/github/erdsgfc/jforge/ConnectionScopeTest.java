@@ -46,7 +46,7 @@ class ConnectionScopeTest {
                     "age INT)");
         }
         ds = new CountingDataSource(pool);
-        repo = Repositories.createUserRepository(ds);
+        repo = new JForge(ds).repository(UserRepository.class);
     }
 
     @AfterEach

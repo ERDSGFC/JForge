@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  * Verifies that with {@code @JForgeConfig(springBeans = true)} on a package, the
  * generated repository impl (annotated {@code @Repository}, {@code @Autowired}
  * constructor taking the {@code DataSource}) is auto-registered by Spring component
- * scanning and injectable — no manual {@code Repositories.createXxxRepository} needed.
+ * scanning and injectable — no manual {@code JForge} / repository creation needed.
  */
 @SpringJUnitConfig(RepositoryAutoInjectionTest.Config.class)
 class RepositoryAutoInjectionTest {

@@ -1,4 +1,5 @@
 package io.github.erdsgfc.jforge.benchmark;
+import io.github.erdsgfc.jforge.JForge;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -65,7 +66,7 @@ public class OrmVsJdbcBenchmark {
             rs.next();
             seededId = rs.getLong(1);
         }
-        repo = Repositories.createUserRepository(dataSource);
+        repo = new JForge(dataSource).repository(UserRepository.class);
     }
 
     /** Closes the shared pool. */

@@ -52,8 +52,9 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
     List<UserEntity> findByAgeGreaterThan(@Bind("age") int age);
 }
 
-// 3. 使用（Repositories 工厂编译期生成）
-UserRepository repo = Repositories.createUserRepository(dataSource);
+// 3. 使用（统一门面 JForge：持有 DataSource/TransactionManager，缓存全部仓库）
+JForge jforge = new JForge(dataSource);
+UserRepository repo = jforge.repository(UserRepository.class);
 UserEntity user = repo.save(new UserEntity_Impl().name("qin").age(25));
 UserEntity found = repo.findById(1L);
 

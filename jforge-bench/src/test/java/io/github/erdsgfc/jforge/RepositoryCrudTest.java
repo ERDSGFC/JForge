@@ -36,7 +36,7 @@ class RepositoryCrudTest {
                     "user_name VARCHAR(100)," +
                     "age INT)");
         }
-        repo = Repositories.createUserRepository(ds);
+        repo = new JForge(ds).repository(UserRepository.class);
     }
 
     @AfterEach

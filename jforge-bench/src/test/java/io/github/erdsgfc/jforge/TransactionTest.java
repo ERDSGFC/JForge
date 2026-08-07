@@ -41,7 +41,7 @@ class TransactionTest {
                     "user_name VARCHAR(100)," +
                     "age INT)");
         }
-        repo = Repositories.createUserRepository(ds);
+        repo = new JForge(ds).repository(UserRepository.class);
     }
 
     @AfterEach
@@ -117,7 +117,7 @@ class TransactionTest {
     void differentRepositoryInstancesShareTransaction() {
         // Second repository type on the same DataSource: joins the same thread-local tx.
         io.github.erdsgfc.jforge.benchmark.UserRepository benchRepo =
-                io.github.erdsgfc.jforge.benchmark.Repositories.createUserRepository(ds);
+                new JForge(ds).repository(io.github.erdsgfc.jforge.benchmark.UserRepository.class);
 
         repo.beginTransaction();
         benchRepo.save(benchRepo.createEntity().name("from-bench").age(6));

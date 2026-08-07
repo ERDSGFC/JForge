@@ -1,4 +1,5 @@
 package io.github.erdsgfc.jforge.batch;
+import io.github.erdsgfc.jforge.JForge;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -58,10 +59,10 @@ class ConnectionBatchTest {
                     "age INT)");
         }
         ds = new CountingDataSource(pool);
-        packageRepo = Repositories.createPackageBatchRepository(ds);
-        typeRepo = Repositories.createTypeBatchRepository(ds);
-        methodRepo = Repositories.createMethodBatchRepository(ds);
-        noBatchRepo = Repositories.createNoBatchRepository(ds);
+        packageRepo = new JForge(ds).repository(PackageBatchRepository.class);
+        typeRepo = new JForge(ds).repository(TypeBatchRepository.class);
+        methodRepo = new JForge(ds).repository(MethodBatchRepository.class);
+        noBatchRepo = new JForge(ds).repository(NoBatchRepository.class);
     }
 
     @AfterEach
@@ -124,7 +125,7 @@ class ConnectionBatchTest {
         // The main-tree UserRepository has no JForgeConfig: the default batch size
         // (50) applies, so 3 rows flush in a single batch.
         io.github.erdsgfc.jforge.UserRepository repo =
-                io.github.erdsgfc.jforge.Repositories.createUserRepository(ds);
+                new JForge(ds).repository(io.github.erdsgfc.jforge.UserRepository.class);
         List<UserEntity> entities = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
             entities.add(repo.createEntity().name("n" + i).age(i));

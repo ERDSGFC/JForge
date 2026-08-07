@@ -1,4 +1,5 @@
 package io.github.erdsgfc.jforge.starter;
+import io.github.erdsgfc.jforge.JForge;
 
 import io.github.erdsgfc.jforge.OrmException;
 import com.zaxxer.hikari.HikariConfig;
@@ -53,7 +54,7 @@ class SpringTransactionManagerTest {
         // Install the Spring-backed manager as the global ORM manager, mirroring what
         // the auto-configuration does once all singletons are instantiated.
         new SpringTransactionManager(txManager).afterSingletonsInstantiated();
-        repo = Repositories.createTestUserRepository(ds);
+        repo = new JForge(ds).repository(TestUserRepository.class);
     }
 
     @AfterEach

@@ -64,12 +64,15 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 }
 
 // 3. 使用（Repositories 工厂编译期生成）
-UserRepository repo = Repositories.createUserRepository(dataSource);
+JForge jforge = new JForge(dataSource);
+UserRepository repo = jforge.repository(UserRepository.class);
 UserEntity user = repo.save(new UserEntity_Impl().name("qin").age(25));
 UserEntity found = repo.findById(1L);
 repo.update(found);
 repo.deleteById(1L);
 ```
+
+**统一门面 `JForge`**（`jforge-core`）：持有 `DataSource` 与 `TransactionManager`（`private final`，利于 JIT）并缓存全部仓库——`new JForge(ds).repository(UserRepository.class)` 每次返回同一实例。仓库创建由注解处理器生成的**固定包** `io.github.erdsgfc.jforge.generated.Repositories` 承担（`create(Class, DataSource)` 按类型分发）；框架 jar 自带同包同名空壳占位类，用户 target/classes 的真实实现按 Java 类加载优先级覆盖占位。注意：固定包单例要求**所有 `@Dao` 在同一编译单元**（main 与 test 分开放置会各生成部分集并互相遮蔽）。
 
 ## 编程式事务
 
@@ -110,7 +113,7 @@ if (repo.isTransactionActive()) { ... }
 
 前置条件：
 - 应用已有 `DataSource` 与 `PlatformTransactionManager` bean（典型做法：依赖 `spring-boot-starter-jdbc`，由 `DataSourceAutoConfiguration` + `DataSourceTransactionManagerAutoConfiguration` 自动配置）
-- 仓库用**同一个** `DataSource` 创建（`Repositories.createXxxRepository(ds)`）
+- 仓库用**同一个** `DataSource` 经门面创建（`new JForge(ds).repository(XxxRepository.class)`）
 - starter 的自动配置检测到 `PlatformTransactionManager` 后，把全局 ORM `TransactionManager` 替换为 Spring 包装器
 
 **为什么能 join**：生成代码取连接走 `TransactionManager.current().connection(ds)` → `DataSourceUtils.getConnection(ds)`；Spring 通过 `TransactionSynchronizationManager` 把事务连接绑定到当前线程，所以以下三种方式激活的事务，仓库操作自动复用同一连接：

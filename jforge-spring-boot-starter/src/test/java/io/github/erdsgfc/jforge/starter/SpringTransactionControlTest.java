@@ -1,4 +1,5 @@
 package io.github.erdsgfc.jforge.starter;
+import io.github.erdsgfc.jforge.JForge;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -75,7 +76,7 @@ class SpringTransactionControlTest {
 
         @Bean
         TestUserRepository testUserRepository(DataSource dataSource) {
-            return Repositories.createTestUserRepository(dataSource);
+            return new JForge(dataSource).repository(TestUserRepository.class);
         }
 
         @Bean

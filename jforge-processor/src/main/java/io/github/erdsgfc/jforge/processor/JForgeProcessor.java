@@ -5,8 +5,10 @@ import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.JavaFile;
 import com.palantir.javapoet.MethodSpec;
 import javax.lang.model.element.Modifier;
+import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeVariableName;
 import io.github.erdsgfc.jforge.annotation.Dao;
 import io.github.erdsgfc.jforge.annotation.JForgeConfig;
 import io.github.erdsgfc.jforge.annotation.Table;
@@ -27,9 +29,7 @@ import javax.tools.Diagnostic;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -55,6 +55,7 @@ import java.util.Set;
 public class JForgeProcessor extends AbstractProcessor {
 
     private static final String BASE_REPOSITORY = "io.github.erdsgfc.jforge.core.BaseRepository";
+    private static final String GENERATED_PACKAGE = "io.github.erdsgfc.jforge.generated";
 
     /** 已生成实体 impl 的全限定名，避免多个仓库共享同一实体时重复生成。 */
     private final Set<String> generatedEntities = new HashSet<>();
@@ -170,36 +171,40 @@ public class JForgeProcessor extends AbstractProcessor {
     }
 
     /**
-     * 每包生成一个 {@code Repositories} 工厂，含每个仓库的 {@code createXxxRepository(DataSource)}。
+     * 生成固定包 {@code io.github.erdsgfc.jforge.generated.Repositories}：一个
+     * {@code create(Class, DataSource)} 静态方法，按仓库接口类型分发到对应生成实现。
+     * 框架 jar 自带同包同名空壳占位类，运行时用户 target/classes 的真实实现按类加载优先级覆盖占位。
      */
     private void writeFactories() {
-        Map<String, List<DaoInfo>> byPackage = new LinkedHashMap<>();
-        for (DaoInfo info : daos) {
-            byPackage.computeIfAbsent(info.daoPackage, p -> new ArrayList<>()).add(info);
+        if (daos.isEmpty()) {
+            return;
         }
-        for (Map.Entry<String, List<DaoInfo>> entry : byPackage.entrySet()) {
-            TypeSpec.Builder factories = TypeSpec.classBuilder("Repositories")
-                    .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-                    .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build());
-            ClassName dataSource = ClassName.get("javax.sql", "DataSource");
-            for (DaoInfo info : entry.getValue()) {
-                ClassName daoClass = ClassName.get(info.daoPackage, info.daoSimpleName);
-                factories.addMethod(MethodSpec.methodBuilder("create" + info.daoSimpleName)
-                        .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                        .returns(daoClass)
-                        .addParameter(dataSource, "dataSource")
-                        .addStatement("return new $T(dataSource)", ClassName.get(info.daoPackage, info.implName))
-                        .build());
-            }
-            try {
-                JavaFile.builder(entry.getKey(), factories.build())
-                        .addFileComment("Generated at compile time by JForgeProcessor. Do not edit.")
-                        .skipJavaLangImports(true)
-                        .build()
-                        .writeTo(processingEnv.getFiler());
-            } catch (IOException e) {
-                error(null, "Failed to generate Repositories: " + e.getMessage());
-            }
+        TypeVariableName t = TypeVariableName.get("T");
+        MethodSpec.Builder create = MethodSpec.methodBuilder("create")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .addTypeVariable(t)
+                .returns(t)
+                .addParameter(ParameterizedTypeName.get(ClassName.get(Class.class), t), "type")
+                .addParameter(ClassName.get("javax.sql", "DataSource"), "dataSource");
+        for (DaoInfo info : daos) {
+            create.beginControlFlow("if (type == $T.class)", ClassName.get(info.daoPackage, info.daoSimpleName))
+                    .addStatement("return ($T) new $T(dataSource)", t, ClassName.get(info.daoPackage, info.implName))
+                    .endControlFlow();
+        }
+        create.addStatement("throw new $T($S + type.getName())", IllegalArgumentException.class,
+                "No generated repository for type: ");
+        TypeSpec.Builder factories = TypeSpec.classBuilder("Repositories")
+                .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+                .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
+                .addMethod(create.build());
+        try {
+            JavaFile.builder(GENERATED_PACKAGE, factories.build())
+                    .addFileComment("Generated at compile time by JForgeProcessor. Do not edit.")
+                    .skipJavaLangImports(true)
+                    .build()
+                    .writeTo(processingEnv.getFiler());
+        } catch (IOException e) {
+            error(null, "Failed to generate Repositories: " + e.getMessage());
         }
     }
 

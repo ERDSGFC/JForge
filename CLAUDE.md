@@ -36,7 +36,7 @@ mvn -Prelease deploy
 
 ## 架构：实体接口 + @Dao 仓库 + 编译期生成
 
-用户定义 `@Table` 实体**接口**（getter + builder setter）与 `@Dao` 仓库**接口**（继承 `BaseRepository<T, ID>`），注解处理器在编译期生成**直写 JDBC 的实现类**（`Xxx_Impl`）——运行时零反射、零元数据查找、零动态分发，AOT（GraalVM Native Image）友好。生成代码经 `Repositories.createXxxRepository(DataSource)` 工厂创建，**与手写 JDBC 等价的生成代码就是性能上限**。
+用户定义 `@Table` 实体**接口**（getter + builder setter）与 `@Dao` 仓库**接口**（继承 `BaseRepository<T, ID>`），注解处理器在编译期生成**直写 JDBC 的实现类**（`Xxx_Impl`）——运行时零反射、零元数据查找、零动态分发，AOT（GraalVM Native Image）友好。仓库经统一门面 `JForge`（持有 `DataSource`/`TransactionManager`、缓存全部仓库）创建：`new JForge(ds).repository(UserRepository.class)`；创建分发由固定包 `io.github.erdsgfc.jforge.generated.Repositories` 承担（框架 jar 自带同名空壳占位，用户 target/classes 的真实实现按类加载优先级覆盖）。**与手写 JDBC 等价的生成代码就是性能上限**。
 
 ## 模块
 
