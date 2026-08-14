@@ -21,7 +21,7 @@ public interface TransactionCallback<T> {
     /**
      * Runs the transactional work with the transaction-bound connection. May throw
      * {@link SQLException} — {@link TransactionOperations#execute} wraps it into
-     * {@link io.github.erdsgfc.jforge.OrmException} and rolls back; any unchecked exception also
+     * {@link io.github.erdsgfc.jforge.JForgeException} and rolls back; any unchecked exception also
      * triggers a rollback and propagates unchanged.
      *
      * @param conn the connection bound to the active transaction

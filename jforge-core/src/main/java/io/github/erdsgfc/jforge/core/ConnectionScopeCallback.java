@@ -24,7 +24,7 @@ public interface ConnectionScopeCallback<T> {
     /**
      * Runs the scope body on the shared connection. May throw {@link SQLException}
      * — {@link TransactionOperations#executeWithoutTransaction} wraps it into
-     * {@link io.github.erdsgfc.jforge.OrmException}; any unchecked exception
+     * {@link io.github.erdsgfc.jforge.JForgeException}; any unchecked exception
      * propagates unchanged. In both cases the scope connection is returned to the
      * pool, and statements already executed stay committed (no atomicity).
      *

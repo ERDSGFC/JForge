@@ -18,20 +18,20 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests {@link OrmException}: its error {@link OrmException.Code} category, SQL context
+ * Tests {@link JForgeException}: its error {@link JForgeException.Code} category, SQL context
  * and cause propagation — both as a standalone value class and as thrown by generated
  * repository code (whose message embeds operation, table name and SQL).
  */
-class OrmExceptionTest {
+class JForgeExceptionTest {
 
     // ==================== 单元测试：构造器 + 访问器 ====================
 
     @Test
     void codeSqlAndCauseArePreserved() {
         SQLException cause = new SQLException("boom");
-        OrmException ex = new OrmException(OrmException.Code.SQL, "save failed", "INSERT INTO users", cause);
+        JForgeException ex = new JForgeException(JForgeException.Code.SQL, "save failed", "INSERT INTO users", cause);
 
-        assertEquals(OrmException.Code.SQL, ex.code());
+        assertEquals(JForgeException.Code.SQL, ex.code());
         assertEquals("INSERT INTO users", ex.sql());
         assertEquals("save failed", ex.getMessage());
         assertSame(cause, ex.getCause());
@@ -39,20 +39,20 @@ class OrmExceptionTest {
 
     @Test
     void defaultCodeIsSqlAndSqlContextIsNull() {
-        OrmException ex = new OrmException("msg");
+        JForgeException ex = new JForgeException("msg");
 
-        assertEquals(OrmException.Code.SQL, ex.code());
+        assertEquals(JForgeException.Code.SQL, ex.code());
         assertNull(ex.sql());
 
-        assertEquals(OrmException.Code.SQL, new OrmException("msg", new SQLException("x")).code());
+        assertEquals(JForgeException.Code.SQL, new JForgeException("msg", new SQLException("x")).code());
     }
 
     @Test
     void categoryConstructors() {
-        assertEquals(OrmException.Code.TRANSACTION,
-                new OrmException(OrmException.Code.TRANSACTION, "m").code());
-        assertEquals(OrmException.Code.CONNECTION,
-                new OrmException(OrmException.Code.CONNECTION, "m", new SQLException("x")).code());
+        assertEquals(JForgeException.Code.TRANSACTION,
+                new JForgeException(JForgeException.Code.TRANSACTION, "m").code());
+        assertEquals(JForgeException.Code.CONNECTION,
+                new JForgeException(JForgeException.Code.CONNECTION, "m", new SQLException("x")).code());
     }
 
     // ==================== 集成测试：生成代码消息带上下文 ====================
@@ -80,10 +80,10 @@ class OrmExceptionTest {
 
     @Test
     void generatedSaveErrorCarriesTableAndSqlContext() {
-        OrmException ex = assertThrows(OrmException.class,
+        JForgeException ex = assertThrows(JForgeException.class,
                 () -> repo.save(repo.createEntity().name(null).age(1)));
 
-        assertEquals(OrmException.Code.SQL, ex.code());
+        assertEquals(JForgeException.Code.SQL, ex.code());
         assertTrue(ex.getMessage().contains("save on table 'users'"), ex.getMessage());
         assertTrue(ex.getMessage().contains("INSERT INTO users"), ex.getMessage());
         assertTrue(ex.sql().contains("INSERT INTO users"), ex.sql());

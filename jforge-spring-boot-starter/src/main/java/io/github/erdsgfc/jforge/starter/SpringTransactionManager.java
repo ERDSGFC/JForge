@@ -1,6 +1,6 @@
 package io.github.erdsgfc.jforge.starter;
 
-import io.github.erdsgfc.jforge.OrmException;
+import io.github.erdsgfc.jforge.JForgeException;
 import io.github.erdsgfc.jforge.TransactionManager;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
@@ -108,14 +108,14 @@ public final class SpringTransactionManager implements TransactionManager, Smart
      *
      * @param dataSource the data source to obtain a connection from
      * @return a usable {@link Connection} participating in any active transaction
-     * @throws OrmException if the connection cannot be obtained
+     * @throws JForgeException if the connection cannot be obtained
      */
     @Override
     public Connection connection(DataSource dataSource) {
         try {
             return DataSourceUtils.getConnection(dataSource);
         } catch (CannotGetJdbcConnectionException e) {
-            throw new OrmException(OrmException.Code.CONNECTION, "Cannot obtain connection", e);
+            throw new JForgeException(JForgeException.Code.CONNECTION, "Cannot obtain connection", e);
         }
     }
 
@@ -153,18 +153,18 @@ public final class SpringTransactionManager implements TransactionManager, Smart
      * thread would report a spurious "already active" on its next transaction.</p>
      *
      * @param dataSource the data source the transaction belongs to (unused)
-     * @throws OrmException if a transaction is already active on this thread, or the
+     * @throws JForgeException if a transaction is already active on this thread, or the
      *                      transaction cannot be started
      */
     @Override
     public void begin(DataSource dataSource) {
         if (status.get() != null) {
-            throw new OrmException(OrmException.Code.TRANSACTION, "A transaction is already active on this thread");
+            throw new JForgeException(JForgeException.Code.TRANSACTION, "A transaction is already active on this thread");
         }
         try {
             status.set(delegate.getTransaction(DEFINITION));
         } catch (RuntimeException e) {
-            throw new OrmException(OrmException.Code.TRANSACTION, "Cannot begin transaction", e);
+            throw new JForgeException(JForgeException.Code.TRANSACTION, "Cannot begin transaction", e);
         }
         // Synchronizations are active right after getTransaction (Spring initialized
         // them), so registration is safe. The hook clears our status when the Spring
@@ -185,18 +185,18 @@ public final class SpringTransactionManager implements TransactionManager, Smart
      * transaction joined an outer Spring transaction (not started here), the commit
      * is delegated to Spring and behaves as a no-op on the participating status.
      *
-     * @throws OrmException if no transaction is active, or the commit fails
+     * @throws JForgeException if no transaction is active, or the commit fails
      */
     @Override
     public void commit() {
         TransactionStatus txStatus = status.get();
         if (txStatus == null) {
-            throw new OrmException(OrmException.Code.TRANSACTION, "No active transaction to commit");
+            throw new JForgeException(JForgeException.Code.TRANSACTION, "No active transaction to commit");
         }
         try {
             delegate.commit(txStatus);
         } catch (RuntimeException e) {
-            throw new OrmException(OrmException.Code.TRANSACTION, "Commit failed", e);
+            throw new JForgeException(JForgeException.Code.TRANSACTION, "Commit failed", e);
         } finally {
             // Always detach, even on failure, so the thread never leaks the status.
             status.remove();
@@ -208,18 +208,18 @@ public final class SpringTransactionManager implements TransactionManager, Smart
      * transaction joined an outer Spring transaction, the rollback marks that
      * transaction rollback-only so Spring discards it at the service boundary.
      *
-     * @throws OrmException if no transaction is active, or the rollback fails
+     * @throws JForgeException if no transaction is active, or the rollback fails
      */
     @Override
     public void rollback() {
         TransactionStatus txStatus = status.get();
         if (txStatus == null) {
-            throw new OrmException(OrmException.Code.TRANSACTION, "No active transaction to rollback");
+            throw new JForgeException(JForgeException.Code.TRANSACTION, "No active transaction to rollback");
         }
         try {
             delegate.rollback(txStatus);
         } catch (RuntimeException e) {
-            throw new OrmException(OrmException.Code.TRANSACTION, "Rollback failed", e);
+            throw new JForgeException(JForgeException.Code.TRANSACTION, "Rollback failed", e);
         } finally {
             // Always detach, even on failure, so the thread never leaks the status.
             status.remove();
@@ -244,7 +244,7 @@ public final class SpringTransactionManager implements TransactionManager, Smart
     public void markRollbackOnly() {
         TransactionStatus txStatus = status.get();
         if (txStatus == null) {
-            throw new OrmException(OrmException.Code.TRANSACTION, "No active transaction to mark rollback-only");
+            throw new JForgeException(JForgeException.Code.TRANSACTION, "No active transaction to mark rollback-only");
         }
         // On a participating status (joined an outer @Transactional transaction) this
         // marks the outer transaction rollback-only — standard Spring semantics.
@@ -277,7 +277,7 @@ public final class SpringTransactionManager implements TransactionManager, Smart
      * @param dataSource the data source the scope's connection is borrowed from
      * @return the shared scope connection, owned by the scope — do not close it
      *         directly, and do not use it after {@link #endScope}
-     * @throws OrmException if the connection cannot be obtained
+     * @throws JForgeException if the connection cannot be obtained
      */
     @Override
     public Connection beginScope(DataSource dataSource) {
@@ -299,7 +299,7 @@ public final class SpringTransactionManager implements TransactionManager, Smart
             scopeDepth.set(1);
             return conn;
         } catch (SQLException e) {
-            throw new OrmException(OrmException.Code.CONNECTION, "Cannot obtain connection", e);
+            throw new JForgeException(JForgeException.Code.CONNECTION, "Cannot obtain connection", e);
         }
     }
 

@@ -122,7 +122,7 @@ class ConnectionScopeTest {
 
     @Test
     void beginTransactionInsideScopeRejected() {
-        OrmException ex = assertThrows(OrmException.class, () -> repo.executeWithoutTransaction(conn -> {
+        JForgeException ex = assertThrows(JForgeException.class, () -> repo.executeWithoutTransaction(conn -> {
             repo.beginTransaction();
             return null;
         }));

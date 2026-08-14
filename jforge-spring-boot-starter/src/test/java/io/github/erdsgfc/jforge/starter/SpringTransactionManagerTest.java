@@ -1,7 +1,7 @@
 package io.github.erdsgfc.jforge.starter;
 import io.github.erdsgfc.jforge.JForge;
 
-import io.github.erdsgfc.jforge.OrmException;
+import io.github.erdsgfc.jforge.JForgeException;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.AfterEach;
@@ -181,7 +181,7 @@ class SpringTransactionManagerTest {
 
     @Test
     void nestedExecuteRejected() {
-        OrmException ex = assertThrows(OrmException.class, () -> repo.execute(conn -> {
+        JForgeException ex = assertThrows(JForgeException.class, () -> repo.execute(conn -> {
             repo.execute(ignored -> null); // nested begin must fail fast
             return null;
         }));
@@ -192,8 +192,8 @@ class SpringTransactionManagerTest {
 
     @Test
     void commitOrRollbackWithoutBeginThrows() {
-        assertThrows(OrmException.class, repo::commit);
-        assertThrows(OrmException.class, repo::rollback);
+        assertThrows(JForgeException.class, repo::commit);
+        assertThrows(JForgeException.class, repo::rollback);
         assertFalse(repo.isTransactionActive());
     }
 

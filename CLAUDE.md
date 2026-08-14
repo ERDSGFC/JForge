@@ -44,18 +44,18 @@ mvn -Prelease deploy
 |---|---|
 | `jforge-annotation` | 注解：`@Table/@Id/@Column/@GeneratedValue/@Transient`（标注接口方法）+ `@Dao/@Query/@Bind/@ReturnGeneratedKeys` |
 | `jforge-processor` | 编译期生成器（javapoet + auto-service，provided）：`JForgeProcessor`（入口，**只处理 @Dao**，经 `BaseRepository<T,ID>` 定位实体并顺带生成实体 impl，按全限定名去重）+ `EntityGenerator`（实体→Impl）+ `RepositoryGenerator`（@Dao→CRUD + @Query + DTO record 投影 + 固定 SQL 常量字段 + Repositories 工厂） |
-| `jforge-core` | 框架库（**无 Spring 依赖**）：`TransactionManager`（SPI）、`SimpleTransactionManager`、`OrmException`（带 `Code` 错误码分类 + SQL 上下文）、`JForge` 门面（`io.github.erdsgfc.jforge`）；`BaseRepository`、`TransactionOperations`、`AbstractRepository`、回调接口（`io.github.erdsgfc.jforge.core`） |
+| `jforge-core` | 框架库（**无 Spring 依赖**）：`TransactionManager`（SPI）、`SimpleTransactionManager`、`JForgeException`（带 `Code` 错误码分类 + SQL 上下文）、`JForge` 门面（`io.github.erdsgfc.jforge`）；`BaseRepository`、`TransactionOperations`、`AbstractRepository`、回调接口（`io.github.erdsgfc.jforge.core`） |
 | `jforge-bench` | ORM 集成测试（`RepositoryCrudTest`/`TransactionTest`）+ ORM vs 裸 JDBC JMH 基准 |
 | `jforge-spring-boot-starter` | Spring Boot 自动配置：启动时把全局 `TransactionManager` 换成 `SpringTransactionManager`（包装 `PlatformTransactionManager`） |
 | `jforge-lambda` | 对象创建策略的 JMH 基准（历史方法学验证） |
 
 ## 编程式事务
 
-`BaseRepository` 继承 `TransactionOperations`（`io.github.erdsgfc.jforge.core`），**线程级事务**：同一线程、同一 `DataSource` 的多个仓库共享同一连接与事务边界；**不支持嵌套事务**（嵌套 begin 抛 `OrmException`）。
+`BaseRepository` 继承 `TransactionOperations`（`io.github.erdsgfc.jforge.core`），**线程级事务**：同一线程、同一 `DataSource` 的多个仓库共享同一连接与事务边界；**不支持嵌套事务**（嵌套 begin 抛 `JForgeException`）。
 
 - **手动**：`beginTransaction()`（返回事务绑定 `Connection`，供原生 JDBC 控制）/ `commit()` / `rollback()` / `isTransactionActive()` / `markRollbackOnly()`（条件性回滚，标记回滚但回调正常返回）/ `isRollbackOnly()`
 - **模板**（default 方法，推荐）：`execute(TransactionCallback<T>)`（回调接收 `Connection`，成功自动 commit、异常自动 rollback 并重抛）、`execute(P, TransactionParamCallback<T,P>)`（外部参数）、无返回值版本 `run(TransactionRunnable)` / `run(P, TransactionParamRunnable)`
-- **连接作用域**（无事务共享连接）：`executeWithoutTransaction(ConnectionScopeCallback<T>)`（回调接收共享 `Connection`）——借用 1 个连接供回调内所有仓库调用共享，autocommit 不变、**无原子性**（异常前的语句保持已提交），finally 总是归还；用于"多 SQL 只需省池往返"的场景。嵌套作用域复用外层连接；事务内开作用域退化为 no-op（复用事务连接）；作用域内 `beginTransaction()` 抛 `OrmException`
+- **连接作用域**（无事务共享连接）：`executeWithoutTransaction(ConnectionScopeCallback<T>)`（回调接收共享 `Connection`）——借用 1 个连接供回调内所有仓库调用共享，autocommit 不变、**无原子性**（异常前的语句保持已提交），finally 总是归还；用于"多 SQL 只需省池往返"的场景。嵌套作用域复用外层连接；事务内开作用域退化为 no-op（复用事务连接）；作用域内 `beginTransaction()` 抛 `JForgeException`
 - **JDBC 批处理**：`save(List<T>)` 总是**单连接**（不再每实体借还连接）；`@JForgeConfig(batchSize=N)`（包级/元素级）启用 `addBatch()/executeBatch()` 分块，**默认 50**，每 N 行 flush 一次并把生成键按插入序回写实体。覆盖优先级：方法级 `@BatchSize(N)`（在仓库接口里**重声明** `save(List<T>)`）> 仓库接口类型级 `@BatchSize(N)` > `@JForgeConfig.batchSize` > 默认 50；`batchSize=0`/`@BatchSize(0)` 显式关闭批处理（逐条但单连接）。注意：生成键批处理依赖驱动支持（H2/PostgreSQL 支持；MySQL Connector/J 旧版只返回批量中最后一条的键）
 - 事务/作用域经 `TransactionManager`（SPI）驱动；生成的 impl 继承 `AbstractRepository`（`implements TransactionOperations`，持有 `protected final` `DataSource`/`TransactionManager` 字段 + 8 个 `final` 事务/作用域方法），经 `transactionManager` 字段取连接/委托事务（取代每次 `TransactionManager.current()` 静态查找，利于 JIT）；**未开启事务且无作用域时零开销**（等价裸 JDBC）
 

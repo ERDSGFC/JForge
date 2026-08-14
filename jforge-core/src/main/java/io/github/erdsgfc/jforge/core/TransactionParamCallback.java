@@ -21,7 +21,7 @@ public interface TransactionParamCallback<T, P> {
     /**
      * Runs the transactional work with the transaction-bound connection and the
      * supplied parameter. May throw {@link SQLException} — the caller wraps it into
-     * {@link io.github.erdsgfc.jforge.OrmException} and rolls back.
+     * {@link io.github.erdsgfc.jforge.JForgeException} and rolls back.
      *
      * @param conn  the connection bound to the active transaction
      * @param param the externally supplied parameter

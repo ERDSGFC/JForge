@@ -11,7 +11,7 @@ package io.github.erdsgfc.jforge;
  * root cause does not have to be dug out of the {@link #getCause()} chain to
  * understand what failed.</p>
  */
-public class OrmException extends RuntimeException {
+public class JForgeException extends RuntimeException {
 
     /** Coarse error category for programmatic handling. */
     public enum Code {
@@ -35,7 +35,7 @@ public class OrmException extends RuntimeException {
      *
      * @param message the error message
      */
-    public OrmException(String message) {
+    public JForgeException(String message) {
         this(Code.SQL, message, null, null);
     }
 
@@ -45,7 +45,7 @@ public class OrmException extends RuntimeException {
      * @param message the error message
      * @param cause   the underlying cause
      */
-    public OrmException(String message, Throwable cause) {
+    public JForgeException(String message, Throwable cause) {
         this(Code.SQL, message, null, cause);
     }
 
@@ -55,7 +55,7 @@ public class OrmException extends RuntimeException {
      * @param code    the error category
      * @param message the error message
      */
-    public OrmException(Code code, String message) {
+    public JForgeException(Code code, String message) {
         this(code, message, null, null);
     }
 
@@ -66,7 +66,7 @@ public class OrmException extends RuntimeException {
      * @param message the error message
      * @param cause   the underlying cause
      */
-    public OrmException(Code code, String message, Throwable cause) {
+    public JForgeException(Code code, String message, Throwable cause) {
         this(code, message, null, cause);
     }
 
@@ -78,7 +78,7 @@ public class OrmException extends RuntimeException {
      * @param sql     the SQL statement that failed, or {@code null}
      * @param cause   the underlying cause
      */
-    public OrmException(Code code, String message, String sql, Throwable cause) {
+    public JForgeException(Code code, String message, String sql, Throwable cause) {
         super(message, cause);
         this.code = code;
         this.sql = sql;

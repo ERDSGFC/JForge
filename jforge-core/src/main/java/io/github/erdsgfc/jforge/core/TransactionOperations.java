@@ -1,6 +1,6 @@
 package io.github.erdsgfc.jforge.core;
 
-import io.github.erdsgfc.jforge.OrmException;
+import io.github.erdsgfc.jforge.JForgeException;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -18,7 +18,7 @@ import java.sql.SQLException;
  *
  * <p>Nested ORM-level transactions are not supported: calling {@link #beginTransaction()}
  * while a transaction begun via this API is still active on the thread throws an
- * {@link io.github.erdsgfc.jforge.OrmException}. With the {@code jforge-spring-boot-starter}
+ * {@link io.github.erdsgfc.jforge.JForgeException}. With the {@code jforge-spring-boot-starter}
  * installed, calling it inside an outer Spring transaction (e.g. a
  * {@code @Transactional} service method) instead joins that transaction
  * ({@code PROPAGATION_REQUIRED}).</p>
@@ -42,7 +42,7 @@ public interface TransactionOperations {
      * without an intervening commit/rollback.</p>
      *
      * @return the connection bound to the newly started transaction
-     * @throws io.github.erdsgfc.jforge.OrmException if another ORM-level transaction is already
+     * @throws io.github.erdsgfc.jforge.JForgeException if another ORM-level transaction is already
      *                                  active on this thread, or the connection
      *                                  cannot be obtained
      */
@@ -51,14 +51,14 @@ public interface TransactionOperations {
     /**
      * Commits the active transaction and releases its connection.
      *
-     * @throws io.github.erdsgfc.jforge.OrmException if no transaction is active, or the commit fails
+     * @throws io.github.erdsgfc.jforge.JForgeException if no transaction is active, or the commit fails
      */
     void commit();
 
     /**
      * Rolls back the active transaction and releases its connection.
      *
-     * @throws io.github.erdsgfc.jforge.OrmException if no transaction is active, or the rollback fails
+     * @throws io.github.erdsgfc.jforge.JForgeException if no transaction is active, or the rollback fails
      */
     void rollback();
 
@@ -79,7 +79,7 @@ public interface TransactionOperations {
      * rolled back when it completes, even if {@link #execute} returns normally. Used
      * to abort on a business rule while still returning a result from the callback.
      *
-     * @throws io.github.erdsgfc.jforge.OrmException if no transaction is active
+     * @throws io.github.erdsgfc.jforge.JForgeException if no transaction is active
      */
     void markRollbackOnly();
 
@@ -98,7 +98,7 @@ public interface TransactionOperations {
      * callback with the transaction-bound {@link Connection}, then commits on
      * success. If the callback or the commit throws, the transaction is rolled back
      * and the exception propagated — an {@link SQLException} from the callback is
-     * wrapped into {@link OrmException}; any {@link RuntimeException} or
+     * wrapped into {@link JForgeException}; any {@link RuntimeException} or
      * {@link Error} propagates unchanged.
      *
      * <p>The {@code Connection} parameter gives callers the raw-JDBC control the ORM
@@ -110,7 +110,7 @@ public interface TransactionOperations {
      * @param callback the transactional work, receiving the transaction-bound connection
      * @param <T>      the callback's return type
      * @return the callback's result, or {@code null} for side-effect-only bodies
-     * @throws OrmException if the transaction cannot be begun, committed or rolled back,
+     * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
      *                      or the callback throws SQLException
      */
     default <T> T execute(TransactionCallback<T> callback) {
@@ -124,7 +124,7 @@ public interface TransactionOperations {
      * {@code param} alongside the transaction-bound {@link Connection}. Behaviour is
      * identical to {@link #execute(TransactionCallback)}: commit on success, rollback
      * and propagate on any exception (an {@link SQLException} from the callback is
-     * wrapped into {@link OrmException}). The parameter must be a typed value so the
+     * wrapped into {@link JForgeException}). The parameter must be a typed value so the
      * compiler can infer {@code P}; a literal {@code null} requires an explicit type
      * (a cast or an explicitly-typed lambda parameter). To run a transaction without
      * a parameter, use {@link #execute(TransactionCallback)}.
@@ -134,7 +134,7 @@ public interface TransactionOperations {
      * @param <T>      the callback's return type
      * @param <P>      the parameter type
      * @return the callback's result, or {@code null} for side-effect-only bodies
-     * @throws OrmException if the transaction cannot be begun, committed or rolled back,
+     * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
      *                      or the callback throws SQLException
      */
     default <T, P> T execute(P param, TransactionParamCallback<T, P> callback) {
@@ -154,8 +154,8 @@ public interface TransactionOperations {
             // Wrap JDBC failures from the callback, matching the ORM's
             // no-checked-exceptions contract; keep the JDBC error message as context.
             rollbackQuietly();
-            throw new OrmException(
-                    OrmException.Code.SQL,
+            throw new JForgeException(
+                    JForgeException.Code.SQL,
                     "Transaction failed" + (e.getMessage() != null ? ": " + e.getMessage() : ""), e);
         } catch (RuntimeException | Error ex) {
             // Roll back the partially-executed body; a failed commit has already
@@ -171,10 +171,10 @@ public interface TransactionOperations {
      * void counterpart of {@link #execute(TransactionCallback)}, for side-effect-only
      * bodies that need no {@code return null}. Behaviour is identical: commit on
      * success, rollback and propagate on any exception (an {@link SQLException} from
-     * the body is wrapped into {@link OrmException}).
+     * the body is wrapped into {@link JForgeException}).
      *
      * @param runnable the transactional work
-     * @throws OrmException if the transaction cannot be begun, committed or rolled back,
+     * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
      *                      or the body throws SQLException
      */
     default void run(TransactionRunnable runnable) {
@@ -193,7 +193,7 @@ public interface TransactionOperations {
      * @param param    the externally supplied parameter, forwarded to the body
      * @param runnable the transactional work, receiving the connection and the parameter
      * @param <P>      the parameter type
-     * @throws OrmException if the transaction cannot be begun, committed or rolled back,
+     * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
      *                      or the body throws SQLException
      */
     default <P> void run(P param, TransactionParamRunnable<P> runnable) {
@@ -218,7 +218,7 @@ public interface TransactionOperations {
      *
      * @return the shared scope connection, owned by the scope — do not close it
      *         directly, and do not use it after {@link #endConnectionScope()}
-     * @throws io.github.erdsgfc.jforge.OrmException if the connection cannot be obtained
+     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained
      */
     Connection beginConnectionScope();
 
@@ -242,12 +242,12 @@ public interface TransactionOperations {
      * round-trip per statement and needs no rollback semantics; use
      * {@link #execute(TransactionCallback)} when the statements must commit or
      * roll back together. A transaction cannot be begun inside the scope
-     * (it throws {@link io.github.erdsgfc.jforge.OrmException}).</p>
+     * (it throws {@link io.github.erdsgfc.jforge.JForgeException}).</p>
      *
      * @param callback the work to run on the shared connection
      * @param <T>      the callback's return type
      * @return the callback's result, or {@code null} for side-effect-only bodies
-     * @throws io.github.erdsgfc.jforge.OrmException if the connection cannot be obtained,
+     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
      *                                  or the callback throws {@link SQLException}
      */
     default <T> T executeWithoutTransaction(ConnectionScopeCallback<T> callback) {
@@ -256,10 +256,10 @@ public interface TransactionOperations {
             return callback.doInScope(conn);
         } catch (SQLException e) {
             // Match the execute() contract: JDBC failures from the callback are
-            // wrapped into OrmException. The scope connection is still returned to
+            // wrapped into JForgeException. The scope connection is still returned to
             // the pool by the finally block.
-            throw new OrmException(
-                    OrmException.Code.SQL,
+            throw new JForgeException(
+                    JForgeException.Code.SQL,
                     "Connection scope failed" + (e.getMessage() != null ? ": " + e.getMessage() : ""), e);
         } finally {
             endConnectionScope();

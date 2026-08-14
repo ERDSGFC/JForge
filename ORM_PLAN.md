@@ -34,7 +34,7 @@ jforge-processor/       # 编译期生成器（javapoet + auto-service，provide
   ├── EntityModel.java          # 共享实体模型解析
   ├── SqlCodegen.java           # 绑定/读取代码块生成（编译期类型决策）
   └── TypeNameUtils.java        # 类型 → javapoet TypeName / JDBC getter/setter 映射
-jforge-core/             # 框架库：BaseRepository、AbstractRepository、TransactionOperations、OrmException、JForge 门面
+jforge-core/             # 框架库：BaseRepository、AbstractRepository、TransactionOperations、JForgeException、JForge 门面
 jforge-bench/           # ORM vs 裸 JDBC 基准
 jforge-spring-boot-starter/  # Spring Boot starter：SpringTransactionManager 包装 PlatformTransactionManager + 自动配置
 ```
@@ -95,11 +95,11 @@ if (repo.isTransactionActive()) { ... }
 设计要点：
 - **零声明式**：无 `@Transactional`；事务边界完全由调用方代码控制
 - **零开销**：未开启事务时 `getConnection()` 从池取连接，生成代码与裸 JDBC 等价
-- **不支持嵌套**：事务已激活时再次 `begin` 抛 `OrmException`
+- **不支持嵌套**：事务已激活时再次 `begin` 抛 `JForgeException`
 - **跨 DataSource 隔离**：`connection(ds)` 仅当 `ds` 与事务来源 DataSource 相同才复用事务连接
 - **条件性回滚**：`markRollbackOnly()` 标记当前事务回滚但不抛异常——`execute`/`run` 回调正常返回结果，事务在完成点回滚（适合业务规则判定中止）；`isRollbackOnly()` 查询标记（Spring 路径下 join 的外层事务被标记也算）
 
-**Connection 访问（`beginTransaction` 返回连接，`execute` 回调接收）**：为补齐"核心不加事务参数控制"的取舍，`beginTransaction()` 返回**事务绑定**的 `Connection`，`execute(TransactionCallback)`（default 模板）把它传给回调——用于设隔离级别、savepoint、只读、查询超时、裸 SQL 等原生 JDBC 控制（裸 SQL 自动 join 当前事务）。另提供 `execute(param, TransactionParamCallback)` 重载，支持把**外部参数**传入事务回调（连接 + 参数一起交给回调）；以及**无返回值版本** `run(TransactionRunnable)` / `run(param, TransactionParamRunnable)`（对应 `execute`，回调无需 `return null`）。连接所有权由事务管理（commit/rollback 释放、事务连接保持不关），回调可抛 `SQLException` 由框架包装为 `OrmException`；`getConnection`/`releaseConnection` 保持生成实现私有、不暴露。测试：`TransactionTest`/`SpringTransactionManagerTest` 的 savepoint + 裸 SQL + 外部参数 + `run` 用例（内置与 Spring 两条路径）。
+**Connection 访问（`beginTransaction` 返回连接，`execute` 回调接收）**：为补齐"核心不加事务参数控制"的取舍，`beginTransaction()` 返回**事务绑定**的 `Connection`，`execute(TransactionCallback)`（default 模板）把它传给回调——用于设隔离级别、savepoint、只读、查询超时、裸 SQL 等原生 JDBC 控制（裸 SQL 自动 join 当前事务）。另提供 `execute(param, TransactionParamCallback)` 重载，支持把**外部参数**传入事务回调（连接 + 参数一起交给回调）；以及**无返回值版本** `run(TransactionRunnable)` / `run(param, TransactionParamRunnable)`（对应 `execute`，回调无需 `return null`）。连接所有权由事务管理（commit/rollback 释放、事务连接保持不关），回调可抛 `SQLException` 由框架包装为 `JForgeException`；`getConnection`/`releaseConnection` 保持生成实现私有、不暴露。测试：`TransactionTest`/`SpringTransactionManagerTest` 的 savepoint + 裸 SQL + 外部参数 + `run` 用例（内置与 Spring 两条路径）。
 
 已知限制（内置 `SimpleTransactionManager`；引入 `jforge-spring-boot-starter` 后由 Spring 补齐）：
 

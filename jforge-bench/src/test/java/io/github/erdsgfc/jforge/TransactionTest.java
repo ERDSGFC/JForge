@@ -129,7 +129,7 @@ class TransactionTest {
 
     @Test
     void nestedExecuteRejected() {
-        OrmException ex = assertThrows(OrmException.class, () -> repo.execute(conn -> {
+        JForgeException ex = assertThrows(JForgeException.class, () -> repo.execute(conn -> {
             repo.execute(ignored -> null); // nested begin must fail fast
             return null;
         }));
@@ -140,8 +140,8 @@ class TransactionTest {
 
     @Test
     void commitOrRollbackWithoutBeginThrows() {
-        assertThrows(OrmException.class, repo::commit);
-        assertThrows(OrmException.class, repo::rollback);
+        assertThrows(JForgeException.class, repo::commit);
+        assertThrows(JForgeException.class, repo::rollback);
         assertFalse(repo.isTransactionActive());
     }
 

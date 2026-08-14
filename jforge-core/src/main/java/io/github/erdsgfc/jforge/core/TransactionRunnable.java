@@ -11,7 +11,7 @@ import java.sql.SQLException;
  *
  * <p>Like {@link TransactionCallback}, the callback receives the transaction-bound
  * {@link Connection} for raw-JDBC control, and a {@link SQLException} is wrapped
- * into {@link io.github.erdsgfc.jforge.OrmException} with a rollback.</p>
+ * into {@link io.github.erdsgfc.jforge.JForgeException} with a rollback.</p>
  */
 @FunctionalInterface
 public interface TransactionRunnable {

@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class SqlCodegen {
 
-    private static final ClassName ORM_EXCEPTION = ClassName.get("io.github.erdsgfc.jforge", "OrmException");
+    private static final ClassName ORM_EXCEPTION = ClassName.get("io.github.erdsgfc.jforge", "JForgeException");
 
     private SqlCodegen() {
     }
@@ -168,7 +168,7 @@ public final class SqlCodegen {
 
     /**
      * Closes the tx-aware try block with catch + finally (releaseConnection). The catch
-     * throws an {@code OrmException} whose message embeds the operation, table name and SQL
+     * throws an {@code JForgeException} whose message embeds the operation, table name and SQL
      * plus the underlying {@code SQLException} message, so a failure is self-describing
      * without digging into the cause chain.
      *

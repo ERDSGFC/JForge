@@ -12,7 +12,7 @@ import java.sql.SQLException;
  *
  * <p>The callback receives the transaction-bound {@link Connection} and the
  * user-supplied parameter; a {@link SQLException} is wrapped into
- * {@link io.github.erdsgfc.jforge.OrmException} with a rollback.</p>
+ * {@link io.github.erdsgfc.jforge.JForgeException} with a rollback.</p>
  *
  * @param <P> the type of the externally supplied parameter
  */

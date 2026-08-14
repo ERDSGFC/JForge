@@ -25,7 +25,7 @@ import java.util.List;
  */
 final class CrudGenerator {
 
-    private static final ClassName ORM_EXCEPTION = ClassName.get("io.github.erdsgfc.jforge", "OrmException");
+    private static final ClassName ORM_EXCEPTION = ClassName.get("io.github.erdsgfc.jforge", "JForgeException");
 
     private final JForgeConfigHelper configHelper;
 

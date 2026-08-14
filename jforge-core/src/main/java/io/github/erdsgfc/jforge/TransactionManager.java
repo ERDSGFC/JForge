@@ -48,7 +48,7 @@ public interface TransactionManager {
      * abort on a business rule while still returning a result from a transactional
      * callback.
      *
-     * @throws OrmException if no transaction is active on this thread
+     * @throws JForgeException if no transaction is active on this thread
      */
     void markRollbackOnly();
 
@@ -79,7 +79,7 @@ public interface TransactionManager {
      * @param dataSource the data source the scope's connection is borrowed from
      * @return the shared scope connection, owned by the scope — do not close it
      *         directly, and do not use it after {@link #endScope(DataSource)}
-     * @throws OrmException if the connection cannot be obtained
+     * @throws JForgeException if the connection cannot be obtained
      */
     Connection beginScope(DataSource dataSource);
 
