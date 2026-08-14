@@ -2,6 +2,8 @@ package io.github.erdsgfc.jforge.starter;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import io.github.erdsgfc.jforge.SimpleTransactionManager;
+import io.github.erdsgfc.jforge.TransactionManager;
 import io.github.erdsgfc.jforge.starter.autoinject.AutoUserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,8 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 /**
  * Verifies that with {@code @JForgeConfig(springBeans = true)} on a package, the
  * generated repository impl (annotated {@code @Repository}, {@code @Autowired}
- * constructor taking the {@code DataSource}) is auto-registered by Spring component
- * scanning and injectable — no manual {@code JForge} / repository creation needed.
+ * constructor taking the {@code DataSource} + {@code TransactionManager}) is
+ * auto-registered by Spring component scanning and injectable — no manual
+ * {@code JForge} / repository creation needed.
  */
 @SpringJUnitConfig(RepositoryAutoInjectionTest.Config.class)
 class RepositoryAutoInjectionTest {
@@ -37,6 +40,11 @@ class RepositoryAutoInjectionTest {
             HikariConfig config = new HikariConfig();
             config.setJdbcUrl("jdbc:h2:mem:orm_autoinject;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
             return new HikariDataSource(config);
+        }
+
+        @Bean
+        TransactionManager transactionManager() {
+            return new SimpleTransactionManager();
         }
     }
 

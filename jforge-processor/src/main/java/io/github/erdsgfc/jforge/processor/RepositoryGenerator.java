@@ -40,6 +40,7 @@ final class RepositoryGenerator {
 
     private static final ClassName ORM_EXCEPTION = ClassName.get("io.github.erdsgfc.jforge", "OrmException");
     private static final ClassName TX_MANAGER = ClassName.get("io.github.erdsgfc.jforge", "TransactionManager");
+    private static final ClassName ABSTRACT_REPOSITORY = ClassName.get("io.github.erdsgfc.jforge.core", "AbstractRepository");
 
     private final ProcessingEnvironment processingEnv;
     private final JForgeConfigHelper configHelper;
@@ -92,15 +93,18 @@ final class RepositoryGenerator {
                         ? new Modifier[] {Modifier.PUBLIC}
                         : new Modifier[] {Modifier.PUBLIC, Modifier.FINAL})
                 .addSuperinterface(daoClass)
-                .addField(FieldSpec.builder(dataSource, "dataSource", Modifier.PRIVATE, Modifier.FINAL).build());
+                .superclass(ABSTRACT_REPOSITORY);
         if (springBeans) {
             builder.addAnnotation(AnnotationSpec.builder(
                     ClassName.get("org.springframework.stereotype", "Repository")).build());
         }
+        // 构造器注入 DataSource + TransactionManager 并传给父类 AbstractRepository
+        //（父类持有 protected final 字段 + 连接/事务方法），impl 只留实体特定代码。
         MethodSpec.Builder constructor = MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(dataSource, "dataSource")
-                .addStatement("this.dataSource = dataSource");
+                .addParameter(TX_MANAGER, "transactionManager")
+                .addStatement("super(dataSource, transactionManager)");
         if (springBeans) {
             constructor.addAnnotation(AnnotationSpec.builder(
                     ClassName.get("org.springframework.beans.factory.annotation", "Autowired")).build());
@@ -110,25 +114,6 @@ final class RepositoryGenerator {
         // 固定 SQL 常量字段（命名引用，避免方法体内散落字符串字面量）。
         for (FieldSpec field : sqlFields(info)) {
             builder.addField(field);
-        }
-
-        // Transaction-aware connection helpers; private implementation detail used by
-        // the generated CRUD methods and beginTransaction — never exposed on the
-        // repository interface so callers cannot leak connection ownership.
-        builder.addMethod(MethodSpec.methodBuilder("getConnection")
-                .addModifiers(Modifier.PRIVATE)
-                .returns(connection)
-                .addStatement("return $T.current().connection(dataSource)", TX_MANAGER)
-                .build());
-        builder.addMethod(MethodSpec.methodBuilder("releaseConnection")
-                .addModifiers(Modifier.PRIVATE)
-                .addParameter(connection, "conn")
-                .addStatement("$T.current().release(conn, dataSource)", TX_MANAGER)
-                .build());
-
-        // Programmatic transaction methods inherited from TransactionOperations.
-        for (MethodSpec method : txMethods(connection)) {
-            builder.addMethod(method);
         }
 
         // Shared private row mapper for entity rows (column order = field order).
@@ -241,71 +226,6 @@ final class RepositoryGenerator {
     /** {@code @Query} 方法的 SQL：命名占位符转 {@code ?}（返回转换后的字符串）。 */
     private static String querySql(ExecutableElement method) {
         return SqlCodegen.convertPlaceholders(method.getAnnotation(Query.class).value(), new ArrayList<>());
-    }
-
-    // ==================== 事务方法 ====================
-
-    /**
-     * Builds the programmatic-transaction and connection-scope methods inherited
-     * from {@code TransactionOperations}: begin/commit/rollback/isTransactionActive/
-     * markRollbackOnly/isRollbackOnly plus beginConnectionScope/endConnectionScope,
-     * all delegating to the global {@code TransactionManager}.
-     * {@code beginTransaction} returns the transaction-bound connection so the
-     * inherited {@code execute} default template can hand it to the callback;
-     * {@code beginConnectionScope} returns the shared scope connection so the
-     * inherited {@code executeWithoutTransaction} template can hand it to its
-     * callback.
-     *
-     * @param connection the Connection class
-     * @return the transaction and connection-scope method specifications
-     */
-    private List<MethodSpec> txMethods(ClassName connection) {
-        return List.of(
-                MethodSpec.methodBuilder("beginTransaction")
-                        .addAnnotation(Override.class)
-                        .addModifiers(Modifier.PUBLIC)
-                        .returns(connection)
-                        .addStatement("$T.current().begin(dataSource)", TX_MANAGER)
-                        .addStatement("return getConnection()")
-                        .build(),
-                MethodSpec.methodBuilder("commit")
-                        .addAnnotation(Override.class)
-                        .addModifiers(Modifier.PUBLIC)
-                        .addStatement("$T.current().commit()", TX_MANAGER)
-                        .build(),
-                MethodSpec.methodBuilder("rollback")
-                        .addAnnotation(Override.class)
-                        .addModifiers(Modifier.PUBLIC)
-                        .addStatement("$T.current().rollback()", TX_MANAGER)
-                        .build(),
-                MethodSpec.methodBuilder("isTransactionActive")
-                        .addAnnotation(Override.class)
-                        .addModifiers(Modifier.PUBLIC)
-                        .returns(TypeName.BOOLEAN)
-                        .addStatement("return $T.current().isActive()", TX_MANAGER)
-                        .build(),
-                MethodSpec.methodBuilder("markRollbackOnly")
-                        .addAnnotation(Override.class)
-                        .addModifiers(Modifier.PUBLIC)
-                        .addStatement("$T.current().markRollbackOnly()", TX_MANAGER)
-                        .build(),
-                MethodSpec.methodBuilder("isRollbackOnly")
-                        .addAnnotation(Override.class)
-                        .addModifiers(Modifier.PUBLIC)
-                        .returns(TypeName.BOOLEAN)
-                        .addStatement("return $T.current().isRollbackOnly()", TX_MANAGER)
-                        .build(),
-                MethodSpec.methodBuilder("beginConnectionScope")
-                        .addAnnotation(Override.class)
-                        .addModifiers(Modifier.PUBLIC)
-                        .returns(connection)
-                        .addStatement("return $T.current().beginScope(dataSource)", TX_MANAGER)
-                        .build(),
-                MethodSpec.methodBuilder("endConnectionScope")
-                        .addAnnotation(Override.class)
-                        .addModifiers(Modifier.PUBLIC)
-                        .addStatement("$T.current().endScope(dataSource)", TX_MANAGER)
-                        .build());
     }
 
     // ==================== CRUD 方法 ====================

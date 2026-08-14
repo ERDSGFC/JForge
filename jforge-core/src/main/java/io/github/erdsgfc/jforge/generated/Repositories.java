@@ -1,5 +1,7 @@
 package io.github.erdsgfc.jforge.generated;
 
+import io.github.erdsgfc.jforge.TransactionManager;
+
 import javax.sql.DataSource;
 
 /**
@@ -19,13 +21,14 @@ public final class Repositories {
     /**
      * 按仓库接口类型创建实现（占位实现直接抛错，真实实现由注解处理器生成）。
      *
-     * @param type       the repository interface type
-     * @param dataSource the data source for the repository
-     * @param <T>        the repository type
+     * @param type               the repository interface type
+     * @param dataSource         the data source for the repository
+     * @param transactionManager the transaction manager the repository will hold
+     * @param <T>                the repository type
      * @return a new repository instance
      * @throws UnsupportedOperationException always (placeholder not overridden)
      */
-    public static <T> T create(Class<T> type, DataSource dataSource) {
+    public static <T> T create(Class<T> type, DataSource dataSource, TransactionManager transactionManager) {
         throw new UnsupportedOperationException(
                 "Repositories placeholder: the annotation processor did not generate a real "
                 + "implementation for this module (no @Dao repository, or the processor did not run).");

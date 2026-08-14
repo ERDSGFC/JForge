@@ -34,7 +34,7 @@ jforge-processor/       # 编译期生成器（javapoet + auto-service，provide
   ├── EntityModel.java          # 共享实体模型解析
   ├── SqlCodegen.java           # 绑定/读取代码块生成（编译期类型决策）
   └── TypeNameUtils.java        # 类型 → javapoet TypeName / JDBC getter/setter 映射
-jforge-core/             # 框架库：BaseRepository（用户文件）、OrmException
+jforge-core/             # 框架库：BaseRepository、AbstractRepository、TransactionOperations、OrmException、JForge 门面
 jforge-bench/           # ORM vs 裸 JDBC 基准
 jforge-spring-boot-starter/  # Spring Boot starter：SpringTransactionManager 包装 PlatformTransactionManager + 自动配置
 ```
@@ -72,7 +72,9 @@ repo.update(found);
 repo.deleteById(1L);
 ```
 
-**统一门面 `JForge`**（`jforge-core`）：持有 `DataSource` 与 `TransactionManager`（`private final`，利于 JIT）并缓存全部仓库——`new JForge(ds).repository(UserRepository.class)` 每次返回同一实例。仓库创建由注解处理器生成的**固定包** `io.github.erdsgfc.jforge.generated.Repositories` 承担（`create(Class, DataSource)` 按类型分发）；框架 jar 自带同包同名空壳占位类，用户 target/classes 的真实实现按 Java 类加载优先级覆盖占位。注意：固定包单例要求**所有 `@Dao` 在同一编译单元**（main 与 test 分开放置会各生成部分集并互相遮蔽）。
+**统一门面 `JForge`**（`jforge-core`）：持有 `DataSource` 与 `TransactionManager`（`private final`，利于 JIT）并缓存全部仓库——`new JForge(ds).repository(UserRepository.class)` 每次返回同一实例。仓库创建由注解处理器生成的**固定包** `io.github.erdsgfc.jforge.generated.Repositories` 承担（`create(Class, DataSource, TransactionManager)` 按类型分发）；框架 jar 自带同包同名空壳占位类，用户 target/classes 的真实实现按 Java 类加载优先级覆盖占位。注意：固定包单例要求**所有 `@Dao` 在同一编译单元**（main 与 test 分开放置会各生成部分集并互相遮蔽）。
+
+**抽象父类 `AbstractRepository`**（`jforge-core`）：`implements TransactionOperations`，持有 `protected final` `DataSource`/`TransactionManager` 字段，提供 `protected final getConnection()/releaseConnection()` + 8 个 `final` 事务/作用域方法。生成的 `XxxRepository_Impl` 继承它，只保留实体特定代码（SQL 常量、`mapRow`、`countById`、13 个 CRUD、`@Query`）——生成代码量减少约 1/4（仓库多时编译更快）、连接/事务逻辑框架统一维护、字节码不重复、final 字段利于 JIT 常量折叠（取代每次 `TransactionManager.current()` 静态查找）。
 
 ## 编程式事务
 

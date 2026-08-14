@@ -56,8 +56,10 @@ public final class JForge {
 
     /**
      * Returns the (cached) repository instance for the given type. The first call creates
-     * it via the generated {@link Repositories#create(Class, DataSource)}; subsequent calls
-     * return the same instance.
+     * it via the generated {@link Repositories#create(Class, DataSource, TransactionManager)},
+     * passing this facade's {@link #transactionManager} so the generated impl holds it as a
+     * {@code private final} field (JIT-friendly, no per-call {@code TransactionManager.current()}
+     * lookup); subsequent calls return the same instance.
      *
      * @param type the repository interface type
      * @param <T>  the repository type
@@ -66,6 +68,7 @@ public final class JForge {
      */
     @SuppressWarnings("unchecked")
     public <T> T repository(Class<T> type) {
-        return (T) repositories.computeIfAbsent(type, t -> Repositories.create(t, dataSource));
+        return (T) repositories.computeIfAbsent(type,
+                t -> Repositories.create(t, dataSource, transactionManager));
     }
 }

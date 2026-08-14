@@ -172,8 +172,9 @@ public class JForgeProcessor extends AbstractProcessor {
 
     /**
      * 生成固定包 {@code io.github.erdsgfc.jforge.generated.Repositories}：一个
-     * {@code create(Class, DataSource)} 静态方法，按仓库接口类型分发到对应生成实现。
-     * 框架 jar 自带同包同名空壳占位类，运行时用户 target/classes 的真实实现按类加载优先级覆盖占位。
+     * {@code create(Class, DataSource, TransactionManager)} 静态方法，按仓库接口类型分发到对应
+     * 生成实现（把 DataSource + TransactionManager 传给 impl 构造器）。框架 jar 自带同包同名
+     * 空壳占位类，运行时用户 target/classes 的真实实现按类加载优先级覆盖占位。
      */
     private void writeFactories() {
         if (daos.isEmpty()) {
@@ -185,10 +186,12 @@ public class JForgeProcessor extends AbstractProcessor {
                 .addTypeVariable(t)
                 .returns(t)
                 .addParameter(ParameterizedTypeName.get(ClassName.get(Class.class), t), "type")
-                .addParameter(ClassName.get("javax.sql", "DataSource"), "dataSource");
+                .addParameter(ClassName.get("javax.sql", "DataSource"), "dataSource")
+                .addParameter(ClassName.get("io.github.erdsgfc.jforge", "TransactionManager"), "transactionManager");
         for (DaoInfo info : daos) {
             create.beginControlFlow("if (type == $T.class)", ClassName.get(info.daoPackage, info.daoSimpleName))
-                    .addStatement("return ($T) new $T(dataSource)", t, ClassName.get(info.daoPackage, info.implName))
+                    .addStatement("return ($T) new $T(dataSource, transactionManager)", t,
+                            ClassName.get(info.daoPackage, info.implName))
                     .endControlFlow();
         }
         create.addStatement("throw new $T($S + type.getName())", IllegalArgumentException.class,
