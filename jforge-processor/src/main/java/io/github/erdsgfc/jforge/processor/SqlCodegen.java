@@ -2,7 +2,9 @@ package io.github.erdsgfc.jforge.processor;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -11,6 +13,8 @@ import java.util.List;
  * compile time — the emitted code calls type-exact setters/getters directly.
  */
 public final class SqlCodegen {
+
+    private static final ClassName ORM_EXCEPTION = ClassName.get("io.github.erdsgfc.jforge", "OrmException");
 
     private SqlCodegen() {
     }
@@ -140,19 +144,65 @@ public final class SqlCodegen {
         return out.toString();
     }
 
-    /** Expression for the transaction-aware private {@code getConnection()} call. */
-    public static CodeBlock acquireConnection() {
-        return CodeBlock.of("$T.current().connection(dataSource)",
-                ClassName.get("io.github.erdsgfc.jforge", "TransactionManager"));
+    /**
+     * Starts the tx-aware block in the generated method: acquires the connection and opens the
+     * {@code PreparedStatement} as a try-with-resources resource so it is always closed —
+     * {@code Connection conn = getConnection(); try (PreparedStatement ps = conn.prepareStatement(...)) \{}.
+     *
+     * @param method           the method builder
+     * @param connection       the Connection class
+     * @param preparedStatement the PreparedStatement class
+     * @param sqlExpr          the SQL expression passed to prepareStatement (a SQL field name, or
+     *                         {@code sql.toString()} for dynamically built IN queries)
+     * @param generatedKeys    whether to use {@code RETURN_GENERATED_KEYS}
+     */
+    public static MethodSpec.Builder beginTxBlock(MethodSpec.Builder method, ClassName connection,
+            ClassName preparedStatement, String sqlExpr, boolean generatedKeys) {
+        method.addStatement("$T conn = getConnection()", connection);
+        if (generatedKeys) {
+            return method.beginControlFlow("try ($T ps = conn.prepareStatement($L, $T.RETURN_GENERATED_KEYS))",
+                    preparedStatement, sqlExpr, ClassName.get("java.sql", "Statement"));
+        }
+        return method.beginControlFlow("try ($T ps = conn.prepareStatement($L))", preparedStatement, sqlExpr);
     }
 
-    /** Statement for releasing a connection: {@code TransactionManager.current().release(conn, dataSource)}. */
-    public static CodeBlock releaseConnection() {
-        return CodeBlock.of("$T.current().release(conn, dataSource)",
-                ClassName.get("io.github.erdsgfc.jforge", "TransactionManager"));
+    /** Closes the tx-aware try block with catch + finally (releaseConnection). */
+    public static void endTxBlock(MethodSpec.Builder method, ClassName sqlException, String operation) {
+        method.nextControlFlow("catch ($T e)", sqlException)
+                .addStatement("throw new $T($S, e)", ORM_EXCEPTION, operation + " failed")
+                .nextControlFlow("finally")
+                .addStatement("releaseConnection(conn)")
+                .endControlFlow();
     }
 
-    private static String capitalize(String s) {
-        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    /**
+     * Computes the INSERT columns for an entity: all mapped columns except a database-generated
+     * primary key (which the database assigns on insert).
+     *
+     * @param model the parsed entity model
+     * @return the columns to bind in an INSERT
+     */
+    public static List<EntityModel.ColumnModel> insertColumns(EntityModel model) {
+        List<EntityModel.ColumnModel> columns = new ArrayList<>();
+        for (EntityModel.ColumnModel column : model.columns()) {
+            if (!(column.isId && model.idGenerated())) {
+                columns.add(column);
+            }
+        }
+        return columns;
+    }
+
+    /**
+     * Extracts the column names of a list of column models.
+     *
+     * @param columns the column models
+     * @return the column-name strings, in order
+     */
+    public static List<String> namesOf(List<EntityModel.ColumnModel> columns) {
+        List<String> names = new ArrayList<>();
+        for (EntityModel.ColumnModel column : columns) {
+            names.add(column.columnName);
+        }
+        return names;
     }
 }

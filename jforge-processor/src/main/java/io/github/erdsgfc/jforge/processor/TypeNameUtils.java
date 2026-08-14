@@ -2,7 +2,15 @@ package io.github.erdsgfc.jforge.processor;
 
 import com.palantir.javapoet.ArrayTypeName;
 import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
+
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
+import java.util.ArrayList;
+import java.util.List;
 
 /** TypeMirror-string → JavaPoet TypeName and JDBC binder/reader mapping helpers. */
 public final class TypeNameUtils {
@@ -150,5 +158,40 @@ public final class TypeNameUtils {
             default:
                 return typeName;
         }
+    }
+
+    /**
+     * Returns the JDBC generated-key reader suffix for a field type: the
+     * {@code getXxx} method name without the leading {@code "get"} (e.g.
+     * {@code "getLong"} → {@code "Long"}, {@code "getString"} → {@code "String"}).
+     * Used to emit {@code keys.getXxx(1)} write-back expressions.
+     *
+     * @param typeName the field type string
+     * @return the suffix for the generated-key reader
+     */
+    public static String jdbcReturnSuffix(String typeName) {
+        return jdbcGetter(typeName).substring(3);
+    }
+
+    /**
+     * Converts a TypeMirror to a JavaPoet TypeName, preserving generic arguments
+     * (e.g. {@code List<UserEntity>}).
+     *
+     * @param type the type mirror
+     * @return the corresponding JavaPoet type
+     */
+    public static TypeName toTypeNameWithGenerics(TypeMirror type) {
+        if (type.getKind() == TypeKind.DECLARED) {
+            DeclaredType declared = (DeclaredType) type;
+            if (!declared.getTypeArguments().isEmpty()) {
+                List<TypeName> args = new ArrayList<>();
+                for (TypeMirror arg : declared.getTypeArguments()) {
+                    args.add(toTypeNameWithGenerics(arg));
+                }
+                return ParameterizedTypeName.get(
+                        ClassName.get((TypeElement) declared.asElement()), args.toArray(new TypeName[0]));
+            }
+        }
+        return TypeNameUtils.toTypeName(type.toString());
     }
 }
