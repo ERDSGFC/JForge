@@ -2,6 +2,8 @@ package io.github.erdsgfc.jforge.starter;
 
 import io.github.erdsgfc.jforge.JForgeException;
 import io.github.erdsgfc.jforge.TransactionManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.jdbc.datasource.ConnectionHolder;
@@ -41,6 +43,8 @@ import java.sql.SQLException;
  * transaction contract, best avoided through the {@code execute} template).</p>
  */
 public final class SpringTransactionManager implements TransactionManager, SmartInitializingSingleton {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SpringTransactionManager.class);
 
     /**
      * Transaction definition shared by every ORM-level transaction: default
@@ -163,6 +167,7 @@ public final class SpringTransactionManager implements TransactionManager, Smart
         }
         try {
             status.set(delegate.getTransaction(DEFINITION));
+            LOG.debug("Transaction begun");
         } catch (RuntimeException e) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "Cannot begin transaction", e);
         }
@@ -195,6 +200,7 @@ public final class SpringTransactionManager implements TransactionManager, Smart
         }
         try {
             delegate.commit(txStatus);
+            LOG.debug("Transaction committed");
         } catch (RuntimeException e) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "Commit failed", e);
         } finally {
@@ -218,6 +224,7 @@ public final class SpringTransactionManager implements TransactionManager, Smart
         }
         try {
             delegate.rollback(txStatus);
+            LOG.debug("Transaction rolled back");
         } catch (RuntimeException e) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "Rollback failed", e);
         } finally {

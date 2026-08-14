@@ -157,8 +157,13 @@ public final class SqlCodegen {
      * @param generatedKeys    whether to use {@code RETURN_GENERATED_KEYS}
      */
     public static MethodSpec.Builder beginTxBlock(MethodSpec.Builder method, ClassName connection,
-            ClassName preparedStatement, String sqlExpr, boolean generatedKeys) {
+            ClassName preparedStatement, String sqlExpr, boolean generatedKeys, boolean logSql) {
         method.addStatement("$T conn = getConnection()", connection);
+        if (logSql) {
+            method.beginControlFlow("if (log.isDebugEnabled())");
+            method.addStatement("log.debug($S, $L)", "Executing SQL: {}", sqlExpr);
+            method.endControlFlow();
+        }
         if (generatedKeys) {
             return method.beginControlFlow("try ($T ps = conn.prepareStatement($L, $T.RETURN_GENERATED_KEYS))",
                     preparedStatement, sqlExpr, ClassName.get("java.sql", "Statement"));
@@ -179,11 +184,16 @@ public final class SqlCodegen {
      * @param sql        the SQL statement that failed (or its fixed prefix for dynamic IN queries)
      */
     public static void endTxBlock(MethodSpec.Builder method, ClassName sqlException,
-            String operation, String tableName, String sql) {
+            String operation, String tableName, String sql, boolean logSql) {
         String message = operation + " on table '" + tableName + "' [" + sql + "]: ";
-        method.nextControlFlow("catch ($T e)", sqlException)
-                .addStatement("throw new $T($T.Code.SQL, $S + e.getMessage(), $S, e)",
-                        ORM_EXCEPTION, ORM_EXCEPTION, message, sql)
+        method.nextControlFlow("catch ($T e)", sqlException);
+        if (logSql) {
+            method.beginControlFlow("if (log.isWarnEnabled())");
+            method.addStatement("log.warn($S, $S, e)", "SQL failed: {}", sql);
+            method.endControlFlow();
+        }
+        method.addStatement("throw new $T($T.Code.SQL, $S + e.getMessage(), $S, e)",
+                ORM_EXCEPTION, ORM_EXCEPTION, message, sql)
                 .nextControlFlow("finally")
                 .addStatement("releaseConnection(conn)")
                 .endControlFlow();

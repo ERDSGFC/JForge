@@ -23,5 +23,10 @@
             <artifactId>jforge-annotation</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- SLF4J API 门面：框架只依赖 API，日志实现由使用者选择（logback/log4j2 等）。 -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
     </dependencies>
 </project>

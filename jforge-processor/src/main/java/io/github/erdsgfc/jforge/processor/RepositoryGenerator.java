@@ -99,6 +99,18 @@ final class RepositoryGenerator {
         }
         builder.addMethod(constructor.build());
 
+        // 配置 logSql=true 时生成 SLF4J Logger 字段，SQL 方法里 emit DEBUG/WARN 日志；
+        // 默认 false 不生成任何日志代码（保持与手写 JDBC 等效的零开销）。
+        if (configHelper.logSql(info.element)) {
+            builder.addField(FieldSpec.builder(
+                    ClassName.get("org.slf4j", "Logger"), "log",
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .initializer("$T.getLogger($T.class)",
+                            ClassName.get("org.slf4j", "LoggerFactory"),
+                            ClassName.get(info.daoPackage, info.implName))
+                    .build());
+        }
+
         // 固定 SQL 常量字段（命名引用，避免方法体内散落字符串字面量）。
         for (FieldSpec field : SqlFieldGenerator.sqlFields(info)) {
             builder.addField(field);

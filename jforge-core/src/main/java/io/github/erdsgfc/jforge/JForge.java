@@ -1,6 +1,8 @@
 package io.github.erdsgfc.jforge;
 
 import io.github.erdsgfc.jforge.generated.Repositories;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.util.Map;
@@ -17,6 +19,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * target/classes 里处理器生成的真实实现覆盖（Java 类加载优先级：磁盘项目路径高于第三方 jar）。</p>
  */
 public final class JForge {
+
+    private static final Logger LOG = LoggerFactory.getLogger(JForge.class);
 
     private final DataSource dataSource;
     private final TransactionManager transactionManager;
@@ -42,6 +46,7 @@ public final class JForge {
         this.dataSource = dataSource;
         this.transactionManager = transactionManager;
         TransactionManager.set(transactionManager);
+        LOG.info("JForge initialized with TransactionManager {}", transactionManager.getClass().getSimpleName());
     }
 
     /** Returns the data source bound to this facade. */
@@ -68,7 +73,12 @@ public final class JForge {
      */
     @SuppressWarnings("unchecked")
     public <T> T repository(Class<T> type) {
-        return (T) repositories.computeIfAbsent(type,
-                t -> Repositories.create(t, dataSource, transactionManager));
+        return (T) repositories.computeIfAbsent(type, t -> {
+            Object repo = Repositories.create(t, dataSource, transactionManager);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Created repository for {}", t.getSimpleName());
+            }
+            return repo;
+        });
     }
 }

@@ -118,7 +118,7 @@ final class QueryGenerator {
         }
 
         boolean generatedKeys = method.getAnnotation(ReturnGeneratedKeys.class) != null;
-        SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, generatedKeys);
+        SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, generatedKeys, configHelper.logSql(info.element));
 
         for (int i = 0; i < placeholders.size(); i++) {
             VariableElement parameter = binds.get(placeholders.get(i));
@@ -152,7 +152,7 @@ final class QueryGenerator {
             spec.endControlFlow();
         }
 
-        SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(), SqlFieldGenerator.querySql(method));
+        SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(), SqlFieldGenerator.querySql(method), configHelper.logSql(info.element));
         return spec.build();
     }
 

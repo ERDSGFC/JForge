@@ -61,6 +61,12 @@ public final class JForgeConfigHelper {
         return config != null && config.springBeans();
     }
 
+    /** Whether generated repository impls should emit SQL logging (default {@code false}). */
+    public boolean logSql(Element element) {
+        JForgeConfig config = configFor(element);
+        return config != null && config.logSql();
+    }
+
     /**
      * Reads the configured JDBC batch size for the package of {@code element}.
      * The default ({@code 50}) matches {@code JForgeConfig.batchSize()};

@@ -74,4 +74,13 @@ public @interface JForgeConfig {
      * the last statement of a batch).</p>
      */
     int batchSize() default 50;
+
+    /**
+     * Whether the generated repository implementation emits DEBUG/WARN SQL logging
+     * (an SLF4J {@code Logger} field plus a {@code log.debug(...)} per SQL statement
+     * and {@code log.warn(...)} on failure). Default {@code false} — the generated
+     * code carries zero logging overhead unless this is enabled, preserving the
+     * "equivalent to hand-written JDBC" guarantee.
+     */
+    boolean logSql() default false;
 }

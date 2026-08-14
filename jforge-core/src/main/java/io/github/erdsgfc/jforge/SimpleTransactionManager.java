@@ -1,5 +1,8 @@
 package io.github.erdsgfc.jforge;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -17,6 +20,8 @@ import java.sql.SQLException;
  * pooled connection and stays outside the transaction.</p>
  */
 public final class SimpleTransactionManager implements TransactionManager {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SimpleTransactionManager.class);
 
     /**
      * Thread-bound transaction state: the connection plus the data source it
@@ -119,6 +124,7 @@ public final class SimpleTransactionManager implements TransactionManager {
             conn = dataSource.getConnection();
             conn.setAutoCommit(false);
             tx.set(new TxState(dataSource, conn));
+            LOG.debug("Transaction begun");
         } catch (SQLException e) {
             // A connection already obtained must not leak when setAutoCommit fails:
             // close it before rethrowing, or the pool is permanently short one connection.
@@ -147,6 +153,7 @@ public final class SimpleTransactionManager implements TransactionManager {
         }
         try {
             state.connection.commit();
+            LOG.debug("Transaction committed");
         } catch (SQLException e) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "Commit failed", e);
         } finally {
@@ -162,6 +169,7 @@ public final class SimpleTransactionManager implements TransactionManager {
         }
         try {
             state.connection.rollback();
+            LOG.debug("Transaction rolled back");
         } catch (SQLException e) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "Rollback failed", e);
         } finally {
