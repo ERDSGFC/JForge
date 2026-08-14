@@ -56,7 +56,7 @@ final class SqlFieldGenerator {
                 .build();
     }
 
-    private static String saveSql(JForgeProcessor.DaoInfo info) {
+    static String saveSql(JForgeProcessor.DaoInfo info) {
         EntityModel model = info.model;
         List<EntityModel.ColumnModel> insertColumns = SqlCodegen.insertColumns(model);
         return "INSERT INTO " + model.tableName() + " ("
@@ -64,17 +64,17 @@ final class SqlFieldGenerator {
                 + SqlCodegen.placeholders(insertColumns.size()) + ")";
     }
 
-    private static String deleteByIdSql(JForgeProcessor.DaoInfo info) {
+    static String deleteByIdSql(JForgeProcessor.DaoInfo info) {
         return "DELETE FROM " + info.model.tableName() + " WHERE "
                 + info.model.idColumn().columnName + "=?";
     }
 
-    private static String deleteByIdsBaseSql(JForgeProcessor.DaoInfo info) {
+    static String deleteByIdsBaseSql(JForgeProcessor.DaoInfo info) {
         return "DELETE FROM " + info.model.tableName() + " WHERE "
                 + info.model.idColumn().columnName + " IN (";
     }
 
-    private static String updateSql(JForgeProcessor.DaoInfo info) {
+    static String updateSql(JForgeProcessor.DaoInfo info) {
         EntityModel model = info.model;
         StringBuilder sets = new StringBuilder();
         for (EntityModel.ColumnModel column : model.columns()) {
@@ -89,32 +89,32 @@ final class SqlFieldGenerator {
                 + model.idColumn().columnName + "=?";
     }
 
-    private static String findByIdSql(JForgeProcessor.DaoInfo info) {
+    static String findByIdSql(JForgeProcessor.DaoInfo info) {
         return "SELECT " + SqlCodegen.joinColumns(SqlCodegen.namesOf(info.model.columns())) + " FROM "
                 + info.model.tableName() + " WHERE " + info.model.idColumn().columnName + "=?";
     }
 
-    private static String findByIdsBaseSql(JForgeProcessor.DaoInfo info) {
+    static String findByIdsBaseSql(JForgeProcessor.DaoInfo info) {
         return "SELECT " + SqlCodegen.joinColumns(SqlCodegen.namesOf(info.model.columns())) + " FROM "
                 + info.model.tableName() + " WHERE " + info.model.idColumn().columnName + " IN (";
     }
 
-    private static String findAllSql(JForgeProcessor.DaoInfo info) {
+    static String findAllSql(JForgeProcessor.DaoInfo info) {
         return "SELECT " + SqlCodegen.joinColumns(SqlCodegen.namesOf(info.model.columns())) + " FROM "
                 + info.model.tableName();
     }
 
-    private static String countSql(JForgeProcessor.DaoInfo info) {
+    static String countSql(JForgeProcessor.DaoInfo info) {
         return "SELECT COUNT(*) FROM " + info.model.tableName();
     }
 
-    private static String countByIdSql(JForgeProcessor.DaoInfo info) {
+    static String countByIdSql(JForgeProcessor.DaoInfo info) {
         return "SELECT COUNT(*) FROM " + info.model.tableName() + " WHERE "
                 + info.model.idColumn().columnName + "=?";
     }
 
     /** {@code @Query} 方法的 SQL：命名占位符转 {@code ?}（返回转换后的字符串）。 */
-    private static String querySql(ExecutableElement method) {
+    static String querySql(ExecutableElement method) {
         return SqlCodegen.convertPlaceholders(method.getAnnotation(Query.class).value(), new ArrayList<>());
     }
 }

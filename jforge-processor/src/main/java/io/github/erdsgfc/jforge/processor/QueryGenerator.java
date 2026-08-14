@@ -34,8 +34,6 @@ import java.util.Map;
  */
 final class QueryGenerator {
 
-    private static final ClassName ORM_EXCEPTION = ClassName.get("io.github.erdsgfc.jforge", "OrmException");
-
     private final ProcessingEnvironment processingEnv;
     private final JForgeConfigHelper configHelper;
 
@@ -154,7 +152,7 @@ final class QueryGenerator {
             spec.endControlFlow();
         }
 
-        SqlCodegen.endTxBlock(spec, sqlException, methodName);
+        SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(), SqlFieldGenerator.querySql(method));
         return spec.build();
     }
 

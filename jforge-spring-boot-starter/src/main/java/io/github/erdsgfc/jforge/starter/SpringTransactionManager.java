@@ -115,7 +115,7 @@ public final class SpringTransactionManager implements TransactionManager, Smart
         try {
             return DataSourceUtils.getConnection(dataSource);
         } catch (CannotGetJdbcConnectionException e) {
-            throw new OrmException("Cannot obtain connection", e);
+            throw new OrmException(OrmException.Code.CONNECTION, "Cannot obtain connection", e);
         }
     }
 
@@ -159,12 +159,12 @@ public final class SpringTransactionManager implements TransactionManager, Smart
     @Override
     public void begin(DataSource dataSource) {
         if (status.get() != null) {
-            throw new OrmException("A transaction is already active on this thread");
+            throw new OrmException(OrmException.Code.TRANSACTION, "A transaction is already active on this thread");
         }
         try {
             status.set(delegate.getTransaction(DEFINITION));
         } catch (RuntimeException e) {
-            throw new OrmException("Cannot begin transaction", e);
+            throw new OrmException(OrmException.Code.TRANSACTION, "Cannot begin transaction", e);
         }
         // Synchronizations are active right after getTransaction (Spring initialized
         // them), so registration is safe. The hook clears our status when the Spring
@@ -191,12 +191,12 @@ public final class SpringTransactionManager implements TransactionManager, Smart
     public void commit() {
         TransactionStatus txStatus = status.get();
         if (txStatus == null) {
-            throw new OrmException("No active transaction to commit");
+            throw new OrmException(OrmException.Code.TRANSACTION, "No active transaction to commit");
         }
         try {
             delegate.commit(txStatus);
         } catch (RuntimeException e) {
-            throw new OrmException("Commit failed", e);
+            throw new OrmException(OrmException.Code.TRANSACTION, "Commit failed", e);
         } finally {
             // Always detach, even on failure, so the thread never leaks the status.
             status.remove();
@@ -214,12 +214,12 @@ public final class SpringTransactionManager implements TransactionManager, Smart
     public void rollback() {
         TransactionStatus txStatus = status.get();
         if (txStatus == null) {
-            throw new OrmException("No active transaction to rollback");
+            throw new OrmException(OrmException.Code.TRANSACTION, "No active transaction to rollback");
         }
         try {
             delegate.rollback(txStatus);
         } catch (RuntimeException e) {
-            throw new OrmException("Rollback failed", e);
+            throw new OrmException(OrmException.Code.TRANSACTION, "Rollback failed", e);
         } finally {
             // Always detach, even on failure, so the thread never leaks the status.
             status.remove();
@@ -244,7 +244,7 @@ public final class SpringTransactionManager implements TransactionManager, Smart
     public void markRollbackOnly() {
         TransactionStatus txStatus = status.get();
         if (txStatus == null) {
-            throw new OrmException("No active transaction to mark rollback-only");
+            throw new OrmException(OrmException.Code.TRANSACTION, "No active transaction to mark rollback-only");
         }
         // On a participating status (joined an outer @Transactional transaction) this
         // marks the outer transaction rollback-only — standard Spring semantics.
@@ -299,7 +299,7 @@ public final class SpringTransactionManager implements TransactionManager, Smart
             scopeDepth.set(1);
             return conn;
         } catch (SQLException e) {
-            throw new OrmException("Cannot obtain connection", e);
+            throw new OrmException(OrmException.Code.CONNECTION, "Cannot obtain connection", e);
         }
     }
 

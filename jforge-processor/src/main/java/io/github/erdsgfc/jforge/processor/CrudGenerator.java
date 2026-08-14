@@ -119,7 +119,7 @@ final class CrudGenerator {
             method.endControlFlow();
         }
         method.addStatement("return entity");
-        SqlCodegen.endTxBlock(method, sqlException, "save");
+        SqlCodegen.endTxBlock(method, sqlException, "save", info.model.tableName(), SqlFieldGenerator.saveSql(info));
         return method.build();
     }
 
@@ -202,7 +202,7 @@ final class CrudGenerator {
         }
 
         method.addStatement("return entities");
-        SqlCodegen.endTxBlock(method, sqlException, "save");
+        SqlCodegen.endTxBlock(method, sqlException, "save", info.model.tableName(), SqlFieldGenerator.saveSql(info));
         return method.build();
     }
 
@@ -356,7 +356,7 @@ final class CrudGenerator {
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
-        SqlCodegen.endTxBlock(method, sqlException, "deleteById");
+        SqlCodegen.endTxBlock(method, sqlException, "deleteById", info.model.tableName(), SqlFieldGenerator.deleteByIdSql(info));
         return method.build();
     }
 
@@ -400,7 +400,7 @@ final class CrudGenerator {
         method.addStatement("i++");
         method.endControlFlow();
         method.addStatement("return ps.executeUpdate()");
-        SqlCodegen.endTxBlock(method, sqlException, "deleteByIds");
+        SqlCodegen.endTxBlock(method, sqlException, "deleteByIds", info.model.tableName(), SqlFieldGenerator.deleteByIdsBaseSql(info));
         return method.build();
     }
 
@@ -438,7 +438,7 @@ final class CrudGenerator {
                 "entity." + model.idColumn().getterName + "()", index));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
-        SqlCodegen.endTxBlock(method, sqlException, "update");
+        SqlCodegen.endTxBlock(method, sqlException, "update", info.model.tableName(), SqlFieldGenerator.updateSql(info));
         return method.build();
     }
 
@@ -470,7 +470,7 @@ final class CrudGenerator {
         method.endControlFlow();
         method.addStatement("return mapRow(rs)");
         method.endControlFlow();
-        SqlCodegen.endTxBlock(method, sqlException, "findById");
+        SqlCodegen.endTxBlock(method, sqlException, "findById", info.model.tableName(), SqlFieldGenerator.findByIdSql(info));
         return method.build();
     }
 
@@ -523,7 +523,7 @@ final class CrudGenerator {
         method.endControlFlow();
         method.endControlFlow();
         method.addStatement("return result");
-        SqlCodegen.endTxBlock(method, sqlException, "findByIds");
+        SqlCodegen.endTxBlock(method, sqlException, "findByIds", info.model.tableName(), SqlFieldGenerator.findByIdsBaseSql(info));
         return method.build();
     }
 
@@ -553,7 +553,7 @@ final class CrudGenerator {
         method.endControlFlow();
         method.endControlFlow();
         method.addStatement("return result");
-        SqlCodegen.endTxBlock(method, sqlException, "findAll");
+        SqlCodegen.endTxBlock(method, sqlException, "findAll", info.model.tableName(), SqlFieldGenerator.findAllSql(info));
         return method.build();
     }
 
@@ -578,7 +578,7 @@ final class CrudGenerator {
         method.addStatement("rs.next()");
         method.addStatement("return rs.getLong(1)");
         method.endControlFlow();
-        SqlCodegen.endTxBlock(method, sqlException, "count");
+        SqlCodegen.endTxBlock(method, sqlException, "count", info.model.tableName(), SqlFieldGenerator.countSql(info));
         return method.build();
     }
 
@@ -598,7 +598,10 @@ final class CrudGenerator {
         method.beginControlFlow("try");
         method.addStatement("return countById(id) > 0");
         method.nextControlFlow("catch ($T e)", sqlException);
-        method.addStatement("throw new $T($S, e)", ORM_EXCEPTION, "existsById failed");
+        method.addStatement("throw new $T($T.Code.SQL, $S + e.getMessage(), $S, e)",
+                ORM_EXCEPTION, ORM_EXCEPTION,
+                "existsById on table '" + info.model.tableName() + "' [" + SqlFieldGenerator.countByIdSql(info) + "]: ",
+                SqlFieldGenerator.countByIdSql(info));
         method.endControlFlow();
         return method.build();
     }
@@ -630,7 +633,10 @@ final class CrudGenerator {
         method.addStatement("return rs.getLong(1)");
         method.endControlFlow();
         method.nextControlFlow("catch ($T e)", sqlException);
-        method.addStatement("throw new $T($S, e)", ORM_EXCEPTION, "count failed");
+        method.addStatement("throw new $T($T.Code.SQL, $S + e.getMessage(), $S, e)",
+                ORM_EXCEPTION, ORM_EXCEPTION,
+                "countById on table '" + info.model.tableName() + "' [" + SqlFieldGenerator.countByIdSql(info) + "]: ",
+                SqlFieldGenerator.countByIdSql(info));
         method.nextControlFlow("finally");
         method.addStatement("releaseConnection(conn)");
         method.endControlFlow();

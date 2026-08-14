@@ -155,6 +155,7 @@ public interface TransactionOperations {
             // no-checked-exceptions contract; keep the JDBC error message as context.
             rollbackQuietly();
             throw new OrmException(
+                    OrmException.Code.SQL,
                     "Transaction failed" + (e.getMessage() != null ? ": " + e.getMessage() : ""), e);
         } catch (RuntimeException | Error ex) {
             // Roll back the partially-executed body; a failed commit has already
@@ -258,6 +259,7 @@ public interface TransactionOperations {
             // wrapped into OrmException. The scope connection is still returned to
             // the pool by the finally block.
             throw new OrmException(
+                    OrmException.Code.SQL,
                     "Connection scope failed" + (e.getMessage() != null ? ": " + e.getMessage() : ""), e);
         } finally {
             endConnectionScope();

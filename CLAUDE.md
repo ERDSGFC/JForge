@@ -44,7 +44,7 @@ mvn -Prelease deploy
 |---|---|
 | `jforge-annotation` | 注解：`@Table/@Id/@Column/@GeneratedValue/@Transient`（标注接口方法）+ `@Dao/@Query/@Bind/@ReturnGeneratedKeys` |
 | `jforge-processor` | 编译期生成器（javapoet + auto-service，provided）：`JForgeProcessor`（入口，**只处理 @Dao**，经 `BaseRepository<T,ID>` 定位实体并顺带生成实体 impl，按全限定名去重）+ `EntityGenerator`（实体→Impl）+ `RepositoryGenerator`（@Dao→CRUD + @Query + DTO record 投影 + 固定 SQL 常量字段 + Repositories 工厂） |
-| `jforge-core` | 框架库（**无 Spring 依赖**）：`TransactionManager`（SPI）、`SimpleTransactionManager`、`OrmException`、`JForge` 门面（`io.github.erdsgfc.jforge`）；`BaseRepository`、`TransactionOperations`、`AbstractRepository`、回调接口（`io.github.erdsgfc.jforge.core`） |
+| `jforge-core` | 框架库（**无 Spring 依赖**）：`TransactionManager`（SPI）、`SimpleTransactionManager`、`OrmException`（带 `Code` 错误码分类 + SQL 上下文）、`JForge` 门面（`io.github.erdsgfc.jforge`）；`BaseRepository`、`TransactionOperations`、`AbstractRepository`、回调接口（`io.github.erdsgfc.jforge.core`） |
 | `jforge-bench` | ORM 集成测试（`RepositoryCrudTest`/`TransactionTest`）+ ORM vs 裸 JDBC JMH 基准 |
 | `jforge-spring-boot-starter` | Spring Boot 自动配置：启动时把全局 `TransactionManager` 换成 `SpringTransactionManager`（包装 `PlatformTransactionManager`） |
 | `jforge-lambda` | 对象创建策略的 JMH 基准（历史方法学验证） |

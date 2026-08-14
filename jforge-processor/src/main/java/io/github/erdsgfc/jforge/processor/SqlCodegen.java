@@ -166,10 +166,24 @@ public final class SqlCodegen {
         return method.beginControlFlow("try ($T ps = conn.prepareStatement($L))", preparedStatement, sqlExpr);
     }
 
-    /** Closes the tx-aware try block with catch + finally (releaseConnection). */
-    public static void endTxBlock(MethodSpec.Builder method, ClassName sqlException, String operation) {
+    /**
+     * Closes the tx-aware try block with catch + finally (releaseConnection). The catch
+     * throws an {@code OrmException} whose message embeds the operation, table name and SQL
+     * plus the underlying {@code SQLException} message, so a failure is self-describing
+     * without digging into the cause chain.
+     *
+     * @param method     the method builder
+     * @param sqlException the SQLException class
+     * @param operation  the operation name (e.g. {@code "save"}, {@code "findById"})
+     * @param tableName  the table the operation targets
+     * @param sql        the SQL statement that failed (or its fixed prefix for dynamic IN queries)
+     */
+    public static void endTxBlock(MethodSpec.Builder method, ClassName sqlException,
+            String operation, String tableName, String sql) {
+        String message = operation + " on table '" + tableName + "' [" + sql + "]: ";
         method.nextControlFlow("catch ($T e)", sqlException)
-                .addStatement("throw new $T($S, e)", ORM_EXCEPTION, operation + " failed")
+                .addStatement("throw new $T($T.Code.SQL, $S + e.getMessage(), $S, e)",
+                        ORM_EXCEPTION, ORM_EXCEPTION, message, sql)
                 .nextControlFlow("finally")
                 .addStatement("releaseConnection(conn)")
                 .endControlFlow();

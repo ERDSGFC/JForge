@@ -76,7 +76,7 @@ public final class SimpleTransactionManager implements TransactionManager {
         try {
             return dataSource.getConnection();
         } catch (SQLException e) {
-            throw new OrmException("Cannot obtain connection", e);
+            throw new OrmException(OrmException.Code.CONNECTION, "Cannot obtain connection", e);
         }
     }
 
@@ -104,13 +104,14 @@ public final class SimpleTransactionManager implements TransactionManager {
     @Override
     public void begin(DataSource dataSource) {
         if (tx.get() != null) {
-            throw new OrmException("A transaction is already active on this thread");
+            throw new OrmException(OrmException.Code.TRANSACTION, "A transaction is already active on this thread");
         }
         if (scope.get() != null) {
             // Upgrading the scope's auto-commit connection into a transaction (and
             // restoring it afterwards) is more complexity than it is worth; fail
             // fast so the caller restructures the scope boundaries.
             throw new OrmException(
+                    OrmException.Code.TRANSACTION,
                     "Cannot begin a transaction while a connection scope is active on this thread");
         }
         Connection conn = null;
@@ -128,7 +129,7 @@ public final class SimpleTransactionManager implements TransactionManager {
                     // best effort
                 }
             }
-            throw new OrmException("Cannot begin transaction", e);
+            throw new OrmException(OrmException.Code.TRANSACTION, "Cannot begin transaction", e);
         }
     }
 
@@ -136,7 +137,7 @@ public final class SimpleTransactionManager implements TransactionManager {
     public void commit() {
         TxState state = tx.get();
         if (state == null) {
-            throw new OrmException("No active transaction to commit");
+            throw new OrmException(OrmException.Code.TRANSACTION, "No active transaction to commit");
         }
         if (state.rollbackOnly) {
             // The transaction was marked rollback-only: discard it instead of
@@ -147,7 +148,7 @@ public final class SimpleTransactionManager implements TransactionManager {
         try {
             state.connection.commit();
         } catch (SQLException e) {
-            throw new OrmException("Commit failed", e);
+            throw new OrmException(OrmException.Code.TRANSACTION, "Commit failed", e);
         } finally {
             closeAndClear(state);
         }
@@ -157,12 +158,12 @@ public final class SimpleTransactionManager implements TransactionManager {
     public void rollback() {
         TxState state = tx.get();
         if (state == null) {
-            throw new OrmException("No active transaction to rollback");
+            throw new OrmException(OrmException.Code.TRANSACTION, "No active transaction to rollback");
         }
         try {
             state.connection.rollback();
         } catch (SQLException e) {
-            throw new OrmException("Rollback failed", e);
+            throw new OrmException(OrmException.Code.TRANSACTION, "Rollback failed", e);
         } finally {
             closeAndClear(state);
         }
@@ -186,6 +187,7 @@ public final class SimpleTransactionManager implements TransactionManager {
         if (existing != null) {
             if (existing.dataSource != dataSource) {
                 throw new OrmException(
+                        OrmException.Code.CONNECTION,
                         "A connection scope is already active on this thread for a different data source");
             }
             existing.depth++;
@@ -196,7 +198,7 @@ public final class SimpleTransactionManager implements TransactionManager {
             scope.set(new ScopeState(dataSource, conn, 1));
             return conn;
         } catch (SQLException e) {
-            throw new OrmException("Cannot obtain connection", e);
+            throw new OrmException(OrmException.Code.CONNECTION, "Cannot obtain connection", e);
         }
     }
 
@@ -207,7 +209,7 @@ public final class SimpleTransactionManager implements TransactionManager {
             return; // no-op: the scope joined a transaction, or no scope is active
         }
         if (state.dataSource != dataSource) {
-            throw new OrmException("Connection scope data source mismatch");
+            throw new OrmException(OrmException.Code.CONNECTION, "Connection scope data source mismatch");
         }
         if (--state.depth > 0) {
             return; // still inside an outer scope on this thread
@@ -224,7 +226,7 @@ public final class SimpleTransactionManager implements TransactionManager {
     public void markRollbackOnly() {
         TxState state = tx.get();
         if (state == null) {
-            throw new OrmException("No active transaction to mark rollback-only");
+            throw new OrmException(OrmException.Code.TRANSACTION, "No active transaction to mark rollback-only");
         }
         state.rollbackOnly = true;
     }
