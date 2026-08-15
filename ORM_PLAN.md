@@ -74,7 +74,7 @@ repo.deleteById(1L);
 
 **统一门面 `JForge`**（`jforge-core`）：持有 `DataSource` 与 `TransactionManager`（`private final`，利于 JIT）并缓存全部仓库——`new JForge(ds).repository(UserRepository.class)` 每次返回同一实例。仓库创建由注解处理器生成的**固定包** `io.github.erdsgfc.jforge.generated.Repositories` 承担（`create(Class, DataSource, TransactionManager)` 按类型分发）；框架 jar 自带同包同名空壳占位类，用户 target/classes 的真实实现按 Java 类加载优先级覆盖占位。注意：固定包单例要求**所有 `@Dao` 在同一编译单元**（main 与 test 分开放置会各生成部分集并互相遮蔽）。
 
-**抽象父类 `AbstractRepository`**（`jforge-core`）：`implements TransactionOperations`，持有 `protected final` `DataSource`/`TransactionManager` 字段，提供 `protected final getConnection()/releaseConnection()` + 8 个 `final` 事务/作用域方法。生成的 `XxxRepository_Impl` 继承它，只保留实体特定代码（SQL 常量、`mapRow`、`countById`、13 个 CRUD、`@Query`）——生成代码量减少约 1/4（仓库多时编译更快）、连接/事务逻辑框架统一维护、字节码不重复、final 字段利于 JIT 常量折叠（取代每次 `TransactionManager.current()` 静态查找）。
+**抽象父类 `AbstractRepository`**（`jforge-core`）：`implements TransactionOperations`，持有 `protected final` `DataSource`/`TransactionManager` 字段，提供 `protected final getConnection()/releaseConnection()` + 8 个 `final` 事务/作用域方法。生成的 `XxxRepository_Impl` 继承它，只保留实体特定代码（SQL 常量、`mapRow`、`countById`、13 个 CRUD、`@Query`）——生成代码量减少约 1/4（仓库多时编译更快）、连接/事务逻辑框架统一维护、字节码不重复；管理器经 `JForge` 门面**构造器注入**（实例传递，无全局单例），`private final` 字段利于 JIT 内联，`SimpleTransactionManager` 单 ThreadLocal 槽位（实测 findById +2.2%，见 `BENCHMARK_RESULTS.md` Run ORM-2）。
 
 ## 编程式事务
 
@@ -116,9 +116,9 @@ if (repo.isTransactionActive()) { ... }
 前置条件：
 - 应用已有 `DataSource` 与 `PlatformTransactionManager` bean（典型做法：依赖 `spring-boot-starter-jdbc`，由 `DataSourceAutoConfiguration` + `DataSourceTransactionManagerAutoConfiguration` 自动配置）
 - 仓库用**同一个** `DataSource` 经门面创建（`new JForge(ds).repository(XxxRepository.class)`）
-- starter 的自动配置检测到 `PlatformTransactionManager` 后，把全局 ORM `TransactionManager` 替换为 Spring 包装器
+- starter 的自动配置注册 `SpringTransactionManager` bean（`OrmTransactionAutoConfiguration`，经 `AutoConfiguration.imports` 发现），**经 `@Autowired` 构造器注入生成的仓库实现**（`springBeans=true` 时）
 
-**为什么能 join**：生成代码取连接走 `TransactionManager.current().connection(ds)` → `DataSourceUtils.getConnection(ds)`；Spring 通过 `TransactionSynchronizationManager` 把事务连接绑定到当前线程，所以以下三种方式激活的事务，仓库操作自动复用同一连接：
+**为什么能 join**：仓库持有的 `transactionManager` 字段就是 Spring 包装器——其 `connection(ds)`/`release(conn, ds)` 委托 `DataSourceUtils.getConnection(ds)`/`releaseConnection`；Spring 通过 `TransactionSynchronizationManager` 把事务连接绑定到当前线程，所以以下三种方式激活的事务，仓库操作自动复用同一连接：
 
 ```java
 // 1. 声明式：@Transactional（服务方法上，隔离级别/超时/savepoint 全部可用）
@@ -145,7 +145,7 @@ ORM 自身的 `repo.execute(...)` / `beginTransaction()` 与上述方式**可混
 
 测试覆盖：`SpringTransactionControlTest`（三种机制提交/回滚端到端）、`OrmTransactionAutoConfigurationTest`（自动配置注册 + imports 文件发现）、`SpringTransactionManagerTest`（包装器单元集成）。
 
-⚠️ 若未引入 starter（全局仍是 `SimpleTransactionManager`），`@Transactional` 等**不会**生效——仓库会拿到独立连接、脱离 Spring 事务边界。这是 starter 存在的意义。
+⚠️ 若未引入 starter（仓库注入的是内置 `SimpleTransactionManager`），`@Transactional` 等**不会**生效——仓库会拿到独立连接、脱离 Spring 事务边界。这是 starter 存在的意义。
 
 ⚠️ **Spring 路径已知限制——事务超时不强制执行**：隔离级别、只读、传播行为都自动生效（Spring 在 `DataSourceTransactionManager.doBegin()` 直接把隔离级别/只读设置到绑定的连接上，ORM 生成代码 join 同一连接）；但**事务超时（`@Transactional(timeout=…)`、`TransactionTemplate` 超时、`TransactionDefinition.getTimeout()`）对 ORM 生成的直写 JDBC 语句不生效**。原因：Spring 对 JDBC 的事务超时本质是"语句级近似"——把超时记录在 `TransactionSynchronizationManager`，待**每条语句执行时**由 `DataSourceUtils.applyTimeout(ps, ds, timeout)` → `Statement.setQueryTimeout()` 强制应用，而调用它的是 `JdbcTemplate`；生成代码是直写 JDBC（`conn.prepareStatement` + `executeUpdate`），不经 `JdbcTemplate`，也无人调用 `applyTimeout`。后续若需强制执行，要让生成代码识别 Spring 并补调 `applyTimeout`（成本高），当前以文档标注为准。
 
@@ -164,7 +164,7 @@ ORM 自身的 `repo.execute(...)` / `beginTransaction()` 与上述方式**可混
 - ✅ **Repository 架构重构**（原 Phase 1/1.5 全部替换）：实体接口 + @Dao 仓库 + 编译期生成（CRUD 13 方法 + @Query + DTO 投影 + Repositories 工厂；只处理 @Dao，实体 impl 经仓库类型参数定位并生成）
 - ✅ **基准验证**：ORM vs 裸 JDBC 全部达标
 - ✅ **编程式事务**：`BaseRepository` 继承 `TransactionOperations`（begin/commit/rollback/isTransactionActive + `execute` 模板）；ThreadLocal 共享、跨仓库原子；`@Transactional` 注解已移除（项目不做声明式事务）
-- ✅ **Spring Starter 接入**（`jforge-spring-boot-starter`）：启动时把全局 `TransactionManager` 替换为 Spring `PlatformTransactionManager` 的包装器（`SpringTransactionManager` + `OrmTransactionAutoConfiguration`，经 `AutoConfiguration.imports` 注册）——生成代码经 `TransactionManager.current()` 无感切换，`execute`/`beginTransaction` 可 join 外部 Spring 事务；`@Transactional` 声明式能力由 Spring 提供；自动配置测试 + 集成测试全绿（依赖 Spring Boot 3.5.6 BOM，仅该模块引入）
+- ✅ **Spring Starter 接入**（`jforge-spring-boot-starter`）：自动配置注册 `SpringTransactionManager` bean（包装 `PlatformTransactionManager`，经 `AutoConfiguration.imports` 发现），**经 `@Autowired` 构造器注入生成的仓库实现**——无全局单例，`execute`/`beginTransaction` 经注入的包装器 join 外部 Spring 事务；`@Transactional` 声明式能力由 Spring 提供；自动配置测试 + 集成测试全绿（依赖 Spring Boot 3.5.6 BOM，仅该模块引入）
 - ⬜ **多数据源支持**：目前两个相关点都假设单 `DataSource` —— ① `springBeans=true` 生成的仓库 impl 构造器直接注入 `DataSource`（多数据源需 `@Qualifier`/按仓库指定）；② `SpringTransactionManager` 包装单个 `PlatformTransactionManager`（多数据源需扩展为按 `DataSource` 解析，如 `Map<DataSource, PlatformTransactionManager>`，`begin/connection` 已带 ds 可查表）。接入时一并规划
 - ⬜ **Phase 3 关联映射**：实体是接口 → 懒加载用 `java.lang.reflect.Proxy`（无需字节码库）
 - ⬜ **Phase 4 一级缓存（L1 Cache）**：事务级 identity map——`findById` 按 (实体, 主键) 缓存，事务内重复查询只发一次 SQL 且返回同一实例；写操作失效/更新；`rollback` 清空缓存；**仅事务激活时生效，未开启事务零开销**（详细设计见下节）

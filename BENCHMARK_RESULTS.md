@@ -123,3 +123,35 @@
 - 旧数据在同写法内高度可复现（跨轮偏差 <8%），属于"确定性地测错了场景"：**测量方法敏感 → 结论不可信**。
 - 类似地，**调用 API 的选择同样影响结论**：`MethodHandle.invoke` 的适配开销曾让 MethodHandle 显得慢 28-73%，`invokeExact` 消除适配后全部追平（Run 10）。
 - 完整旧数据保存在 git 历史；原始测量数据以 `benchmark_run9_data.csv` 为准。
+
+---
+
+## ORM vs 裸 JDBC 基准（OrmVsJdbcBenchmark）
+
+> **测量对象**：jforge ORM 生成代码 vs 手写裸 JDBC，H2 内存库 + HikariCP（`cachePrepStmts` 开启），3 字段 `User`（id/user_name/age）。**单位**：ops/s。**配置**：10 次测量 × 2s、1 fork（注解默认 3×2s 噪声过大，见下）。
+> **架构基线**：管理器经 `JForge` 实例注入生成实现（`private final` 字段，无全局查找）；行映射为 setter 风格；`SimpleTransactionManager` 为**单 ThreadLocal 槽位**（tx/scope 两可空字段，热路径 1 次 `ThreadLocal.get()`）。
+
+### Run ORM-1: 单槽位实现后的基线（10×2s）
+
+| Benchmark | Score (ops/s) | Error | 轮内 ORM vs JDBC |
+|---|---:|---:|---:|
+| jdbcFindAll | 1,575,445 | ±44,244 | — |
+| jdbcFindById | 1,585,588 | ±37,354 | — |
+| jdbcInsert | 531,755 | ±21,499 | — |
+| ormFindAll | 1,636,751 | ±8,314 | **+3.9%（显著，区间不重叠）** |
+| ormFindById | 1,601,691 | ±17,107 | +1.0% |
+| ormInsert | 523,305 | ±25,622 | −1.6%（噪声内） |
+
+### Run ORM-2: 单槽位 A/B 对照（同轮内新旧实现，10×2s）
+
+> 旧实现（双 ThreadLocal）复制为 `LegacyTransactionManager` 临时对照类，与单槽位实现同 fork 交错测量——消除轮间机器漂移（此前实测相邻轮 JDBC 基线漂移可达 ±7%）。
+
+| Benchmark | 单槽位（新） | 双 ThreadLocal（旧） | 差异 | 显著性 |
+|---|---:|---:|---:|---|
+| ormFindById | 1,472,912 | 1,441,028 | **+2.2%** | ✅ 显著（±0.8%，区间不重叠） |
+| ormInsert | 522,608 | 541,580 | −3.5% | ❌ 不显著（±4.3%，区间重叠） |
+
+**结论**：
+1. **单槽位 ThreadLocal 优化有效**——findById +2.2% 显著，量级与理论吻合（每操作省 2 次 `ThreadLocal.get()` ≈ 15ns，占 ~680ns 操作的 ~2%）；insert 上的 −3.5% 与方向矛盾且不显著，判为噪声。**保留单槽位实现**。
+2. **ORM 与裸 JDBC 达到等效**（Run ORM-1）：findAll +3.9%（历史首次稳定快于裸 JDBC）、findById +1.0%、insert −1.6%（噪声内）——全部落入项目目标区间（框架开销 −0.1% ~ +3.5%）或更好。
+3. **方法学**：ORM 对比必须用 ≥10 次测量迭代（3×2s 时误差 ±5-40%，任何 <5% 差异不可信）；跨轮对比受 ±7% 机器漂移限制，**同轮 A/B（新旧实现共存于一个基准类）是唯一可靠对比方式**。
