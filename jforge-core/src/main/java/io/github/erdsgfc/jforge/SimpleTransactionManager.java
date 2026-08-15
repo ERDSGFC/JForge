@@ -8,16 +8,25 @@ import java.sql.Connection;
 import java.sql.SQLException;
 
 /**
- * Built-in {@link TransactionManager} backed by a {@code ThreadLocal}.
+ * Built-in {@link TransactionManager} backed by a single {@code ThreadLocal}.
  * Used when no third-party transaction manager (e.g. Spring) is installed.
  *
- * <p>The thread-local holds both the transaction connection and the data source
- * it was acquired from. {@link #connection(DataSource)} returns the shared
- * transaction connection only when the requested data source is the same
- * instance the transaction was begun on — data sources are singletons in
- * practice, so an identity comparison is both sufficient and cheaper than
- * {@code equals}. A repository bound to a different data source gets its own
- * pooled connection and stays outside the transaction.</p>
+ * <p>The thread-local holds one {@link State} object with two nullable slots —
+ * the transaction state and the connection-scope state. They live in <em>one</em>
+ * slot so the hot path ({@link #connection(DataSource)} and {@link #release})
+ * pays a single {@code ThreadLocal.get()} instead of two: with no transaction and
+ * no scope active the lookup misses once and falls through to the pool. The two
+ * states can be active simultaneously (a transaction on one data source and a
+ * scope on another), which is why they are separate nullable fields rather than
+ * one of them.</p>
+ *
+ * <p>The thread state holds both the connection and the data source it was
+ * acquired from: {@link #connection(DataSource)} returns the shared transaction
+ * (or scope) connection only when the requested data source is the same instance
+ * the state was begun on — data sources are singletons in practice, so an
+ * identity comparison is both sufficient and cheaper than {@code equals}. A
+ * repository bound to a different data source gets its own pooled connection and
+ * stays outside the transaction.</p>
  */
 public final class SimpleTransactionManager implements TransactionManager {
 
@@ -45,8 +54,6 @@ public final class SimpleTransactionManager implements TransactionManager {
         }
     }
 
-    private final ThreadLocal<TxState> tx = new ThreadLocal<>();
-
     /**
      * Thread-bound connection-scope state: the borrowed connection plus the data
      * source it came from, mirroring {@link TxState}. {@code depth} counts nested
@@ -66,17 +73,30 @@ public final class SimpleTransactionManager implements TransactionManager {
         }
     }
 
-    private final ThreadLocal<ScopeState> scope = new ThreadLocal<>();
+    /**
+     * The single thread-bound slot. Both fields are nullable; either, both or
+     * neither can be set, which is why they cannot share one field. The object
+     * itself is only ever touched by the owning thread, so no volatile is needed.
+     */
+    private static final class State {
+        TxState tx;
+        ScopeState scope;
+    }
+
+    private final ThreadLocal<State> state = new ThreadLocal<>();
 
     @Override
     public Connection connection(DataSource dataSource) {
-        TxState state = tx.get();
-        if (state != null && state.dataSource == dataSource) {
-            return state.connection;
-        }
-        ScopeState scoped = scope.get();
-        if (scoped != null && scoped.dataSource == dataSource) {
-            return scoped.connection;
+        State s = state.get();
+        if (s != null) {
+            TxState tx = s.tx;
+            if (tx != null && tx.dataSource == dataSource) {
+                return tx.connection;
+            }
+            ScopeState scoped = s.scope;
+            if (scoped != null && scoped.dataSource == dataSource) {
+                return scoped.connection;
+            }
         }
         try {
             return dataSource.getConnection();
@@ -91,13 +111,16 @@ public final class SimpleTransactionManager implements TransactionManager {
         // transaction or scope connection already decides whether to close. The
         // parameter is kept for signature symmetry so a Spring-backed
         // TransactionManager can delegate to DataSourceUtils.releaseConnection(conn, dataSource).
-        TxState state = tx.get();
-        ScopeState scoped = scope.get();
-        if (state != null && conn == state.connection) {
-            return; // the transaction owns the connection
-        }
-        if (scoped != null && conn == scoped.connection) {
-            return; // the scope owns the connection
+        State s = state.get();
+        if (s != null) {
+            TxState tx = s.tx;
+            if (tx != null && conn == tx.connection) {
+                return; // the transaction owns the connection
+            }
+            ScopeState scoped = s.scope;
+            if (scoped != null && conn == scoped.connection) {
+                return; // the scope owns the connection
+            }
         }
         try {
             conn.close();
@@ -108,10 +131,11 @@ public final class SimpleTransactionManager implements TransactionManager {
 
     @Override
     public void begin(DataSource dataSource) {
-        if (tx.get() != null) {
+        State s = state.get();
+        if (s != null && s.tx != null) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "A transaction is already active on this thread");
         }
-        if (scope.get() != null) {
+        if (s != null && s.scope != null) {
             // Upgrading the scope's auto-commit connection into a transaction (and
             // restoring it afterwards) is more complexity than it is worth; fail
             // fast so the caller restructures the scope boundaries.
@@ -123,7 +147,11 @@ public final class SimpleTransactionManager implements TransactionManager {
         try {
             conn = dataSource.getConnection();
             conn.setAutoCommit(false);
-            tx.set(new TxState(dataSource, conn));
+            if (s == null) {
+                s = new State();
+                state.set(s);
+            }
+            s.tx = new TxState(dataSource, conn);
             LOG.debug("Transaction begun");
         } catch (SQLException e) {
             // A connection already obtained must not leak when setAutoCommit fails:
@@ -141,69 +169,79 @@ public final class SimpleTransactionManager implements TransactionManager {
 
     @Override
     public void commit() {
-        TxState state = tx.get();
-        if (state == null) {
+        State s = state.get();
+        TxState tx = s != null ? s.tx : null;
+        if (tx == null) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "No active transaction to commit");
         }
-        if (state.rollbackOnly) {
+        if (tx.rollbackOnly) {
             // The transaction was marked rollback-only: discard it instead of
             // committing, without throwing — the caller returned normally.
             rollback();
             return;
         }
         try {
-            state.connection.commit();
+            tx.connection.commit();
             LOG.debug("Transaction committed");
         } catch (SQLException e) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "Commit failed", e);
         } finally {
-            closeAndClear(state);
+            closeAndClear(s, tx);
         }
     }
 
     @Override
     public void rollback() {
-        TxState state = tx.get();
-        if (state == null) {
+        State s = state.get();
+        TxState tx = s != null ? s.tx : null;
+        if (tx == null) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "No active transaction to rollback");
         }
         try {
-            state.connection.rollback();
+            tx.connection.rollback();
             LOG.debug("Transaction rolled back");
         } catch (SQLException e) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "Rollback failed", e);
         } finally {
-            closeAndClear(state);
+            closeAndClear(s, tx);
         }
     }
 
     @Override
     public boolean isActive() {
-        return tx.get() != null;
+        State s = state.get();
+        return s != null && s.tx != null;
     }
 
     @Override
     public Connection beginScope(DataSource dataSource) {
-        TxState state = tx.get();
-        if (state != null && state.dataSource == dataSource) {
-            // An active transaction already shares its connection on this thread:
-            // the scope becomes a no-op. endScope() must then also be a no-op —
-            // which it is, because no scope state was bound.
-            return state.connection;
-        }
-        ScopeState existing = scope.get();
-        if (existing != null) {
-            if (existing.dataSource != dataSource) {
-                throw new JForgeException(
-                        JForgeException.Code.CONNECTION,
-                        "A connection scope is already active on this thread for a different data source");
+        State s = state.get();
+        if (s != null) {
+            TxState tx = s.tx;
+            if (tx != null && tx.dataSource == dataSource) {
+                // An active transaction already shares its connection on this thread:
+                // the scope becomes a no-op. endScope() must then also be a no-op —
+                // which it is, because no scope state was bound.
+                return tx.connection;
             }
-            existing.depth++;
-            return existing.connection; // nested scope: reuse the outer connection
+            ScopeState existing = s.scope;
+            if (existing != null) {
+                if (existing.dataSource != dataSource) {
+                    throw new JForgeException(
+                            JForgeException.Code.CONNECTION,
+                            "A connection scope is already active on this thread for a different data source");
+                }
+                existing.depth++;
+                return existing.connection; // nested scope: reuse the outer connection
+            }
         }
         try {
             Connection conn = dataSource.getConnection();
-            scope.set(new ScopeState(dataSource, conn, 1));
+            if (s == null) {
+                s = new State();
+                state.set(s);
+            }
+            s.scope = new ScopeState(dataSource, conn, 1);
             return conn;
         } catch (SQLException e) {
             throw new JForgeException(JForgeException.Code.CONNECTION, "Cannot obtain connection", e);
@@ -212,19 +250,23 @@ public final class SimpleTransactionManager implements TransactionManager {
 
     @Override
     public void endScope(DataSource dataSource) {
-        ScopeState state = scope.get();
-        if (state == null) {
+        State s = state.get();
+        ScopeState scoped = s != null ? s.scope : null;
+        if (scoped == null) {
             return; // no-op: the scope joined a transaction, or no scope is active
         }
-        if (state.dataSource != dataSource) {
+        if (scoped.dataSource != dataSource) {
             throw new JForgeException(JForgeException.Code.CONNECTION, "Connection scope data source mismatch");
         }
-        if (--state.depth > 0) {
+        if (--scoped.depth > 0) {
             return; // still inside an outer scope on this thread
         }
-        scope.remove();
+        s.scope = null;
+        if (s.tx == null) {
+            state.remove(); // both slots empty: drop the slot so the thread never retains the State
+        }
         try {
-            state.connection.close();
+            scoped.connection.close();
         } catch (SQLException ignored) {
             // best effort
         }
@@ -232,30 +274,37 @@ public final class SimpleTransactionManager implements TransactionManager {
 
     @Override
     public void markRollbackOnly() {
-        TxState state = tx.get();
-        if (state == null) {
+        State s = state.get();
+        TxState tx = s != null ? s.tx : null;
+        if (tx == null) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "No active transaction to mark rollback-only");
         }
-        state.rollbackOnly = true;
+        tx.rollbackOnly = true;
     }
 
     @Override
     public boolean isRollbackOnly() {
-        TxState state = tx.get();
-        return state != null && state.rollbackOnly;
+        State s = state.get();
+        return s != null && s.tx != null && s.tx.rollbackOnly;
     }
 
     /**
-     * Detaches the thread-local state and closes the connection. Called in the
-     * {@code finally} of commit/rollback so the thread never leaks a transaction
-     * — even when the JDBC call itself fails.
+     * Detaches the transaction from the thread state and closes the connection.
+     * Called in the {@code finally} of commit/rollback so the thread never leaks a
+     * transaction — even when the JDBC call itself fails. The thread slot is only
+     * removed when the scope slot is empty too, so a concurrently active scope
+     * keeps its state.
      *
-     * @param state the transaction state to clear
+     * @param s  the thread state (never null here)
+     * @param tx the transaction state to clear
      */
-    private void closeAndClear(TxState state) {
-        tx.remove();
+    private void closeAndClear(State s, TxState tx) {
+        s.tx = null;
+        if (s.scope == null) {
+            state.remove();
+        }
         try {
-            state.connection.close();
+            tx.connection.close();
         } catch (SQLException ignored) {
             // best effort
         }
