@@ -10,7 +10,7 @@ import java.lang.annotation.Target;
  * (camelCase kept as-is).
  */
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.FIELD, ElementType.METHOD})
+@Target(ElementType.METHOD)
 public @interface Column {
 
     /** Column name. */

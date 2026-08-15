@@ -1,6 +1,7 @@
 package io.github.erdsgfc.jforge.processor;
 
 import com.google.auto.service.AutoService;
+import com.palantir.javapoet.AnnotationSpec;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.JavaFile;
 import com.palantir.javapoet.MethodSpec;
@@ -141,7 +142,7 @@ public class JForgeProcessor extends AbstractProcessor {
         info.daoQualifiedName = dao.getQualifiedName().toString();
         info.daoSimpleName = dao.getSimpleName().toString();
         info.daoPackage = packageOf(info.daoQualifiedName);
-        info.implName = info.daoSimpleName + "_Impl";
+        info.implName = info.daoSimpleName + configHelper.implSuffix(dao);
 
         TypeMirror entityMirror = null;
         TypeMirror idMirror = null;
@@ -196,15 +197,27 @@ public class JForgeProcessor extends AbstractProcessor {
                 .returns(t)
                 .addParameter(ParameterizedTypeName.get(ClassName.get(Class.class), t), "type")
                 .addParameter(ClassName.get("javax.sql", "DataSource"), "dataSource")
-                .addParameter(ClassName.get("io.github.erdsgfc.jforge", "TransactionManager"), "transactionManager");
-        for (DaoInfo info : daos) {
-            create.beginControlFlow("if (type == $T.class)", ClassName.get(info.daoPackage, info.daoSimpleName))
-                    .addStatement("return ($T) new $T(dataSource, transactionManager)", t,
-                            ClassName.get(info.daoPackage, info.implName))
-                    .endControlFlow();
+                .addParameter(ClassName.get("io.github.erdsgfc.jforge", "TransactionManager"), "transactionManager")
+                // 分发的 (T) cast 是确定安全的（type 与返回的 impl 一一对应），抑制 unchecked 警告。
+                .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
+                        .addMember("value", "$S", "unchecked")
+                        .build());
+        // if/else-if/else 链：分支互斥语义显式化（每个分支都 return，独立的 if 行为等价，
+        // 但 else-if 防止未来改动破坏互斥），最后的 else 兜底未匹配类型。
+        for (int i = 0; i < daos.size(); i++) {
+            DaoInfo info = daos.get(i);
+            if (i == 0) {
+                create.beginControlFlow("if (type == $T.class)", ClassName.get(info.daoPackage, info.daoSimpleName));
+            } else {
+                create.nextControlFlow("else if (type == $T.class)", ClassName.get(info.daoPackage, info.daoSimpleName));
+            }
+            create.addStatement("return ($T) new $T(dataSource, transactionManager)", t,
+                    ClassName.get(info.daoPackage, info.implName));
         }
-        create.addStatement("throw new $T($S + type.getName())", IllegalArgumentException.class,
-                "No generated repository for type: ");
+        create.nextControlFlow("else")
+                .addStatement("throw new $T($S + type.getName())", IllegalArgumentException.class,
+                        "No generated repository for type: ")
+                .endControlFlow();
         TypeSpec.Builder factories = TypeSpec.classBuilder("Repositories")
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
