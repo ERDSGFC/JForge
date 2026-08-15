@@ -622,7 +622,7 @@ final class CrudGenerator {
         MethodSpec.Builder method = MethodSpec.methodBuilder("countById")
                 .addModifiers(Modifier.PRIVATE)
                 .returns(TypeName.LONG)
-                .addParameter(TypeNameUtils.toTypeName(info.idTypeName), "id")
+                .addParameter(info.idType, "id")
                 .addException(sqlException);
         method.addStatement("$T conn = getConnection()", connection);
         method.beginControlFlow("try ($T ps = conn.prepareStatement($N))", preparedStatement, "countByIdSql");

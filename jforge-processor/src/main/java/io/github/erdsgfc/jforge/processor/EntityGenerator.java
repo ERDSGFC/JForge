@@ -79,7 +79,8 @@ final class EntityGenerator {
                 .addSuperinterface(entityClass);
 
         for (EntityModel.ColumnModel column : model.columns()) {
-            TypeName type = TypeNameUtils.toTypeName(column.typeName);
+            // TypeName.get(TypeMirror) 无损转换;toString + bestGuess 会在泛型/嵌套类上出错。
+            TypeName type = TypeName.get(column.returnType);
             builder.addField(FieldSpec.builder(type, column.fieldName, Modifier.PRIVATE).build());
             builder.addMethod(MethodSpec.methodBuilder(column.getterName)
                     .addAnnotation(Override.class)

@@ -211,7 +211,7 @@ final class QueryGenerator {
             // Single value (String/Long/...).
             if (isList) {
                 spec.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class),
-                        TypeNameUtils.toTypeName(elementType.toString()), ClassName.get("java.util", "ArrayList"));
+                        TypeName.get(elementType), ClassName.get("java.util", "ArrayList"));
                 spec.beginControlFlow("while (rs.next())");
                 spec.addStatement("result.add(rs.$L(1))", TypeNameUtils.jdbcGetter(elementType.toString()));
                 spec.endControlFlow();
@@ -248,7 +248,7 @@ final class QueryGenerator {
                 EntityModel.implNameOf(model.entitySimpleName(), model.implSuffix()));
         if (isList) {
             spec.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class),
-                    TypeNameUtils.toTypeName(entityType.toString()), ClassName.get("java.util", "ArrayList"));
+                    TypeName.get(entityType), ClassName.get("java.util", "ArrayList"));
             spec.beginControlFlow("while (rs.next())");
             spec.addStatement("$T e = new $T()", impl, impl);
             for (EntityModel.ColumnModel column : model.columns()) {

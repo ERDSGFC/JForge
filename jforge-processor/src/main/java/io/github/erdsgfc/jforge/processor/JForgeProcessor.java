@@ -159,7 +159,7 @@ public class JForgeProcessor extends AbstractProcessor {
 
         info.model = model;
         info.entityType = ClassName.get(model.entityPackage(), model.entitySimpleName());
-        info.idType = TypeNameUtils.toTypeName(idMirror.toString());
+        info.idType = TypeName.get(idMirror);
         info.idTypeName = idMirror.toString();
         return info;
     }
