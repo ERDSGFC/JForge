@@ -79,11 +79,11 @@ public final class EntityModel {
         model.config = config;
         model.types = types;
         Table table = entity.getAnnotation(Table.class);
-        if (table == null || table.name().isEmpty()) {
-            messager.printMessage(errorKind, "@Table(name=...) is required on " + entity.getQualifiedName(), entity);
-            return null;
+        if (table != null && !table.name().isEmpty()) {
+            model.tableName = table.name();
+        } else {
+            model.tableName = JForgeConfigHelper.camelToSnake(entity.getSimpleName().toString());
         }
-        model.tableName = table.name();
 
         // Pass 1: collect the property getters (setters may be declared before their
         // getter, so validation of setters waits until all getters are known).
@@ -235,10 +235,6 @@ public final class EntityModel {
                             + "getter '" + name + "()' return type " + getter.returnType
                             + " on " + element.getQualifiedName(), method);
         }
-    }
-
-    public TypeElement element() {
-        return element;
     }
 
     public String tableName() {

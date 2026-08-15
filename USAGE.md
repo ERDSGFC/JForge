@@ -60,7 +60,7 @@ public interface UserEntity {
 
 | 注解 | 用途 |
 |---|---|
-| `@Table(name=...)` | 表名(必填,标在接口上) |
+| `@Table(name=...)` | 表名(**可选**);缺省按类名推断为 snake_case(`UserEntity` → `user_entity`) |
 | `@Id` | 主键(必填且唯一) |
 | `@GeneratedValue` | 数据库自增,插入后回写主键 |
 | `@Column(name=...)` | 显式列名 |

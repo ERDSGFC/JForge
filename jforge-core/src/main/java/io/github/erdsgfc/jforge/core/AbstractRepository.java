@@ -20,10 +20,8 @@ import java.sql.Connection;
  */
 public abstract class AbstractRepository implements TransactionOperations {
 
-    /** 仓库绑定的数据源，由生成的子类经构造器传入。 */
     protected final DataSource dataSource;
 
-    /** 仓库绑定的事务管理器，由生成的子类经构造器传入。 */
     protected final TransactionManager transactionManager;
 
     /**

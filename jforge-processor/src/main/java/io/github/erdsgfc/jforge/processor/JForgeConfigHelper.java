@@ -150,7 +150,16 @@ public final class JForgeConfigHelper {
         return config;
     }
 
-    private static String camelToSnake(String name) {
+    /**
+     * Converts a camelCase identifier to snake_case, e.g. {@code userName} →
+     * {@code user_name}: each upper-case letter is prefixed with an underscore
+     * (except at the start) and lower-cased. Shared by column-name inference
+     * ({@link #columnName}) and table-name inference in {@code EntityModel}.
+     *
+     * @param name the camelCase identifier, e.g. {@code "userName"}
+     * @return the snake_case form, e.g. {@code "user_name"}
+     */
+    static String camelToSnake(String name) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0, len = name.length(); i < len; i++) {
             char c = name.charAt(i);
