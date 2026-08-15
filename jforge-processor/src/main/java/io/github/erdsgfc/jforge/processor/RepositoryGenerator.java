@@ -66,7 +66,7 @@ final class RepositoryGenerator {
     private TypeSpec buildImpl(JForgeProcessor.DaoInfo info) {
         ClassName daoClass = ClassName.get(info.daoPackage, info.daoSimpleName);
         ClassName dataSource = ClassName.get("javax.sql", "DataSource");
-        ClassName entityImpl = ClassName.get(info.model.entityPackage(),
+        ClassName entityImpl = ClassName.get(info.model.implPackage(),
                 EntityModel.implNameOf(info.model.entitySimpleName(), info.model.implSuffix()));
         ClassName connection = ClassName.get("java.sql", "Connection");
         ClassName preparedStatement = ClassName.get("java.sql", "PreparedStatement");

@@ -18,7 +18,7 @@ JForge 的**运行期性能目标是完全等效于纯手工编写的硬编码 J
 
 | 模块 | 说明 |
 |---|---|
-| `jforge-annotation` | 注解：`@Table/@Id/@Column/@GeneratedValue/@Transient`（可标注在接口方法上）+ `@Dao/@Query/@Bind/@ReturnGeneratedKeys` |
+| `jforge-annotation` | 注解：`@Table/@Id/@Column/@GeneratedValue`（可标注在接口方法上）+ `@Dao/@Query/@Bind/@ReturnGeneratedKeys` |
 | `jforge-processor` | 编译期生成器（javapoet + auto-service，provided，不进运行时） |
 | `jforge-core` | 框架库：`BaseRepository`、`TransactionManager`、编程式事务 |
 | `jforge-bench` | ORM vs 裸 JDBC 基准 |

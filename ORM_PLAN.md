@@ -25,7 +25,7 @@ UserEntity (interface)              UserEntity_Impl
 ## 模块结构
 
 ```
-jforge-annotation/      # 注解：@Table/@Id/@Column/@GeneratedValue/@Transient（METHOD 作用域）
+jforge-annotation/      # 注解：@Table/@Id/@Column/@GeneratedValue（METHOD 作用域）
                      #       @Dao/@Query/@Bind/@ReturnGeneratedKeys
 jforge-processor/       # 编译期生成器（javapoet + auto-service，provided，不进运行时）
   ├── JForgeProcessor.java      # 入口：只处理 @Dao，经 BaseRepository<T,ID> 定位实体并生成实体 impl（去重）

@@ -244,7 +244,7 @@ final class QueryGenerator {
         if (model == null) {
             return;
         }
-        ClassName impl = ClassName.get(model.entityPackage(),
+        ClassName impl = ClassName.get(model.implPackage(),
                 EntityModel.implNameOf(model.entitySimpleName(), model.implSuffix()));
         if (isList) {
             spec.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class),

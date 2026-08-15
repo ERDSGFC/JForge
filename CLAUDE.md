@@ -42,7 +42,7 @@ mvn -Prelease deploy
 
 | 模块 | 职责 |
 |---|---|
-| `jforge-annotation` | 注解：`@Table/@Id/@Column/@GeneratedValue/@Transient`（标注接口方法）+ `@Dao/@Query/@Bind/@ReturnGeneratedKeys` |
+| `jforge-annotation` | 注解：`@Table/@Id/@Column/@GeneratedValue`（标注接口方法）+ `@Dao/@Query/@Bind/@ReturnGeneratedKeys` |
 | `jforge-processor` | 编译期生成器（javapoet + auto-service，provided）：`JForgeProcessor`（入口，**只处理 @Dao**，经 `BaseRepository<T,ID>` 定位实体并顺带生成实体 impl，按全限定名去重）+ `EntityGenerator`（实体→Impl）+ `RepositoryGenerator`（@Dao→CRUD + @Query + DTO record 投影 + 固定 SQL 常量字段 + Repositories 工厂） |
 | `jforge-core` | 框架库（**无 Spring 依赖**）：`TransactionManager`（SPI）、`SimpleTransactionManager`、`JForgeException`（带 `Code` 错误码分类 + SQL 上下文）、`JForge` 门面（`io.github.erdsgfc.jforge`）；`BaseRepository`、`TransactionOperations`、`AbstractRepository`、回调接口（`io.github.erdsgfc.jforge.core`） |
 | `jforge-bench` | ORM 集成测试（`RepositoryCrudTest`/`TransactionTest`）+ ORM vs 裸 JDBC JMH 基准 |

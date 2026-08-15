@@ -50,11 +50,9 @@ final class EntityGenerator {
             return; // 已由其他仓库生成过
         }
         TypeSpec typeSpec = buildImpl(model);
-        // 输出包：@JForgeConfig.generatedPackage（为空则实体同包）。
-        String outputPkg = model.generatedPackage();
-        if (outputPkg.isEmpty()) {
-            outputPkg = model.entityPackage();
-        }
+        // 输出包与去重 key 同源（model.implPackage()）：
+        // 配置了 @JForgeConfig.generatedPackage 时两者一致，否则都是实体同包。
+        String outputPkg = model.implPackage();
         try {
             JavaFile.builder(outputPkg, typeSpec)
                     .addFileComment("Generated at compile time by JForgeProcessor. Do not edit.")

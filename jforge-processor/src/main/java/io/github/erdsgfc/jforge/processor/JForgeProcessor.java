@@ -59,6 +59,8 @@ public class JForgeProcessor extends AbstractProcessor {
 
     /** 已生成实体 impl 的全限定名，避免多个仓库共享同一实体时重复生成。 */
     private final Set<String> generatedEntities = new HashSet<>();
+    /** 已生成仓库 impl 的全限定名：显式去重，不依赖 javac"每轮输入只含本轮文件"的隐式行为。 */
+    private final Set<String> generatedRepositories = new HashSet<>();
     private final List<DaoInfo> daos = new ArrayList<>();
     private int lastFactoriesSize;
 
@@ -109,7 +111,14 @@ public class JForgeProcessor extends AbstractProcessor {
             }
             // 实体 impl 先于仓库 impl 生成（仓库生成代码引用实体 impl 的类名）。
             entityGenerator.generate(info.model);
-            repositoryGenerator.generate(info);
+            // 用全限定名去重：不同包可能声明同名的 @Dao 接口（如测试树的
+            // io.github.erdsgfc.jforge.UserRepository 与 benchmark 包的 UserRepository）。
+            String implQualifiedName = info.daoPackage.isEmpty()
+                    ? info.implName
+                    : info.daoPackage + "." + info.implName;
+            if (generatedRepositories.add(implQualifiedName)) {
+                repositoryGenerator.generate(info);
+            }
             daos.add(info);
         }
         if (daos.size() != lastFactoriesSize) {
