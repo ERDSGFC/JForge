@@ -225,4 +225,61 @@ class TransactionTest {
         repo.rollback();
         assertFalse(repo.isRollbackOnly());
     }
+
+    // ---- 无 Connection 变体(Supplier/Function/Runnable/Consumer) ------------
+
+    @Test
+    void executeSupplierRunsInTransaction() {
+        String result = repo.execute(() -> {
+            repo.save(repo.createEntity().name("sup").age(1));
+            return "done";
+        });
+
+        assertEquals("done", result);
+        assertEquals(1, repo.count(), "the supplier body must join and commit the transaction");
+        assertFalse(repo.isTransactionActive());
+    }
+
+    @Test
+    void executeWithFunctionParamPassesExternalValue() {
+        String result = repo.execute("fn-param", p -> {
+            repo.save(repo.createEntity().name(p).age(2));
+            return "done:" + p;
+        });
+
+        assertEquals("done:fn-param", result);
+        assertEquals(1, repo.count());
+        assertEquals("fn-param", repo.findAll().get(0).name());
+    }
+
+    @Test
+    void executeSupplierRollsBackOnException() {
+        assertThrows(IllegalStateException.class, () -> repo.execute(() -> {
+            repo.save(repo.createEntity().name("discard").age(3));
+            throw new IllegalStateException("boom");
+        }));
+
+        assertEquals(0, repo.count(), "the supplier body must roll back like any other transaction body");
+        assertFalse(repo.isTransactionActive());
+    }
+
+    @Test
+    void runRunnableCommits() {
+        repo.run(() -> {
+            repo.save(repo.createEntity().name("rr").age(4));
+        });
+
+        assertEquals(1, repo.count());
+        assertFalse(repo.isTransactionActive());
+    }
+
+    @Test
+    void runWithConsumerParamPassesExternalValue() {
+        repo.run("consumer-param", p -> {
+            repo.save(repo.createEntity().name(p).age(5));
+        });
+
+        assertEquals(1, repo.count());
+        assertEquals("consumer-param", repo.findAll().get(0).name());
+    }
 }

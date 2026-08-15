@@ -196,6 +196,59 @@ class ConnectionScopeTest {
         assertEquals(0, activeConnections());
     }
 
+    // ---- 全组合变体:有参数 + 返回 + 带/不带 conn -----------------------------
+
+    @Test
+    void executeWithoutTransactionWithParamReturnsValue() {
+        // 有参数、带 conn、有返回值(此前缺失的组合)。
+        Long id = repo.executeWithoutTransaction("with-conn", (conn, param) -> {
+            repo.save(repo.createEntity().name(param).age(5));
+            return repo.findAll().get(0).id();
+        });
+
+        assertNotNull(id);
+        assertEquals(1, ds.borrows());
+        assertEquals(0, activeConnections());
+    }
+
+    @Test
+    void executeWithoutTransactionSupplierSharesConnection() {
+        // 无 conn、无参数、有返回值:仓库调用隐式共享作用域连接。
+        Long id = repo.executeWithoutTransaction(() -> {
+            repo.save(repo.createEntity().name("supplier").age(6));
+            return repo.findAll().get(0).id();
+        });
+
+        assertNotNull(id);
+        assertEquals(1, ds.borrows(), "the no-connection variant must still share one connection");
+        assertEquals(0, activeConnections());
+    }
+
+    @Test
+    void executeWithoutTransactionWithFunctionParam() {
+        // 无 conn、有参数、有返回值。
+        String result = repo.executeWithoutTransaction("fn-param", p -> {
+            repo.save(repo.createEntity().name(p).age(7));
+            return "done:" + p;
+        });
+
+        assertEquals("done:fn-param", result);
+        assertEquals(1, ds.borrows());
+        assertEquals(0, activeConnections());
+    }
+
+    @Test
+    void runWithoutTransactionWithConsumerParam() {
+        // 无 conn、有参数、无返回值。
+        repo.runWithoutTransaction("consumer-param", p -> {
+            repo.save(repo.createEntity().name(p).age(8));
+        });
+
+        assertEquals(1, ds.borrows());
+        assertEquals(1, repo.count());
+        assertEquals(0, activeConnections());
+    }
+
     /**
      * DataSource decorator counting {@link #getConnection()} borrows, so tests can
      * prove a scope borrowed exactly one pooled connection. Every other method
