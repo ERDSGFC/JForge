@@ -27,25 +27,24 @@ public final class JForge {
     private final Map<Class<?>, Object> repositories = new ConcurrentHashMap<>();
 
     /**
-     * 使用当前全局 {@link TransactionManager}（默认 {@link SimpleTransactionManager}）创建门面。
+     * 使用内置 {@link SimpleTransactionManager} 创建门面。
      *
      * @param dataSource the data source all repositories will use
      */
     public JForge(DataSource dataSource) {
-        this(dataSource, TransactionManager.current());
+        this(dataSource, new SimpleTransactionManager());
     }
 
     /**
-     * 使用指定事务管理器创建门面，并将其安装为全局 {@link TransactionManager}（生成代码经
-     * {@code TransactionManager.current()} 取事务）。
+     * 使用指定事务管理器创建门面。该管理器只归此门面持有：经 {@link #repository(Class)}
+     * 创建仓库时传入生成的实现（构造器注入，无全局状态），不同门面实例的管理器完全隔离。
      *
      * @param dataSource         the data source all repositories will use
-     * @param transactionManager the transaction manager to install globally
+     * @param transactionManager the transaction manager bound to this facade
      */
     public JForge(DataSource dataSource, TransactionManager transactionManager) {
         this.dataSource = dataSource;
         this.transactionManager = transactionManager;
-        TransactionManager.set(transactionManager);
         LOG.info("JForge initialized with TransactionManager {}", transactionManager.getClass().getSimpleName());
     }
 
@@ -63,8 +62,8 @@ public final class JForge {
      * Returns the (cached) repository instance for the given type. The first call creates
      * it via the generated {@link Repositories#create(Class, DataSource, TransactionManager)},
      * passing this facade's {@link #transactionManager} so the generated impl holds it as a
-     * {@code private final} field (JIT-friendly, no per-call {@code TransactionManager.current()}
-     * lookup); subsequent calls return the same instance.
+     * {@code private final} field (JIT-friendly, no per-call static lookup); subsequent
+     * calls return the same instance.
      *
      * @param type the repository interface type
      * @param <T>  the repository type

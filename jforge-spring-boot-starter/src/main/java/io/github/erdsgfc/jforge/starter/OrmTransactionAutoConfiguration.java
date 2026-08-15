@@ -10,8 +10,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
- * Auto-configuration that installs {@link SpringTransactionManager} as the global
- * ORM {@link TransactionManager}.
+ * Auto-configuration that registers {@link SpringTransactionManager} as the
+ * {@link TransactionManager} bean injected into generated repositories.
  *
  * <p>Kicks in only when the application has a {@link PlatformTransactionManager}
  * bean (typically the {@code DataSourceTransactionManager} auto-configured by
@@ -19,11 +19,9 @@ import org.springframework.transaction.PlatformTransactionManager;
  * {@code DataSourceTransactionManagerAutoConfiguration} guarantees that bean exists
  * before this configuration registers its wrapper.</p>
  *
- * <p>Once installed, every repository inheriting {@code TransactionOperations} —
- * {@code beginTransaction/commit/rollback/isTransactionActive/execute} — and every
- * generated {@code TransactionManager.current()} call transparently uses Spring's
- * transaction management. The ORM's own classes are untouched; only the global
- * singleton the generated code routes through is swapped.</p>
+ * <p>The wrapper bean is injected by Spring into the constructor of every generated
+ * repository ({@code @JForgeConfig(springBeans = true)}), so repository work
+ * transparently uses Spring's transaction management — no global state involved.</p>
  *
  * <p>Registered via {@code META-INF/spring/org.springframework.boot.autoconfigure
  * .AutoConfiguration.imports}.</p>
@@ -38,8 +36,7 @@ public class OrmTransactionAutoConfiguration {
      * {@link SpringTransactionManager} if one is already defined.
      *
      * @param platformTransactionManager the Spring transaction manager to delegate to
-     * @return the wrapper bean, which installs itself as the global ORM manager once
-     *         all singletons are instantiated
+     * @return the wrapper bean, injected by Spring into generated repositories
      */
     @Bean
     @ConditionalOnMissingBean(SpringTransactionManager.class)

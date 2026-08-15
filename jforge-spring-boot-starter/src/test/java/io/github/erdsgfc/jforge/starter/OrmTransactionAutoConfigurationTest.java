@@ -36,12 +36,12 @@ class OrmTransactionAutoConfigurationTest {
                     () -> new DataSourceTransactionManager(h2DataSource()));
 
     @Test
-    void registersSpringTransactionManagerAsGlobalManager() {
+    void registersSpringTransactionManagerBean() {
         runner.run(context -> {
+            // The auto-configuration must register exactly one SpringTransactionManager
+            // bean — the manager injected into generated repositories.
             assertThat(context).hasSingleBean(SpringTransactionManager.class);
-            SpringTransactionManager bean = context.getBean(SpringTransactionManager.class);
-            // afterSingletonsInstantiated must have swapped the global ORM manager.
-            assertThat(io.github.erdsgfc.jforge.TransactionManager.current()).isSameAs(bean);
+            assertThat(context).hasSingleBean(io.github.erdsgfc.jforge.TransactionManager.class);
         });
     }
 

@@ -7,10 +7,12 @@ import java.sql.Connection;
  * Pluggable transaction manager — the single extension point for replacing the
  * built-in thread-local transaction with Spring's {@code PlatformTransactionManager}.
  *
- * <p>Generated repository implementations call the methods on
- * {@link #current()} — never the concrete implementation directly.  A Spring
- * Boot starter can swap the global singleton with a Spring-aware version at
- * startup time, without any changes to the generated code.</p>
+ * <p>The manager is passed <em>by instance</em>: {@link JForge} holds it as a
+ * {@code private final} field and hands it to every repository it creates, so the
+ * generated implementations store it in their own {@code final} fields (JIT-
+ * friendly, no static lookup). A Spring Boot starter supplies its Spring-aware
+ * implementation the same way — as the bean injected into generated repositories.
+ * There is no global singleton and no way to swap the manager after construction.</p>
  */
 public interface TransactionManager {
 
@@ -91,37 +93,4 @@ public interface TransactionManager {
      * @param dataSource the data source the scope was begun on
      */
     void endScope(DataSource dataSource);
-
-    // ---- Global extension point --------------------------------------------
-
-    /**
-     * The globally installed transaction manager.  The built-in default is
-     * {@link SimpleTransactionManager}.  A Spring Boot starter replaces this
-     * with a wrapper around {@code PlatformTransactionManager}.
-     */
-    TransactionManager DEFAULT = new SimpleTransactionManager();
-
-    /**
-     * Returns the currently-installed manager.
-     * Generated code always obtains transactions through this method.
-     */
-    static TransactionManager current() {
-        return Holder.INSTANCE;
-    }
-
-    /**
-     * Replaces the global transaction manager.
-     * Called once at startup (e.g. from a Spring auto-configuration).
-     */
-    static void set(TransactionManager manager) {
-        Holder.INSTANCE = manager;
-    }
-
-    // Internal holder to allow replacing the singleton.
-    final class Holder {
-        static TransactionManager INSTANCE = DEFAULT;
-
-        private Holder() {
-        }
-    }
 }

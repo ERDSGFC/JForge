@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TransactionTest {
 
     private HikariDataSource ds;
+    private JForge jforge;
     private UserRepository repo;
 
     @BeforeEach
@@ -41,7 +42,8 @@ class TransactionTest {
                     "user_name VARCHAR(100)," +
                     "age INT)");
         }
-        repo = new JForge(ds).repository(UserRepository.class);
+        jforge = new JForge(ds);
+        repo = jforge.repository(UserRepository.class);
     }
 
     @AfterEach
@@ -115,9 +117,9 @@ class TransactionTest {
 
     @Test
     void differentRepositoryInstancesShareTransaction() {
-        // Second repository type on the same DataSource: joins the same thread-local tx.
+        // 同一门面 = 同一 TransactionManager 实例 → 同线程事务共享。
         io.github.erdsgfc.jforge.benchmark.UserRepository benchRepo =
-                new JForge(ds).repository(io.github.erdsgfc.jforge.benchmark.UserRepository.class);
+                jforge.repository(io.github.erdsgfc.jforge.benchmark.UserRepository.class);
 
         repo.beginTransaction();
         benchRepo.save(benchRepo.createEntity().name("from-bench").age(6));
@@ -125,6 +127,20 @@ class TransactionTest {
         repo.rollback();
 
         assertEquals(0, repo.count());
+    }
+
+    @Test
+    void differentFacadesDoNotShareTransaction() {
+        // 不同门面 = 不同 TransactionManager 实例 → 线程事务互相隔离
+        // (新架构与旧全局单例的关键差异:事务共享范围从"全局"收窄到"同门面")。
+        io.github.erdsgfc.jforge.benchmark.UserRepository isolatedRepo =
+                new JForge(ds).repository(io.github.erdsgfc.jforge.benchmark.UserRepository.class);
+
+        repo.beginTransaction();
+        isolatedRepo.save(isolatedRepo.createEntity().name("isolated").age(7));
+        repo.rollback();
+
+        assertEquals(1, repo.count(), "different facade = different manager = no shared transaction");
     }
 
     @Test

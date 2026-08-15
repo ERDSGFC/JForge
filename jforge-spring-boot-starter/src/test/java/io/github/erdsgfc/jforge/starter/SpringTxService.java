@@ -7,8 +7,9 @@ import org.springframework.transaction.annotation.Transactional;
  * writes under Spring's declarative transaction control. It is registered as a
  * {@code @Bean} in the test configuration and proxied by Spring's transaction
  * interceptor. The repository inside joins the declarative transaction because the
- * generated code obtains its connection through {@code TransactionManager.current()}
- * → {@link SpringTransactionManager} → {@code DataSourceUtils.getConnection}.
+ * generated code obtains its connection through its injected
+ * {@link TransactionManager} → {@link SpringTransactionManager} →
+ * {@code DataSourceUtils.getConnection}.
  */
 public class SpringTxService {
 

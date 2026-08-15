@@ -16,7 +16,7 @@ import java.sql.Connection;
  *
  * <p>生成的 impl 经 {@code super(dataSource, transactionManager)} 传入依赖；门面
  * {@code JForge} 与工厂 {@code Repositories.create(Class, DataSource, TransactionManager)}
- * 负责在构造时传入对应的管理器（取代每次 {@code TransactionManager.current()} 静态查找）。</p>
+ * 负责在构造时传入对应的管理器（构造器注入，无全局静态查找）。</p>
  */
 public abstract class AbstractRepository implements TransactionOperations {
 

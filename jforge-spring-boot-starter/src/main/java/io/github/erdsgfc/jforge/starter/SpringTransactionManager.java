@@ -4,7 +4,6 @@ import io.github.erdsgfc.jforge.JForgeException;
 import io.github.erdsgfc.jforge.TransactionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.jdbc.datasource.ConnectionHolder;
 import org.springframework.jdbc.datasource.DataSourceUtils;
@@ -21,8 +20,9 @@ import java.sql.SQLException;
 
 /**
  * {@link TransactionManager} backed by Spring's {@link PlatformTransactionManager},
- * installed by the {@code jforge-spring-boot-starter} auto-configuration in place of
- * the built-in {@link io.github.erdsgfc.jforge.SimpleTransactionManager}.
+ * supplied by the {@code jforge-spring-boot-starter} auto-configuration as the
+ * bean injected into generated repositories (in place of the built-in
+ * {@link io.github.erdsgfc.jforge.SimpleTransactionManager}).
  *
  * <p>Every method delegates to the standard Spring utilities so a transaction begun
  * here fully participates in Spring's transaction infrastructure:
@@ -42,7 +42,7 @@ import java.sql.SQLException;
  * {@code commit()/rollback()} leaks the status on the thread (the same abandoned
  * transaction contract, best avoided through the {@code execute} template).</p>
  */
-public final class SpringTransactionManager implements TransactionManager, SmartInitializingSingleton {
+public final class SpringTransactionManager implements TransactionManager {
 
     private static final Logger LOG = LoggerFactory.getLogger(SpringTransactionManager.class);
 
@@ -85,19 +85,6 @@ public final class SpringTransactionManager implements TransactionManager, Smart
      */
     public SpringTransactionManager(PlatformTransactionManager delegate) {
         this.delegate = delegate;
-    }
-
-    /**
-     * Installs this wrapper as the global {@link TransactionManager} singleton.
-     * Spring invokes this once after <em>every</em> singleton bean has been created
-     * and initialized, so the auto-configured {@code PlatformTransactionManager}
-     * and any user beans are guaranteed ready. Every repository created afterwards —
-     * and every {@code TransactionManager.current()} call in generated code —
-     * transparently uses Spring's transaction management.
-     */
-    @Override
-    public void afterSingletonsInstantiated() {
-        TransactionManager.set(this);
     }
 
     /**

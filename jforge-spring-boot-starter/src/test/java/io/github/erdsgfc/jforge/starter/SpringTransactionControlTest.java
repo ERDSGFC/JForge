@@ -32,11 +32,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * is installed as the global ORM manager.
  *
  * <p>The context wires a real {@code DataSourceTransactionManager} plus a
- * {@link SpringTransactionManager} bean (which self-installs via
- * {@code SmartInitializingSingleton}), mirroring what the auto-configuration does
- * in a Spring Boot application. All three mechanisms participate in the same
+ * {@link SpringTransactionManager} bean, mirroring what the auto-configuration
+ * does in a Spring Boot application. All three mechanisms participate in the same
  * transaction because the generated repository code obtains connections through
- * {@code TransactionManager.current().connection(dataSource)} →
+ * its injected {@link TransactionManager} →
  * {@code DataSourceUtils.getConnection}, which returns the Spring-bound
  * transaction connection while one is active.</p>
  */
@@ -46,8 +45,8 @@ class SpringTransactionControlTest {
     /**
      * Explicit application wiring: data source, Spring transaction manager,
      * {@link TransactionTemplate}, the ORM repository, the {@code @Transactional}
-     * service, and the ORM {@link SpringTransactionManager} that installs itself
-     * as the global manager once all singletons are instantiated.
+     * service, and the ORM {@link SpringTransactionManager} injected into the
+     * repository's facade.
      */
     @Configuration
     @EnableTransactionManagement
@@ -75,8 +74,8 @@ class SpringTransactionControlTest {
         }
 
         @Bean
-        TestUserRepository testUserRepository(DataSource dataSource) {
-            return new JForge(dataSource).repository(TestUserRepository.class);
+        TestUserRepository testUserRepository(DataSource dataSource, SpringTransactionManager ormTxManager) {
+            return new JForge(dataSource, ormTxManager).repository(TestUserRepository.class);
         }
 
         @Bean

@@ -51,10 +51,8 @@ class SpringTransactionManagerTest {
                     "age INT)");
         }
         txManager = new DataSourceTransactionManager(ds);
-        // Install the Spring-backed manager as the global ORM manager, mirroring what
-        // the auto-configuration does once all singletons are instantiated.
-        new SpringTransactionManager(txManager).afterSingletonsInstantiated();
-        repo = new JForge(ds).repository(TestUserRepository.class);
+        // 新架构:管理器经 JForge 实例传入生成实现(构造器注入),无全局状态。
+        repo = new JForge(ds, new SpringTransactionManager(txManager)).repository(TestUserRepository.class);
     }
 
     @AfterEach
