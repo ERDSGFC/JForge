@@ -149,6 +149,13 @@ public class JForgeProcessor extends AbstractProcessor {
             return null;
         }
 
+        // 实体类型参数必须是具体类型:泛型 @Dao 接口(如 BaseRepository<T, Long>)解析出的
+        // 是类型变量,直接 cast 会抛 ClassCastException 让处理器崩溃——这里转成友好报错。
+        if (entityMirror.getKind() != TypeKind.DECLARED) {
+            error(dao, "Entity type parameter must be a concrete type (generic @Dao interfaces are not supported): "
+                    + entityMirror);
+            return null;
+        }
         TypeElement entityElement = (TypeElement) ((DeclaredType) entityMirror).asElement();
 
         EntityModel model = EntityModel.parse(entityElement, processingEnv.getTypeUtils(),
@@ -157,10 +164,18 @@ public class JForgeProcessor extends AbstractProcessor {
             return null;
         }
 
+        // ID 类型以实体 @Id getter 为准(实体自己声明主键类型,泛型参数可能写错);
+        // 泛型参数仅作一致性校验——不一致直接报错,而不是静默采用错误类型。
+        if (!processingEnv.getTypeUtils().isSameType(idMirror, model.idColumn().returnType)) {
+            error(dao, "@Dao ID type " + idMirror + " does not match entity @Id getter type "
+                    + model.idColumn().returnType + " on " + entityElement.getQualifiedName());
+            return null;
+        }
+
         info.model = model;
         info.entityType = ClassName.get(model.entityPackage(), model.entitySimpleName());
-        info.idType = TypeName.get(idMirror);
-        info.idTypeName = idMirror.toString();
+        info.idType = TypeName.get(model.idColumn().returnType);
+        info.idTypeName = model.idColumn().returnType.toString();
         return info;
     }
 
