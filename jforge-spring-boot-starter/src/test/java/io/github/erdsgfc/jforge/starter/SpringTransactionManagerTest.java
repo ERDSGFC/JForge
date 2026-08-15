@@ -180,6 +180,39 @@ class SpringTransactionManagerTest {
     }
 
     @Test
+    void executeSupplierJoinsOuterSpringTransaction() {
+        // 无 Connection 变体在 Spring 路径下必须同样 join 外层事务。
+        TransactionStatus outer = txManager.getTransaction(new DefaultTransactionDefinition());
+        try {
+            String result = repo.execute(() -> {
+                repo.save(repo.createEntity().name("sup-spring").age(11));
+                return "done";
+            });
+            assertEquals("done", result);
+            assertTrue(repo.isTransactionActive(), "the supplier body must join the outer tx");
+        } finally {
+            txManager.rollback(outer);
+        }
+
+        assertEquals(0, repo.count(), "the supplier body's work joined the outer tx and was rolled back");
+    }
+
+    @Test
+    void scopeSupplierSharesSpringConnection() {
+        // 无 Connection 的作用域变体在 Spring 路径下仍借用单个连接。
+        repo.runWithoutTransaction(() -> {
+            assertEquals(1, ds.getHikariPoolMXBean().getActiveConnections(),
+                    "the no-connection scope variant must still borrow exactly one connection");
+            repo.save(repo.createEntity().name("scope-sup").age(12));
+        });
+
+        assertEquals(1, repo.count());
+        assertEquals(0, ds.getHikariPoolMXBean().getActiveConnections());
+        assertFalse(TransactionSynchronizationManager.hasResource(ds),
+                "the scope holder must be unbound");
+    }
+
+    @Test
     void nestedExecuteRejected() {
         JForgeException ex = assertThrows(JForgeException.class, () -> repo.execute(conn -> {
             repo.execute(ignored -> null); // nested begin must fail fast
