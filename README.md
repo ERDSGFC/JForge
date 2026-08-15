@@ -90,6 +90,7 @@ repo.execute(conn -> {
 
 ## 文档
 
+- `USAGE.md` — **框架使用文档**（依赖引入、实体/仓库定义、配置、事务/作用域/批处理、Spring 集成、已知限制）
 - `ORM_PLAN.md` — 开发计划（架构、事务设计、性能原则、已知限制）
 - `CLAUDE.md` — 项目说明与代码规范
 - `RELEASE.md` — Maven Central 发布流程

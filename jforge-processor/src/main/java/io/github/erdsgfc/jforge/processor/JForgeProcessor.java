@@ -1,27 +1,14 @@
 package io.github.erdsgfc.jforge.processor;
 
 import com.google.auto.service.AutoService;
-import com.palantir.javapoet.AnnotationSpec;
-import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.JavaFile;
-import com.palantir.javapoet.MethodSpec;
-import javax.lang.model.element.Modifier;
-import com.palantir.javapoet.ParameterizedTypeName;
-import com.palantir.javapoet.TypeName;
-import com.palantir.javapoet.TypeSpec;
-import com.palantir.javapoet.TypeVariableName;
+import com.palantir.javapoet.*;
 import io.github.erdsgfc.jforge.annotation.Dao;
-import io.github.erdsgfc.jforge.annotation.JForgeConfig;
-import io.github.erdsgfc.jforge.annotation.Table;
 
-import javax.annotation.processing.AbstractProcessor;
-import javax.annotation.processing.ProcessingEnvironment;
-import javax.annotation.processing.RoundEnvironment;
-import javax.annotation.processing.SupportedAnnotationTypes;
-import javax.annotation.processing.SupportedSourceVersion;
+import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
@@ -163,10 +150,7 @@ public class JForgeProcessor extends AbstractProcessor {
         }
 
         TypeElement entityElement = (TypeElement) ((DeclaredType) entityMirror).asElement();
-        if (entityElement.getAnnotation(Table.class) == null) {
-            error(dao, "Entity type " + entityElement.getQualifiedName() + " must be annotated with @Table");
-            return null;
-        }
+
         EntityModel model = EntityModel.parse(entityElement, processingEnv.getTypeUtils(),
                 Diagnostic.Kind.ERROR, processingEnv.getMessager(), configHelper);
         if (model == null) {

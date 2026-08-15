@@ -70,6 +70,7 @@ mvn -Prelease deploy
 
 ## 关键文件
 
+- **`USAGE.md`** — 框架使用文档（依赖、实体/仓库定义、配置、事务/作用域/批处理、Spring 集成、已知限制）
 - **`ORM_PLAN.md`** — 开发计划：架构、事务设计（含 Spring 事务控制/已知限制）、性能原则、路线图（Phase 3 关联映射 / Phase 4 L1 缓存 / Phase 6 GraalVM 验证）
 - **`BENCHMARK_RESULTS.md`** / **`JMH_USAGE.md`** / **`EXECUTION_STEPS.md`** — JMH 基准台账、CLI 用法、执行步骤
 - **`LambdaBenchmark.java`** — jforge-lambda 的 11 个 `@Benchmark` 方法（7 种创建方式 + 4 个 instance 字段对照组）；方法学：禁止手写循环、句柄用 `static final`、MethodHandle 用 `invokeExact`（详见 `BENCHMARK_RESULTS.md` 的"方法学教训"）
