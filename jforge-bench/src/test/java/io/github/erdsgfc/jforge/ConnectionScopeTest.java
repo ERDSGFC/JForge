@@ -158,6 +158,44 @@ class ConnectionScopeTest {
         assertEquals(1, repo.count());
     }
 
+    @Test
+    void runWithoutTransactionIsVoidCounterpart() {
+        repo.runWithoutTransaction(conn -> {
+            repo.save(repo.createEntity().name("v1").age(1));
+            repo.save(repo.createEntity().name("v2").age(2));
+        });
+
+        assertEquals(1, ds.borrows(), "the void variant must share one connection too");
+        assertEquals(2, repo.count());
+        assertEquals(0, activeConnections(), "scope connection must be returned to the pool");
+    }
+
+    @Test
+    void runWithoutTransactionNoParameter() {
+        // 无参数版本:lambda 不接收 Connection,只调仓库方法。
+        repo.runWithoutTransaction(() -> {
+            repo.save(repo.createEntity().name("n1").age(1));
+            repo.save(repo.createEntity().name("n2").age(2));
+        });
+
+        assertEquals(1, ds.borrows(), "the no-parameter variant must share one connection too");
+        assertEquals(2, repo.count());
+        assertEquals(0, activeConnections());
+    }
+
+    @Test
+    void runWithoutTransactionWithParameter() {
+        // 有参数版本:外部参数 + 共享 Connection 一起传给 lambda。
+        repo.runWithoutTransaction("param-1", (conn, param) -> {
+            repo.save(repo.createEntity().name(param).age(3));
+            repo.save(repo.createEntity().name(param + "-2").age(4));
+        });
+
+        assertEquals(1, ds.borrows(), "the parameterised variant must share one connection too");
+        assertEquals(2, repo.count());
+        assertEquals(0, activeConnections());
+    }
+
     /**
      * DataSource decorator counting {@link #getConnection()} borrows, so tests can
      * prove a scope borrowed exactly one pooled connection. Every other method

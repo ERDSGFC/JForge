@@ -113,21 +113,21 @@ public interface TransactionOperations {
      * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
      *                      or the callback throws SQLException
      */
-    default <T> T execute(TransactionCallback<T> callback) {
+    default <T> T execute(ConnectionCallback<T> callback) {
         // Delegate to the parameterised overload with a null Void parameter, so the
         // commit/rollback logic lives in exactly one place.
-        return execute((Void) null, (conn, ignored) -> callback.doInTransaction(conn));
+        return execute((Void) null, (conn, ignored) -> callback.doInConnection(conn));
     }
 
     /**
      * Runs {@code callback} inside a transaction, passing it the externally supplied
      * {@code param} alongside the transaction-bound {@link Connection}. Behaviour is
-     * identical to {@link #execute(TransactionCallback)}: commit on success, rollback
+     * identical to {@link #execute(ConnectionCallback)}: commit on success, rollback
      * and propagate on any exception (an {@link SQLException} from the callback is
      * wrapped into {@link JForgeException}). The parameter must be a typed value so the
      * compiler can infer {@code P}; a literal {@code null} requires an explicit type
      * (a cast or an explicitly-typed lambda parameter). To run a transaction without
-     * a parameter, use {@link #execute(TransactionCallback)}.
+     * a parameter, use {@link #execute(ConnectionCallback)}.
      *
      * @param param    the externally supplied parameter, forwarded to the callback
      * @param callback the transactional work, receiving the connection and the parameter
@@ -137,10 +137,10 @@ public interface TransactionOperations {
      * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
      *                      or the callback throws SQLException
      */
-    default <T, P> T execute(P param, TransactionParamCallback<T, P> callback) {
+    default <T, P> T execute(P param, ConnectionParamCallback<T, P> callback) {
         Connection conn = beginTransaction();
         try {
-            T result = callback.doInTransaction(conn, param);
+            T result = callback.doInConnection(conn, param);
             if (isRollbackOnly()) {
                 // The callback (or an outer Spring transaction) marked the transaction
                 // rollback-only to abort without throwing: roll back, but still return
@@ -168,7 +168,7 @@ public interface TransactionOperations {
 
     /**
      * Runs {@code runnable} inside a transaction without a return value — the
-     * void counterpart of {@link #execute(TransactionCallback)}, for side-effect-only
+     * void counterpart of {@link #execute(ConnectionCallback)}, for side-effect-only
      * bodies that need no {@code return null}. Behaviour is identical: commit on
      * success, rollback and propagate on any exception (an {@link SQLException} from
      * the body is wrapped into {@link JForgeException}).
@@ -177,9 +177,9 @@ public interface TransactionOperations {
      * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
      *                      or the body throws SQLException
      */
-    default void run(TransactionRunnable runnable) {
+    default void run(ConnectionRunnable runnable) {
         execute(conn -> {
-            runnable.doInTransaction(conn);
+            runnable.doInConnection(conn);
             return null;
         });
     }
@@ -188,7 +188,7 @@ public interface TransactionOperations {
      * Runs {@code runnable} inside a transaction, passing it the externally supplied
      * {@code param} alongside the transaction-bound {@link Connection}, without a
      * return value — the void counterpart of
-     * {@link #execute(Object, TransactionParamCallback)}.
+     * {@link #execute(Object, ConnectionParamCallback)}.
      *
      * @param param    the externally supplied parameter, forwarded to the body
      * @param runnable the transactional work, receiving the connection and the parameter
@@ -196,9 +196,9 @@ public interface TransactionOperations {
      * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
      *                      or the body throws SQLException
      */
-    default <P> void run(P param, TransactionParamRunnable<P> runnable) {
+    default <P> void run(P param, ConnectionParamRunnable<P> runnable) {
         execute(param, (conn, p) -> {
-            runnable.doInTransaction(conn, p);
+            runnable.doInConnection(conn, p);
             return null;
         });
     }
@@ -235,14 +235,16 @@ public interface TransactionOperations {
      * repository calls reuse it, and the connection is returned to the pool when
      * the callback finishes — success or failure. The connection keeps auto-commit
      * enabled, so every SQL statement commits independently: unlike
-     * {@link #execute(TransactionCallback)} there is <em>no atomicity</em> —
+     * {@link #execute(ConnectionCallback)} there is <em>no atomicity</em> —
      * statements executed before the callback throws stay committed.
      *
-     * <p>Use this for multi-statement work that only wants to avoid a pool
-     * round-trip per statement and needs no rollback semantics; use
-     * {@link #execute(TransactionCallback)} when the statements must commit or
-     * roll back together. A transaction cannot be begun inside the scope
-     * (it throws {@link io.github.erdsgfc.jforge.JForgeException}).</p>
+     * <p>The callback type is the shared {@link ConnectionCallback} — the same
+     * functional shape as the transactional {@link #execute(ConnectionCallback)},
+     * so a lambda works unchanged in both contexts. Use this for multi-statement
+     * work that only wants to avoid a pool round-trip per statement and needs no
+     * rollback semantics; use {@link #execute(ConnectionCallback)} when the
+     * statements must commit or roll back together. A transaction cannot be begun
+     * inside the scope (it throws {@link io.github.erdsgfc.jforge.JForgeException}).</p>
      *
      * @param callback the work to run on the shared connection
      * @param <T>      the callback's return type
@@ -250,10 +252,10 @@ public interface TransactionOperations {
      * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
      *                                  or the callback throws {@link SQLException}
      */
-    default <T> T executeWithoutTransaction(ConnectionScopeCallback<T> callback) {
+    default <T> T executeWithoutTransaction(ConnectionCallback<T> callback) {
         Connection conn = beginConnectionScope();
         try {
-            return callback.doInScope(conn);
+            return callback.doInConnection(conn);
         } catch (SQLException e) {
             // Match the execute() contract: JDBC failures from the callback are
             // wrapped into JForgeException. The scope connection is still returned to
@@ -264,6 +266,72 @@ public interface TransactionOperations {
         } finally {
             endConnectionScope();
         }
+    }
+
+    /**
+     * Runs {@code runnable} on a single shared connection without a transaction —
+     * the void counterpart of
+     * {@link #executeWithoutTransaction(ConnectionCallback)}, for
+     * side-effect-only bodies that need no {@code return null}. Behaviour is
+     * identical: one borrowed connection shared by every repository call, kept
+     * auto-commit (no atomicity), returned to the pool in a {@code finally} (a
+     * {@link SQLException} from the body is wrapped into
+     * {@link io.github.erdsgfc.jforge.JForgeException}).
+     *
+     * @param runnable the work to run on the shared connection
+     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
+     *                                  or the body throws {@link SQLException}
+     */
+    default void runWithoutTransaction(ConnectionRunnable runnable) {
+        executeWithoutTransaction(conn -> {
+            runnable.doInConnection(conn);
+            return null;
+        });
+    }
+
+    /**
+     * Runs {@code runnable} on a single shared connection without a transaction —
+     * the no-parameter counterpart of
+     * {@link #runWithoutTransaction(ConnectionRunnable)} for bodies that
+     * call only repository methods and never touch the connection directly. The
+     * body needs no checked-exception handling: without the {@code Connection}
+     * there is no raw-JDBC path, so only the unchecked
+     * {@link io.github.erdsgfc.jforge.JForgeException} from repository calls can
+     * escape. Behaviour is otherwise identical: one borrowed connection shared by
+     * every repository call, kept auto-commit (no atomicity), returned to the
+     * pool in a {@code finally}.
+     *
+     * @param runnable the work to run on the shared connection
+     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
+     *                                  or a repository call fails
+     */
+    default void runWithoutTransaction(Runnable runnable) {
+        executeWithoutTransaction(conn -> {
+            runnable.run();
+            return null;
+        });
+    }
+
+    /**
+     * Runs {@code runnable} on a single shared connection without a transaction,
+     * passing it the externally supplied {@code param} alongside the shared
+     * {@link Connection} — the parameterised counterpart of
+     * {@link #runWithoutTransaction(ConnectionRunnable)}. Behaviour is
+     * identical: one borrowed connection, kept auto-commit (no atomicity),
+     * returned to the pool in a {@code finally}; a {@link SQLException} from the
+     * body is wrapped into {@link io.github.erdsgfc.jforge.JForgeException}.
+     *
+     * @param param    the externally supplied parameter, forwarded to the body
+     * @param runnable the work to run on the shared connection
+     * @param <P>      the parameter type
+     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
+     *                                  or the body throws {@link SQLException}
+     */
+    default <P> void runWithoutTransaction(P param, ConnectionParamRunnable<P> runnable) {
+        executeWithoutTransaction(conn -> {
+            runnable.doInConnection(conn, param);
+            return null;
+        });
     }
 
     /**
