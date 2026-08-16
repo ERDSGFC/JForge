@@ -26,10 +26,9 @@ import java.util.Set;
  *
  * <p>每个 {@code @Dao} 通过 {@code BaseRepository<T, ID>} 的类型参数定位实体，处理器顺带生成：
  * <ul>
- *   <li>实体的 {@code Xxx_Impl}（按实体全限定名去重——多个仓库共享同一实体时只生成一次），委托给
- *       {@link EntityGenerator}；</li>
- *   <li>仓库的 {@code XxxRepository_Impl}（CRUD + {@code @Query} + 事务方法 + SQL 常量字段），委托给
- *       {@link RepositoryGenerator}；</li>
+ *   <li>仓库的 {@code XxxRepository_Impl}（CRUD + {@code @Query} + 事务方法 + SQL 常量字段，委托给
+ *       {@link RepositoryGenerator}），其实体的 {@code Xxx_Impl} 作为 {@code private static final}
+ *       嵌套类随仓库文件一起生成——多仓库共享同一实体时各仓库各嵌一份副本；</li>
  *   <li>每包一个的 {@code Repositories} 工厂。</li>
  * </ul>
  * 实体上的 {@code @Table} 仍是必需的声明注解（提供表名/列映射，由 {@link EntityModel} 读取），
@@ -46,15 +45,12 @@ public class JForgeProcessor extends AbstractProcessor {
     private static final String BASE_REPOSITORY = "io.github.erdsgfc.jforge.core.BaseRepository";
     private static final String GENERATED_PACKAGE = "io.github.erdsgfc.jforge.generated";
 
-    /** 已生成实体 impl 的全限定名，避免多个仓库共享同一实体时重复生成。 */
-    private final Set<String> generatedEntities = new HashSet<>();
     /** 已生成仓库 impl 的全限定名：显式去重，不依赖 javac"每轮输入只含本轮文件"的隐式行为。 */
     private final Set<String> generatedRepositories = new HashSet<>();
     private final List<DaoInfo> daos = new ArrayList<>();
     private int lastFactoriesSize;
 
     private JForgeConfigHelper configHelper;
-    private EntityGenerator entityGenerator;
     private RepositoryGenerator repositoryGenerator;
 
     /** 一个 {@code @Dao} 仓库的解析结果：实体/id 类型、实体模型、生成类名。 */
@@ -74,7 +70,6 @@ public class JForgeProcessor extends AbstractProcessor {
     public synchronized void init(ProcessingEnvironment processingEnv) {
         super.init(processingEnv);
         configHelper = new JForgeConfigHelper(processingEnv);
-        entityGenerator = new EntityGenerator(processingEnv, configHelper, generatedEntities);
         repositoryGenerator = new RepositoryGenerator(processingEnv, configHelper);
     }
 
@@ -101,10 +96,7 @@ public class JForgeProcessor extends AbstractProcessor {
             if (info == null) {
                 continue;
             }
-            // 实体 impl 先于仓库 impl 生成（仓库生成代码引用实体 impl 的类名）。
-            entityGenerator.generate(info.model);
-            // 用全限定名去重：不同包可能声明同名的 @Dao 接口（如测试树的
-            // io.github.erdsgfc.jforge.UserRepository 与 benchmark 包的 UserRepository）。
+
             String implQualifiedName = info.daoPackage.isEmpty()
                     ? info.implName
                     : info.daoPackage + "." + info.implName;

@@ -30,9 +30,26 @@ import java.util.Map;
  * 按返回类型映射结果（实体 / DTO record / 标量 / 更新计数）。
  *
  * <p>依赖 {@link ProcessingEnvironment}（{@code @Query} 实体结果映射时重新解析实体模型）与
- * {@link JForgeConfigHelper}；其余经 {@link JForgeProcessor.DaoInfo} 参数传入。</p>
+ * {@link JForgeConfigHelper}；其余经 {@link JForgeProcessor.DaoInfo} 参数传入。
+ * 实体结果映射的 impl 引用 {@link RepositoryGenerator} 预置的 {@link EmbeddedEntity} 表：
+ * 宿主实体直接复用；{@code @Query} 返回其他 {@code @Table} 实体时现场解析并作为
+ * {@code private static final} 嵌套类嵌入当前仓库（同实体多个 {@code @Query} 只嵌一份）。</p>
  */
 final class QueryGenerator {
+
+    /**
+     * 一个将被嵌入当前仓库 impl 的实体 impl 的解析结果：实体模型 + 其在当前仓库内的
+     * 嵌套类名（{@code daoPackage.ImplName.EntityImplName}）。
+     */
+    static final class EmbeddedEntity {
+        final ClassName impl;
+        final EntityModel model;
+
+        EmbeddedEntity(ClassName impl, EntityModel model) {
+            this.impl = impl;
+            this.model = model;
+        }
+    }
 
     private final ProcessingEnvironment processingEnv;
     private final JForgeConfigHelper configHelper;
@@ -52,13 +69,15 @@ final class QueryGenerator {
      *
      * @param info              仓库信息
      * @param builder           接收方法的 impl 类构建器
+     * @param embedded          已嵌入/待嵌入当前仓库的实体 impl 表（键 = 实体接口全限定名）
      * @param connection        Connection 类
      * @param preparedStatement PreparedStatement 类
      * @param resultSet         ResultSet 类
      * @param sqlException      SQLException 类
      */
-    void queryMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder, ClassName connection,
-            ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
+    void queryMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
+            Map<String, EmbeddedEntity> embedded, ClassName connection, ClassName preparedStatement,
+            ClassName resultSet, ClassName sqlException) {
         for (Element enclosed : info.element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.METHOD) {
                 continue;
@@ -68,8 +87,8 @@ final class QueryGenerator {
             if (query == null) {
                 continue;
             }
-            builder.addMethod(queryMethod(info, method, query, connection, preparedStatement,
-                    resultSet, sqlException));
+            builder.addMethod(queryMethod(info, method, query, builder, embedded, connection,
+                    preparedStatement, resultSet, sqlException));
         }
     }
 
@@ -80,6 +99,8 @@ final class QueryGenerator {
      * @param info              仓库信息
      * @param method            标注了注解的仓库方法
      * @param query             @Query 注解
+     * @param builder           接收方法的 impl 类构建器
+     * @param embedded          已嵌入/待嵌入当前仓库的实体 impl 表（键 = 实体接口全限定名）
      * @param connection        Connection 类
      * @param preparedStatement PreparedStatement 类
      * @param resultSet         ResultSet 类
@@ -87,8 +108,8 @@ final class QueryGenerator {
      * @return 查询方法规格
      */
     private MethodSpec queryMethod(JForgeProcessor.DaoInfo info, ExecutableElement method, Query query,
-            ClassName connection, ClassName preparedStatement, ClassName resultSet,
-            ClassName sqlException) {
+            TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded, ClassName connection,
+            ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         String methodName = method.getSimpleName().toString();
         String sqlField = methodName + "Sql";
         List<String> placeholders = new ArrayList<>();
@@ -147,7 +168,7 @@ final class QueryGenerator {
             spec.addStatement("return ps.executeUpdate()");
         } else {
             spec.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
-            appendResultMapping(spec, info, method, returnType);
+            appendResultMapping(spec, info, method, builder, embedded, returnType);
             spec.endControlFlow();
         }
 
@@ -186,9 +207,12 @@ final class QueryGenerator {
      * @param spec       接收映射代码的方法构建器
      * @param info       仓库信息
      * @param method     标注了注解的方法
+     * @param builder    接收方法的 impl 类构建器
+     * @param embedded   已嵌入/待嵌入当前仓库的实体 impl 表（键 = 实体接口全限定名）
      * @param returnType 方法的返回类型
      */
-    private void appendResultMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info, ExecutableElement method,
+    private void appendResultMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info,
+            ExecutableElement method, TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded,
             TypeMirror returnType) {
         boolean isList = returnType.getKind() == TypeKind.DECLARED
                 && ((DeclaredType) returnType).asElement().getSimpleName().contentEquals("List");
@@ -202,7 +226,7 @@ final class QueryGenerator {
 
         if (element != null && element.getAnnotation(Table.class) != null) {
             // 实体接口:按列名映射(自定义 SELECT 的列顺序由用户控制)。
-            appendEntityMapping(spec, info, elementType, isList);
+            appendEntityMapping(spec, info, builder, embedded, elementType, isList);
         } else if (element != null && element.getKind() == ElementKind.RECORD) {
             // DTO record:组件顺序按索引映射到 SELECT 列顺序。
             appendRecordMapping(spec, element, isList);
@@ -232,19 +256,35 @@ final class QueryGenerator {
      *
      * @param spec       接收映射代码的方法构建器
      * @param info       仓库信息
+     * @param builder    接收方法的 impl 类构建器
+     * @param embedded   已嵌入/待嵌入当前仓库的实体 impl 表（键 = 实体接口全限定名）
      * @param entityType 实体接口类型
      * @param isList     方法是否返回列表
      */
-    private void appendEntityMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info, TypeMirror entityType,
+    private void appendEntityMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info,
+            TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded, TypeMirror entityType,
             boolean isList) {
         TypeElement entityElement = (TypeElement) ((DeclaredType) entityType).asElement();
-        EntityModel model = EntityModel.parse(entityElement, processingEnv.getTypeUtils(),
-                Diagnostic.Kind.ERROR, processingEnv.getMessager(), configHelper);
-        if (model == null) {
-            return;
+        // 命中 embedded 表（宿主实体由 RepositoryGenerator 预置）直接复用，避免重复解析；
+        // 非宿主实体（@Query 返回其他 @Table 实体）现场解析并作为嵌套类嵌入当前仓库，
+        // 同实体多个 @Query 靠表去重只嵌一份。
+        EmbeddedEntity ctx = embedded.get(entityElement.getQualifiedName().toString());
+        if (ctx == null) {
+            EntityModel model = EntityModel.parse(entityElement, processingEnv.getTypeUtils(),
+                    Diagnostic.Kind.ERROR, processingEnv.getMessager(), configHelper);
+            if (model == null) {
+                return;
+            }
+            // 嵌套类名必须用该实体自身的 implSuffix() 计算（跨包可配置不同后缀），
+            // 不能复用宿主仓库的值。
+            ClassName impl = ClassName.get(info.daoPackage, info.implName,
+                    EntityModel.implNameOf(model.entitySimpleName(), model.implSuffix()));
+            ctx = new EmbeddedEntity(impl, model);
+            embedded.put(entityElement.getQualifiedName().toString(), ctx);
+            builder.addType(EntityGenerator.buildImpl(model));
         }
-        ClassName impl = ClassName.get(model.implPackage(),
-                EntityModel.implNameOf(model.entitySimpleName(), model.implSuffix()));
+        ClassName impl = ctx.impl;
+        EntityModel model = ctx.model;
         if (isList) {
             spec.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class),
                     TypeName.get(entityType), ClassName.get("java.util", "ArrayList"));

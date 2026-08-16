@@ -12,14 +12,17 @@ import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Element;
 import javax.tools.Diagnostic;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 生成 {@code @Dao} 仓库的实现类 {@code XxxRepository_Impl}（继承 {@code AbstractRepository}，
  * 直写 JDBC 的 CRUD + {@code @Query}）。
  *
- * <p>本类是编排层：组装类的整体结构（类声明、Spring 注解、构造器），并把生成职责委托给
- * {@link SqlFieldGenerator}（固定 SQL 字段）、{@link CrudGenerator}（CRUD + 行映射）与
- * {@link QueryGenerator}（{@code @Query} + 结果映射）。</p>
+ * <p>本类是编排层：组装类的整体结构（类声明、Spring 注解、构造器），把宿主的实体 impl
+ * 作为 {@code private static final} 嵌套类嵌入（{@link EntityGenerator}），并把其余生成职责
+ * 委托给 {@link SqlFieldGenerator}（固定 SQL 字段）、{@link CrudGenerator}（CRUD + 行映射）与
+ * {@link QueryGenerator}（{@code @Query} + 结果映射，必要时现场嵌入其他实体）。</p>
  */
 final class RepositoryGenerator {
 
@@ -66,7 +69,9 @@ final class RepositoryGenerator {
     private TypeSpec buildImpl(JForgeProcessor.DaoInfo info) {
         ClassName daoClass = ClassName.get(info.daoPackage, info.daoSimpleName);
         ClassName dataSource = ClassName.get("javax.sql", "DataSource");
-        ClassName entityImpl = ClassName.get(info.model.implPackage(),
+        // 实体 impl 作为本仓库 impl 的嵌套类：全限定名为 daoPackage.ImplName.EntityImplName，
+        // 仓库内部以简单名引用（mapRow/createEntity 的 new Xxx_Impl() 无需 import）。
+        ClassName entityImpl = ClassName.get(info.daoPackage, info.implName,
                 EntityModel.implNameOf(info.model.entitySimpleName(), info.model.implSuffix()));
         ClassName connection = ClassName.get("java.sql", "Connection");
         ClassName preparedStatement = ClassName.get("java.sql", "PreparedStatement");
@@ -86,6 +91,13 @@ final class RepositoryGenerator {
             builder.addAnnotation(AnnotationSpec.builder(
                     ClassName.get("org.springframework.stereotype", "Repository")).build());
         }
+        // 宿主实体 impl 作为 private static final 嵌套类嵌入仓库 impl（私有嵌套类无法共享，
+        // 多个仓库引用同一实体时各嵌一份副本）；embedded 表预置宿主实体，供 @Query 结果
+        // 映射复用，并用于"非宿主实体"的现场嵌入去重。
+        builder.addType(EntityGenerator.buildImpl(info.model));
+        Map<String, QueryGenerator.EmbeddedEntity> embedded = new HashMap<>();
+        embedded.put(info.model.entityQualifiedName(),
+                new QueryGenerator.EmbeddedEntity(entityImpl, info.model));
         // 构造器注入 DataSource + TransactionManager 并传给父类 AbstractRepository
         //（父类持有 protected final 字段 + 连接/事务方法），impl 只留实体特定代码。
         MethodSpec.Builder constructor = MethodSpec.constructorBuilder()
@@ -123,7 +135,8 @@ final class RepositoryGenerator {
                 resultSet, sqlException)) {
             builder.addMethod(method);
         }
-        queryGenerator.queryMethods(info, builder, connection, preparedStatement, resultSet, sqlException);
+        queryGenerator.queryMethods(info, builder, embedded, connection, preparedStatement, resultSet,
+                sqlException);
 
         return builder.build();
     }

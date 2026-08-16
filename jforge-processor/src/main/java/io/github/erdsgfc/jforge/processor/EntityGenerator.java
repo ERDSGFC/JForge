@@ -2,80 +2,38 @@ package io.github.erdsgfc.jforge.processor;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.FieldSpec;
-import com.palantir.javapoet.JavaFile;
 import com.palantir.javapoet.MethodSpec;
 import javax.lang.model.element.Modifier;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 
-import javax.annotation.processing.ProcessingEnvironment;
-import javax.tools.Diagnostic;
-import java.io.IOException;
-import java.util.Set;
-
 /**
- * 生成 {@code @Table} 实体的实现类 {@code Xxx_Impl}：每个属性方法对应一个私有字段 +
- * getter + builder setter（返回实体接口）。
+ * 把 {@code @Table} 实体接口组装成实现类 {@code Xxx_Impl} 的类规格（TypeSpec）：
+ * 每个属性方法对应一个私有字段 + getter + builder setter（返回实体接口）。
  *
- * <p>由 {@link JForgeProcessor} 在解析每个 {@code @Dao} 时经 {@code BaseRepository<T, ID>}
- * 定位实体后调用——实体 impl 的存在性由仓库保证，不会生成"孤儿"实体。多个仓库共享同一实体时
- * 通过全限定名集合去重，只生成一次。</p>
+ * <p>纯静态工具、不写文件——{@link RepositoryGenerator} 把 {@link #buildImpl} 返回的
+ * TypeSpec 作为 {@code private static final} 嵌套类嵌入仓库实现类（{@code XxxRepository_Impl}），
+ * 因此实体 impl 不再是顶层类：用户代码无法直接 {@code new Xxx_Impl()}，只能经
+ * {@code repo.createEntity()} 获取实体实例。多个仓库共享同一实体时各仓库各嵌一份副本
+ * （私有嵌套类无法共享）。</p>
  */
 final class EntityGenerator {
 
-    private final ProcessingEnvironment processingEnv;
-    private final JForgeConfigHelper configHelper;
-    /** 已生成过的实体 impl 全限定名，避免重复生成。 */
-    private final Set<String> generatedEntities;
-
-    /**
-     * @param processingEnv     处理环境（用于文件写入器 / messager）
-     * @param configHelper      共享的 ORM 配置助手
-     * @param generatedEntities 已生成实体 impl 的全限定名集合
-     */
-    EntityGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper,
-            Set<String> generatedEntities) {
-        this.processingEnv = processingEnv;
-        this.configHelper = configHelper;
-        this.generatedEntities = generatedEntities;
-    }
-
-    /**
-     * 为实体模型生成 impl 类。同一实体被多个仓库引用时只生成一次（返回不做任何事）。
-     *
-     * @param model 已解析的实体模型
-     */
-    void generate(EntityModel model) {
-        if (!generatedEntities.add(model.implQualifiedName())) {
-            return; // 已由其他仓库生成过
-        }
-        TypeSpec typeSpec = buildImpl(model);
-        // 输出包与去重 key 同源（model.implPackage()）：
-        // 配置了 @JForgeConfig.generatedPackage 时两者一致，否则都是实体同包。
-        String outputPkg = model.implPackage();
-        try {
-            JavaFile.builder(outputPkg, typeSpec)
-                    .addFileComment("Generated at compile time by JForgeProcessor. Do not edit.")
-                    .skipJavaLangImports(true)
-                    .build()
-                    .writeTo(processingEnv.getFiler());
-        } catch (IOException e) {
-            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "Failed to generate " + model.implQualifiedName() + ": " + e.getMessage());
-        }
+    private EntityGenerator() {
+        // 纯静态工具类，禁止实例化
     }
 
     /**
      * 组装 {@code Xxx_Impl} 类：实体接口的所有属性 → 私有字段 + getter + builder setter。
      *
      * @param model 已解析的实体模型
-     * @return 生成的实体 impl 类规格
+     * @return 实体 impl 类规格（作为仓库 impl 的 private static final 嵌套类）
      */
-    private static TypeSpec buildImpl(EntityModel model) {
+    static TypeSpec buildImpl(EntityModel model) {
         ClassName entityClass = ClassName.get(model.entityPackage(), model.entitySimpleName());
         TypeSpec.Builder builder = TypeSpec.classBuilder(
                 EntityModel.implNameOf(model.entitySimpleName(), model.implSuffix()))
-                .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                 .addSuperinterface(entityClass);
 
         for (EntityModel.ColumnModel column : model.columns()) {
@@ -88,10 +46,15 @@ final class EntityGenerator {
                     .returns(type)
                     .addStatement("return $N", column.fieldName)
                     .build());
+            // setter 返回类型以声明处为准:父接口声明的 setter 返回父接口类型,
+            // 生成的 @Override setter 必须匹配;无 setter 的属性(只有 getter)默认真体接口。
+            TypeName setterReturn = column.setterReturnType != null
+                    ? TypeName.get(column.setterReturnType)
+                    : entityClass;
             builder.addMethod(MethodSpec.methodBuilder(column.setterName)
                     .addAnnotation(Override.class)
                     .addModifiers(Modifier.PUBLIC)
-                    .returns(entityClass)
+                    .returns(setterReturn)
                     .addParameter(type, "value")
                     .addStatement("this.$N = value", column.fieldName)
                     .addStatement("return this")

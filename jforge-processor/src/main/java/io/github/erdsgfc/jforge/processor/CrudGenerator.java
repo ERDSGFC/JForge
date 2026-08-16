@@ -58,9 +58,9 @@ final class CrudGenerator {
         methods.add(deleteByIdMethod(info, connection, preparedStatement, sqlException));
         methods.add(deleteByIdsMethod(info, connection, preparedStatement, sqlException));
         methods.add(updateMethod(info, connection, preparedStatement, sqlException));
-        methods.add(findByIdMethod(info, entityImpl, connection, preparedStatement, resultSet, sqlException));
-        methods.add(findByIdsMethod(info, entityImpl, connection, preparedStatement, resultSet, sqlException));
-        methods.add(findAllMethod(info, entityImpl, connection, preparedStatement, resultSet, sqlException));
+        methods.add(findByIdMethod(info, connection, preparedStatement, resultSet, sqlException));
+        methods.add(findByIdsMethod(info, connection, preparedStatement, resultSet, sqlException));
+        methods.add(findAllMethod(info, connection, preparedStatement, resultSet, sqlException));
         methods.add(countMethod(info, connection, preparedStatement, resultSet, sqlException));
         methods.add(existsByIdMethod(info, sqlException));
         methods.add(createEntityMethod(info, entityImpl));
@@ -439,14 +439,13 @@ final class CrudGenerator {
      * 经 {@code mapRow} 映射单行,或返回 {@code null}。
      *
      * @param info              仓库信息
-     * @param entityImpl        生成的实体 impl 类
      * @param connection        Connection 类
      * @param preparedStatement PreparedStatement 类
      * @param resultSet         ResultSet 类
      * @param sqlException      SQLException 类
      * @return findById 方法规格
      */
-    private MethodSpec findByIdMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName connection,
+    private MethodSpec findByIdMethod(JForgeProcessor.DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("findById")
                 .addAnnotation(Override.class)
@@ -471,14 +470,13 @@ final class CrudGenerator {
      * (基础 SQL 取 {@code findByIdsBaseSql} 字段)。
      *
      * @param info              仓库信息
-     * @param entityImpl        生成的实体 impl 类
      * @param connection        Connection 类
      * @param preparedStatement PreparedStatement 类
      * @param resultSet         ResultSet 类
      * @param sqlException      SQLException 类
      * @return findByIds 方法规格
      */
-    private MethodSpec findByIdsMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName connection,
+    private MethodSpec findByIdsMethod(JForgeProcessor.DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("findByIds")
                 .addAnnotation(Override.class)
@@ -523,14 +521,13 @@ final class CrudGenerator {
      * 构建 {@code findAll()}:{@code SELECT cols FROM t}(SQL 取 {@code findAllSql})。
      *
      * @param info              仓库信息
-     * @param entityImpl        生成的实体 impl 类
      * @param connection        Connection 类
      * @param preparedStatement PreparedStatement 类
      * @param resultSet         ResultSet 类
      * @param sqlException      SQLException 类
      * @return findAll 方法规格
      */
-    private MethodSpec findAllMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName connection,
+    private MethodSpec findAllMethod(JForgeProcessor.DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("findAll")
                 .addAnnotation(Override.class)

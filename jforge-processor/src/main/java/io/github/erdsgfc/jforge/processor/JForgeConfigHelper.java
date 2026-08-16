@@ -56,14 +56,6 @@ public final class JForgeConfigHelper {
         return config != null ? config.naming() : NamingStrategy.NONE;
     }
 
-    /**
-     * 返回生成的实现类应放置的包。空字符串表示"与源码同包"。
-     */
-    public String generatedPackage(Element element) {
-        JForgeConfig config = configFor(element);
-        return config != null ? config.generatedPackage() : "";
-    }
-
     /** 返回实现类后缀(默认 {@code "_Impl"})。 */
     public String implSuffix(Element element) {
         JForgeConfig config = configFor(element);
