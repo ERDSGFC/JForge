@@ -7,7 +7,7 @@ import io.github.erdsgfc.jforge.annotation.Table;
 
 /**
  * starter 模块的测试实体：一个包含属性方法与 builder 风格 setter 的接口，
- * 由 ORM 处理器编译为 {@code TestUser_Impl}。
+ * 由 ORM 处理器编译为 {@code TestUser_Impl}（仓库 impl 的 private static final 嵌套类）。
  */
 @Table(name = "test_users")
 public interface TestUser {

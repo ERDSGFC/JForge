@@ -36,14 +36,14 @@ mvn -Prelease deploy
 
 ## 架构：实体接口 + @Dao 仓库 + 编译期生成
 
-用户定义 `@Table` 实体**接口**（getter + builder setter）与 `@Dao` 仓库**接口**（继承 `BaseRepository<T, ID>`），注解处理器在编译期生成**直写 JDBC 的实现类**（`Xxx_Impl`，继承 `AbstractRepository`，只含实体特定代码：SQL 常量、行映射、CRUD、`@Query`）——运行时零反射、零元数据查找、零动态分发，AOT（GraalVM Native Image）友好。仓库经统一门面 `JForge`（持有 `private final` `DataSource`/`TransactionManager`、缓存全部仓库）创建：`new JForge(ds).repository(UserRepository.class)`；**管理器由门面构造器注入生成实现（实例传递，无全局单例）**，创建分发由固定包 `io.github.erdsgfc.jforge.generated.Repositories` 承担（框架 jar 自带同名空壳占位，用户 target/classes 的真实实现按类加载优先级覆盖）。**与手写 JDBC 等价的生成代码就是性能上限**。
+用户定义 `@Table` 实体**接口**（getter + builder setter，**可继承父接口**——父接口属性同样映射为列，列顺序 = 继承层次顺序）与 `@Dao` 仓库**接口**（继承 `BaseRepository<T, ID>`），注解处理器在编译期生成**直写 JDBC 的仓库实现类**（`XxxRepository_Impl`，继承 `AbstractRepository`，只含实体特定代码：SQL 常量、行映射、CRUD、`@Query`；实体的 `Xxx_Impl` 作为其 **private static final 嵌套类**随仓库文件生成，用户只能经 `repo.createEntity()` 获取实体实例）——运行时零反射、零元数据查找、零动态分发，AOT（GraalVM Native Image）友好。仓库经统一门面 `JForge`（持有 `private final` `DataSource`/`TransactionManager`、缓存全部仓库）创建：`new JForge(ds).repository(UserRepository.class)`；**管理器由门面构造器注入生成实现（实例传递，无全局单例）**，创建分发由固定包 `io.github.erdsgfc.jforge.generated.Repositories` 承担（框架 jar 自带同名空壳占位，用户 target/classes 的真实实现按类加载优先级覆盖）。**与手写 JDBC 等价的生成代码就是性能上限**。
 
 ## 模块
 
 | 模块 | 职责 |
 |---|---|
 | `jforge-annotation` | 注解：`@Table/@Id/@Column/@GeneratedValue`（标注接口方法）+ `@Dao/@Query/@Bind/@ReturnGeneratedKeys` |
-| `jforge-processor` | 编译期生成器（javapoet + auto-service，provided）：`JForgeProcessor`（入口，**只处理 @Dao**，经 `BaseRepository<T,ID>` 定位实体并顺带生成实体 impl，按全限定名去重）+ `EntityGenerator`（实体→Impl）+ `RepositoryGenerator`（@Dao→CRUD + @Query + DTO record 投影 + 固定 SQL 常量字段 + Repositories 工厂） |
+| `jforge-processor` | 编译期生成器（javapoet + auto-service，provided）：`JForgeProcessor`（入口，**只处理 @Dao**，经 `BaseRepository<T,ID>` 定位实体）+ `EntityGenerator`（实体→Impl 嵌套类 TypeSpec）+ `RepositoryGenerator`（@Dao→CRUD + @Query + DTO record 投影 + 固定 SQL 常量字段 + 实体 impl 嵌套类 + Repositories 工厂） |
 | `jforge-core` | 框架库（**无 Spring 依赖**）：`TransactionManager`（SPI）、`SimpleTransactionManager`、`JForgeException`（带 `Code` 错误码分类 + SQL 上下文）、`JForge` 门面（`io.github.erdsgfc.jforge`）；`BaseRepository`、`TransactionOperations`、`AbstractRepository`、回调接口（`io.github.erdsgfc.jforge.core`） |
 | `jforge-bench` | ORM 集成测试（`RepositoryCrudTest`/`TransactionTest`）+ ORM vs 裸 JDBC JMH 基准 |
 | `jforge-spring-boot-starter` | Spring Boot 自动配置：注册 `SpringTransactionManager` bean（包装 `PlatformTransactionManager`），经 `@Autowired` 注入生成的仓库实现（构造器注入，无全局状态） |
@@ -80,7 +80,7 @@ mvn -Prelease deploy
 ## 代码规范
 
 - **类、方法、属性必须加完整 Javadoc**：类注释说明职责与设计意图（如双路径、所有权语义）；方法用完整标签风格（行为说明 + `@param`/`@return`/`@throws`）；复杂逻辑注释解释"为什么"（机制、权衡、坑）
-- **生成代码除外**（`io.github.erdsgfc.jforge.generated` 包及 processor 生成的 `*_Impl` 类）：文件头标"Do not edit"
+- **生成代码除外**（`io.github.erdsgfc.jforge.generated` 包及 processor 生成的 `XxxRepository_Impl` 文件，含其嵌套的实体 impl）：文件头标"Do not edit"（嵌套类无独立文件头，同样不得手改）
 - **性能导向**：句柄/调用点可被 JIT 内联（`invokeExact` > `invoke`）、`static final` 引用（利于常量折叠）、类型决策编译期完成（精确 setter/getter）、生成代码是直写 JDBC
 
 ## 构建细节

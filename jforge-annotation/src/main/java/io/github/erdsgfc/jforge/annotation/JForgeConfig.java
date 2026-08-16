@@ -29,12 +29,6 @@ public @interface JForgeConfig {
     /** 生成语句所用的 SQL 方言（默认 {@link Dialect#POSTGRESQL}）。 */
     Dialect dialect() default Dialect.POSTGRESQL;
 
-    /**
-     * 生成的实现类所在的包名。
-     * 空字符串（默认值）表示"与源同包"。
-     */
-    String generatedPackage() default "";
-
     /** 追加到生成的实现类简单名后的后缀（默认 {@code "_Impl"}）。 */
     String implSuffix() default "_Impl";
 

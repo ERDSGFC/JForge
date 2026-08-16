@@ -80,7 +80,7 @@ public class OrmVsJdbcBenchmark {
     /** 生成的插入,带生成主键回写。 */
     @Benchmark
     public UserEntity ormInsert() {
-        return repo.save(new UserEntity_Impl().name("heihei").age(25));
+        return repo.save(repo.createEntity().name("heihei").age(25));
     }
 
     /** 按主键查询的生成代码。 */
@@ -108,7 +108,7 @@ public class OrmVsJdbcBenchmark {
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 keys.next();
-                UserEntity user = new UserEntity_Impl();
+                UserEntity user = repo.createEntity();
                 user.id(keys.getLong(1));
                 user.name("heihei");
                 user.age(25);
@@ -125,7 +125,7 @@ public class OrmVsJdbcBenchmark {
             ps.setLong(1, seededId);
             try (ResultSet rs = ps.executeQuery()) {
                 rs.next();
-                UserEntity user = new UserEntity_Impl();
+                UserEntity user = repo.createEntity();
                 user.id(rs.getLong(1));
                 user.name(rs.getString(2));
                 user.age(rs.getInt(3));
@@ -142,7 +142,7 @@ public class OrmVsJdbcBenchmark {
              ResultSet rs = ps.executeQuery()) {
             List<UserEntity> list = new ArrayList<>();
             while (rs.next()) {
-                UserEntity user = new UserEntity_Impl();
+                UserEntity user = repo.createEntity();
                 user.id(rs.getLong(1));
                 user.name(rs.getString(2));
                 user.age(rs.getInt(3));

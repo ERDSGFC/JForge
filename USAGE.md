@@ -34,6 +34,10 @@
 
 实体是**接口**:属性 getter + builder setter(同名、单参数、返回实体接口)。
 
+实体接口可以**继承父接口**——父接口声明的属性同样参与映射(`@Id/@Column/@GeneratedValue`
+标注在父接口上照常生效),列顺序 = 继承层次顺序(父接口属性在前)。父接口的 builder setter
+返回父接口类型,链式调用在父 setter 处中断,建议分步调用。
+
 ```java
 @Table(name = "users")
 public interface UserEntity {
@@ -119,7 +123,6 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 @JForgeConfig(
     dialect = Dialect.POSTGRESQL,
     naming = NamingStrategy.CAMEL_TO_SNAKE,   // userName → user_name
-    generatedPackage = "com.example.data.generated",
     implSuffix = "Impl",
     springBeans = true,
     logSql = false,
@@ -132,8 +135,7 @@ package com.example.data;
 |---|---|---|
 | `dialect` | POSTGRESQL | SQL 方言 |
 | `naming` | NONE | 列名推断策略(无 @Column 时) |
-| `generatedPackage` | 空(实体同包) | 生成类输出包 |
-| `implSuffix` | `_Impl` | 生成类后缀(实体/仓库一致) |
+| `implSuffix` | `_Impl` | 生成类后缀(仓库 impl 及其嵌套的实体 impl) |
 | `springBeans` | false | 生成 `@Repository` + `@Autowired` 构造器 |
 | `logSql` | false | 生成 SQL DEBUG/WARN 日志代码(开启才有日志开销) |
 | `batchSize` | 50 | `save(List)` 批处理分块大小;0 关闭 |

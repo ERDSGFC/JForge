@@ -57,7 +57,7 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 // 3. 使用（统一门面 JForge：持有 DataSource/TransactionManager，缓存全部仓库）
 JForge jforge = new JForge(dataSource);
 UserRepository repo = jforge.repository(UserRepository.class);
-UserEntity user = repo.save(new UserEntity_Impl().name("qin").age(25));
+UserEntity user = repo.save(repo.createEntity().name("qin").age(25));
 UserEntity found = repo.findById(1L);
 
 // 4. 事务：模板（自动提交/回滚），回调直接拿事务连接做原生控制

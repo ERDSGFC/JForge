@@ -7,7 +7,8 @@ import io.github.erdsgfc.jforge.annotation.Table;
 
 /**
  * 以接口形式声明的测试实体(属性方法 + builder 风格的 setter)。
- * 注解处理器生成 {@code UserEntity_Impl}。
+ * 注解处理器生成 {@code UserEntity_Impl}（{@code UserRepository_Impl} 的 private static final
+ * 嵌套类，经 {@code repo.createEntity()} 获取实例）。
  */
 @Table(name = "users")
 public interface UserEntity {

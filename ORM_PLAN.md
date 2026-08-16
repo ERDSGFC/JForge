@@ -16,8 +16,9 @@ public interface UserRepository      implements UserRepository               ↓
     @Query(...)                        → new UserEntity_Impl()
     List<User> findByAge(int age);       rs.getLong(1)
 }                                       ps.setString(2,...)
-
-UserEntity (interface)              UserEntity_Impl
+                                          ↓
+UserEntity (interface)              UserEntity_Impl（private static final
+                                    嵌套类，嵌在 UserRepository_Impl 内）
 ```
 
 **核心思想**：用户定义 `@Table` 实体接口 + `@Dao` 仓库接口继承 `BaseRepository`，processor 在编译期生成**直写 JDBC 的实现类**——运行时零反射、零元数据查找、零动态分发。
@@ -28,9 +29,10 @@ UserEntity (interface)              UserEntity_Impl
 jforge-annotation/      # 注解：@Table/@Id/@Column/@GeneratedValue（METHOD 作用域）
                      #       @Dao/@Query/@Bind/@ReturnGeneratedKeys
 jforge-processor/       # 编译期生成器（javapoet + auto-service，provided，不进运行时）
-  ├── JForgeProcessor.java      # 入口：只处理 @Dao，经 BaseRepository<T,ID> 定位实体并生成实体 impl（去重）
-  ├── EntityGenerator.java      # 实体接口 → UserEntity_Impl（字段 + getter + builder setter）
-  ├── RepositoryGenerator.java  # @Dao → UserRepository_Impl（CRUD 13 方法 + @Query + 固定 SQL 常量字段）
+  ├── JForgeProcessor.java      # 入口：只处理 @Dao，经 BaseRepository<T,ID> 定位实体
+  ├── EntityGenerator.java      # 实体接口 → UserEntity_Impl TypeSpec（字段 + getter + builder setter）
+  ├── RepositoryGenerator.java  # @Dao → UserRepository_Impl（CRUD 13 方法 + @Query + 固定 SQL 常量字段
+  │                             #          + 实体 impl 作为 private static final 嵌套类嵌入）
   ├── EntityModel.java          # 共享实体模型解析
   ├── SqlCodegen.java           # 绑定/读取代码块生成（编译期类型决策）
   └── TypeNameUtils.java        # 类型 → javapoet TypeName / JDBC getter/setter 映射
@@ -66,7 +68,7 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 // 3. 使用（Repositories 工厂编译期生成）
 JForge jforge = new JForge(dataSource);
 UserRepository repo = jforge.repository(UserRepository.class);
-UserEntity user = repo.save(new UserEntity_Impl().name("qin").age(25));
+UserEntity user = repo.save(repo.createEntity().name("qin").age(25));
 UserEntity found = repo.findById(1L);
 repo.update(found);
 repo.deleteById(1L);
