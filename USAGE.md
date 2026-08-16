@@ -157,6 +157,34 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 - 非 SELECT → 返回影响行数;配合 `@ReturnGeneratedKeys` 可回写生成键到实体参数
 - 每方法只能有一个语句注解
 
+### @Select 声明式查询（不写 SQL）
+
+`@Select` 方法不用写 SQL——处理器按返回类型与方法参数自动构造 SELECT:
+
+```java
+@Select
+List<UserEntity> findByName(String name);                          // WHERE user_name = ?
+
+@Select
+List<UserEntity> findByAge(@Nullable Integer age);                 // age 为 null 时跳过条件
+
+@Select
+List<UserEntity> findOlderThan(@Where(op = Op.GT) Integer age);    // 操作符:age > ?
+
+@Select
+long countByName(String name);                                     // SELECT COUNT(*)
+
+@Select
+List<UserNameDto> findNameDtoById(Long id);                        // record 投影
+```
+
+**规则**:
+
+- **返回类型**决定 SELECT 列:实体/{@code List<实体>} → 全列(FROM 宿主表,只能返回宿主实体);record → 组件列(组件名经命名策略);标量(`long`/`int`/`boolean`) → `COUNT(*)`
+- **参数即条件**,默认等于(`col = ?`);`@Where(value = "字段名", op = Op.X)` 可指定字段(缺省按参数名)与操作符(`EQ/NE/GT/LT/GE/LE/LIKE/NOT_LIKE`);字段必须匹配实体字段或 record 组件,否则编译报错
+- **JSpecify `@Nullable` 参数动态拼接**(`org.jspecify.annotations.Nullable`,经 jforge-annotation 传递依赖提供):运行时为 `null` 时跳过该条件(MyBatis 风格动态 WHERE);未标注的参数始终拼接
+- 与 `@Query` 互斥(同一方法只能标一个)
+
 ## 4. 配置
 
 `@JForgeConfig` 可放在**包**(`package-info.java`)或**接口**(实体/仓库接口)上,两层解析:

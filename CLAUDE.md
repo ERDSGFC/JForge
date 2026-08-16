@@ -42,8 +42,8 @@ mvn -Prelease deploy
 
 | 模块 | 职责 |
 |---|---|
-| `jforge-annotation` | 注解：`@Table/@Id/@Column/@GeneratedValue`（标注接口方法）+ `@Dao/@Query/@Bind/@ReturnGeneratedKeys` |
-| `jforge-processor` | 编译期生成器（javapoet + auto-service，provided）：`JForgeProcessor`（入口，**只处理 @Dao**，经 `BaseRepository<T,ID>` 定位实体）+ `EntityGenerator`（实体→Impl 嵌套类 TypeSpec）+ `RepositoryGenerator`（@Dao→CRUD + @Query + DTO record 投影 + 固定 SQL 常量字段 + 实体 impl 嵌套类 + Repositories 工厂） |
+| `jforge-annotation` | 注解：`@Table/@Id/@Column/@GeneratedValue`（标注接口方法）+ `@Dao/@Query/@Bind/@ReturnGeneratedKeys` + `@Select/@Where/Op`（声明式查询）+ JSpecify 依赖（`@Nullable` 动态条件） |
+| `jforge-processor` | 编译期生成器（javapoet + auto-service，provided）：`JForgeProcessor`（入口，**只处理 @Dao**，经 `BaseRepository<T,ID>` 定位实体）+ `EntityGenerator`（实体→Impl 嵌套类 TypeSpec）+ `RepositoryGenerator`（@Dao→CRUD + @Query + @Select 动态查询 + DTO record 投影 + 固定 SQL 常量字段 + 实体 impl 嵌套类 + Repositories 工厂） |
 | `jforge-core` | 框架库（**无 Spring 依赖**）：`TransactionManager`（SPI）、`SimpleTransactionManager`、`JForgeException`（带 `Code` 错误码分类 + SQL 上下文）、`JForge` 门面（`io.github.erdsgfc.jforge`）；`BaseRepository`、`TransactionOperations`、`AbstractRepository`、回调接口（`io.github.erdsgfc.jforge.core`） |
 | `jforge-bench` | ORM 集成测试（`RepositoryCrudTest`/`TransactionTest`）+ ORM vs 裸 JDBC JMH 基准 |
 | `jforge-spring-boot-starter` | Spring Boot 自动配置：注册 `SpringTransactionManager` bean（包装 `PlatformTransactionManager`），经 `@Autowired` 注入生成的仓库实现（构造器注入，无全局状态） |

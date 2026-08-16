@@ -133,7 +133,7 @@ class RepositoryCrudTest {
 
         assertNotNull(dto);
         assertEquals(1L, dto.id());
-        assertEquals("qin", dto.userName());
+        assertEquals("qin", dto.user_name());
     }
 
     @Test
