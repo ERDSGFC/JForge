@@ -196,7 +196,9 @@ public final class SqlCodegen {
     }
 
     /**
-     * 计算实体的 INSERT 列：除数据库生成的主键（由数据库在插入时分配）外的所有映射列。
+     * 计算实体的 INSERT 列：数据库生成的主键（由数据库在插入时分配）与以下列被排除——
+     * 纯只读列（无 setter 且无 default 默认值，由数据库维护）、{@code UPDATE_ONLY}/
+     * {@code NONE} 策略列。default getter 列会保留——save 时绑定其默认值。
      *
      * @param model 已解析的实体模型
      * @return INSERT 中需要绑定的列
@@ -204,7 +206,9 @@ public final class SqlCodegen {
     public static List<EntityModel.ColumnModel> insertColumns(EntityModel model) {
         List<EntityModel.ColumnModel> columns = new ArrayList<>();
         for (EntityModel.ColumnModel column : model.columns()) {
-            if (!(column.isId && model.idGenerated())) {
+            if (!(column.isId && model.idGenerated())
+                    && column.insertable
+                    && (column.hasSetter || column.defaultGetter)) {
                 columns.add(column);
             }
         }

@@ -57,7 +57,7 @@ final class CrudGenerator {
         methods.add(deleteManyMethod(info));
         methods.add(deleteByIdMethod(info, connection, preparedStatement, sqlException));
         methods.add(deleteByIdsMethod(info, connection, preparedStatement, sqlException));
-        methods.add(updateMethod(info, connection, preparedStatement, sqlException));
+        methods.add(updateMethod(info, entityImpl, connection, preparedStatement, sqlException));
         methods.add(findByIdMethod(info, connection, preparedStatement, resultSet, sqlException));
         methods.add(findByIdsMethod(info, connection, preparedStatement, resultSet, sqlException));
         methods.add(findAllMethod(info, connection, preparedStatement, resultSet, sqlException));
@@ -106,7 +106,7 @@ final class CrudGenerator {
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "saveSql", model.idGenerated(), configHelper.logSql(info.element));
         int index = 1;
         for (EntityModel.ColumnModel column : insertColumns) {
-            method.addCode(SqlCodegen.bindParam(column.typeName, "entity." + column.getterName + "()", index++));
+            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"), index++));
             method.addCode("\n");
         }
         method.addStatement("ps.executeUpdate()");
@@ -173,7 +173,7 @@ final class CrudGenerator {
             method.addStatement("int batchSize = $L", batchSize);
             method.addStatement("int batchStart = 0");
             method.beginControlFlow("for ($T entity : entities)", info.entityType);
-            bindColumns(method, insertColumns);
+            bindColumns(method, model, entityImpl, insertColumns);
             method.addStatement("ps.addBatch()");
             method.addStatement("batchStart++");
             method.beginControlFlow("if (batchStart % batchSize == 0)");
@@ -188,7 +188,7 @@ final class CrudGenerator {
         } else {
             // 不批处理：在共享连接上每行执行一次 executeUpdate。
             method.beginControlFlow("for ($T entity : entities)", info.entityType);
-            bindColumns(method, insertColumns);
+            bindColumns(method, model, entityImpl, insertColumns);
             method.addStatement("ps.executeUpdate()");
             if (idGenerated) {
                 method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", resultSet);
@@ -212,12 +212,28 @@ final class CrudGenerator {
      * @param method  方法构建器
      * @param columns INSERT 列
      */
-    private void bindColumns(MethodSpec.Builder method, List<EntityModel.ColumnModel> columns) {
+    private void bindColumns(MethodSpec.Builder method, EntityModel model, ClassName entityImpl,
+            List<EntityModel.ColumnModel> columns) {
         int index = 1;
         for (EntityModel.ColumnModel column : columns) {
-            method.addCode(SqlCodegen.bindParam(column.typeName, "entity." + column.getterName + "()", index++));
+            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"), index++));
             method.addCode("\n");
         }
+    }
+
+    /**
+     * 绑定表达式中的 getter 调用:default 属性列强转到嵌套类调用默认值方法
+     * ({@code ((StampUser_Impl) entity).defaultCreatedAt()},内部经 接口.super.getter()
+     * 取默认值——宿主类不实现实体接口,TypeName.super 语法只能在嵌套类里用);
+     * 普通属性列用 {@code receiver.getter()} 读实体字段。
+     */
+    private static String getterCall(EntityModel model, EntityModel.ColumnModel column,
+            ClassName entityImpl, String receiver) {
+        if (column.defaultGetter) {
+            return "((" + entityImpl.simpleName() + ") " + receiver + ")."
+                    + EntityModel.defaultMethodName(column.getterName) + "()";
+        }
+        return receiver + "." + column.getterName + "()";
     }
 
     /**
@@ -417,7 +433,7 @@ final class CrudGenerator {
 
     /**
      * 构建 {@code update(T)}:{@code UPDATE t SET c1=?,... WHERE id=?}(SQL 取 {@code updateSql}),
-     * 先绑定所有非 id 列,再绑定 id。
+     * 先绑定所有非 id 可写列与 default 列,再绑定 id(纯只读列与 INSERT_ONLY 列不进 SET)。
      *
      * @param info              仓库信息
      * @param connection        Connection 类
@@ -425,12 +441,15 @@ final class CrudGenerator {
      * @param sqlException      SQLException 类
      * @return update 方法规格
      */
-    private MethodSpec updateMethod(JForgeProcessor.DaoInfo info, ClassName connection,
+    private MethodSpec updateMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName connection,
             ClassName preparedStatement, ClassName sqlException) {
         EntityModel model = info.model;
+        // 与 updateSql 的 SET 子句保持同源:排除 id、纯只读列(无值来源)与
+        // INSERT_ONLY/NONE 策略列。
         List<EntityModel.ColumnModel> updateColumns = new ArrayList<>();
         for (EntityModel.ColumnModel column : model.columns()) {
-            if (!column.isId) {
+            if (!column.isId && column.updatable
+                    && (column.hasSetter || column.defaultGetter)) {
                 updateColumns.add(column);
             }
         }
@@ -442,7 +461,7 @@ final class CrudGenerator {
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "updateSql", false, configHelper.logSql(info.element));
         int index = 1;
         for (EntityModel.ColumnModel column : updateColumns) {
-            method.addCode(SqlCodegen.bindParam(column.typeName, "entity." + column.getterName + "()", index++));
+            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"), index++));
             method.addCode("\n");
         }
         method.addCode(SqlCodegen.bindParam(model.idColumn().typeName,

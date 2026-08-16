@@ -34,6 +34,14 @@ public final class EntityModel {
         return entitySimpleName + suffix;
     }
 
+    /**
+     * default 属性(默认值来源)在生成的嵌套类中的默认值方法名:
+     * {@code default} + getter 名首字母大写(如 {@code createdAt} → {@code defaultCreatedAt})。
+     */
+    public static String defaultMethodName(String getterName) {
+        return "default" + Character.toUpperCase(getterName.charAt(0)) + getterName.substring(1);
+    }
+
     private TypeElement element;
     private String tableName;
     private final List<ColumnModel> columns = new ArrayList<>();
@@ -58,6 +66,13 @@ public final class EntityModel {
          *  生成的 impl 仍生成 {@code private} 填充 setter(供行映射内部调用),
          *  但不带 {@code @Override}、也不参与生成键回写。 */
         boolean hasSetter;
+        /** 属性 getter 是否为 {@code default} 方法(带 @Column/@Id 注解的默认值来源):
+         *  save/update 绑定经 接口.super.getter() 强制调用默认实现取值。 */
+        boolean defaultGetter;
+        /** 列是否参与 INSERT(save)——由 {@code @Column.write()} 策略派生。 */
+        boolean insertable;
+        /** 列是否参与 UPDATE SET(update)——由 {@code @Column.write()} 策略派生。 */
+        boolean updatable;
 
         ColumnModel(String fieldName, String columnName, TypeMirror returnType, boolean isId, boolean generated) {
             this.fieldName = fieldName;
@@ -237,10 +252,15 @@ public final class EntityModel {
     }
 
     private static boolean isIgnored(ExecutableElement method) {
-        // static/default 方法自带实现,生成的 impl 无需(也不应)覆写它们;
-        // 接口本身就是辅助逻辑的归属地。
-        return method.getModifiers().contains(Modifier.STATIC)
-                || method.getModifiers().contains(Modifier.DEFAULT);
+        // static 方法忽略;default 方法默认忽略(辅助逻辑的归属地),但带列注解
+        // (@Column/@Id)的 default getter 是"属性默认值来源"——参与映射,
+        // save/update 时经 接口.super.getter() 强制调用默认实现取值绑定。
+        if (method.getModifiers().contains(Modifier.STATIC)) {
+            return true;
+        }
+        return method.getModifiers().contains(Modifier.DEFAULT)
+                && method.getAnnotation(Column.class) == null
+                && method.getAnnotation(Id.class) == null;
     }
 
     /** 该方法是否为属性 getter:无参数、返回非 void。 */
@@ -305,6 +325,13 @@ public final class EntityModel {
         }
         ColumnModel columnModel = new ColumnModel(fieldName, columnName,
                 method.signature.getReturnType(), isId, generated);
+        columnModel.defaultGetter = element.getModifiers().contains(Modifier.DEFAULT);
+        // 写入策略:显式 @Column.write() 派生 INSERT/UPDATE 参与位;
+        // 无 @Column 的列(命名策略推断)与 @Id 列缺省 BOTH。无值来源(无 setter 无
+        // default)的纯只读列由 insertColumns/updateSql 再按值来源排除。
+        WritePolicy write = column != null ? column.write() : WritePolicy.BOTH;
+        columnModel.insertable = write != WritePolicy.UPDATE_ONLY && write != WritePolicy.NONE;
+        columnModel.updatable = write != WritePolicy.INSERT_ONLY && write != WritePolicy.NONE;
         if (isId) {
             idColumn = columnModel;
             idGenerated = generated;

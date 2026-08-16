@@ -65,6 +65,16 @@ final class EntityGenerator {
                 setter.addModifiers(Modifier.PRIVATE);
             }
             builder.addMethod(setter.build());
+            if (column.defaultGetter) {
+                // default 属性(默认值来源):生成私有方法返回 接口.super.getter()——
+                // 嵌套类实现了实体接口,TypeName.super 语法合法;宿主类的 save/update
+                // 绑定经强转调用它取得默认值(查询读回走覆盖的 getter,返回字段值)。
+                builder.addMethod(MethodSpec.methodBuilder(EntityModel.defaultMethodName(column.getterName))
+                        .addModifiers(Modifier.PRIVATE)
+                        .returns(TypeName.get(column.returnType))
+                        .addStatement("return $T.super.$N()", entityClass, column.getterName)
+                        .build());
+            }
         }
         return builder.build();
     }

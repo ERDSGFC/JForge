@@ -56,6 +56,35 @@ interface UserEntity extends BaseEntity<UserEntity> {
 泛型实参替换后,父接口的 builder setter 返回子接口类型(`T name(String)` → `UserEntity name(String)`),
 **链式调用跨接口不中断**。不满足约束(多类型参数或实参非自身)时编译报错。
 
+### 只读列与 default 默认值
+
+**不写 setter = 该列不由用户维护**;`@Column.write()` 显式控制列参与 INSERT/UPDATE 的组合:
+
+| 列形态 | INSERT | UPDATE SET | 语义 |
+|---|---|---|---|
+| 抽象 getter(无 setter 无 default) | 排除 | 排除 | 数据库维护 |
+| `default` getter + `BOTH`(默认) | 自动调用 default 绑定 | 自动调用 default 刷新 | 框架自动维护 |
+| `default` getter + `INSERT_ONLY` | 自动调用 default 绑定 | 排除 | 只插入一次(如 `created_at`) |
+| `default` getter + `UPDATE_ONLY` | 排除 | 自动调用 default 刷新 | 只更新(如 `last_seen_at`) |
+| 任何形态 + `NONE` | 排除 | 排除 | 数据库维护 |
+
+`default` 方法是"默认值来源"——参与 INSERT/UPDATE 时框架自动调用(经生成的
+`接口.super.getter()` 桥接,不受 impl 覆盖的 getter 影响)取值绑定 SQL:
+
+```java
+@Column(name = "inserted_at", write = WritePolicy.INSERT_ONLY)
+default LocalDateTime insertedAt() {    // save 填一次,update 不触碰
+    return LocalDateTime.now();
+}
+
+@Column(name = "updated_at")
+default LocalDateTime updatedAt() {     // 默认 BOTH:save 与 update 都自动刷新
+    return LocalDateTime.now();
+}
+```
+
+无 `@Column`/`@Id` 注解的 default 方法仍是辅助逻辑(如 `default String displayName()`),不参与映射。
+
 ```java
 @Table(name = "users")
 public interface UserEntity {

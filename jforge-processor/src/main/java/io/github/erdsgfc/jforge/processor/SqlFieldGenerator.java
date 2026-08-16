@@ -78,7 +78,10 @@ final class SqlFieldGenerator {
         EntityModel model = info.model;
         StringBuilder sets = new StringBuilder();
         for (EntityModel.ColumnModel column : model.columns()) {
-            if (!column.isId) {
+            // SET 排除 id、纯只读列(无值来源,由数据库维护)与 INSERT_ONLY/NONE 策略列;
+            // default 列进 SET——update 时自动调用 default 刷新(如 updatedAt)。
+            if (!column.isId && column.updatable
+                    && (column.hasSetter || column.defaultGetter)) {
                 if (sets.length() > 0) {
                     sets.append(",");
                 }
