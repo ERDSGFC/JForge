@@ -32,7 +32,8 @@ class EntityInheritanceTest {
             st.execute("CREATE TABLE users (" +
                     "id BIGSERIAL PRIMARY KEY," +
                     "user_name VARCHAR(100)," +
-                    "age INT)");
+                    "age INT," +
+                    "created_at TIMESTAMP)");
         }
         repo = new JForge(ds).repository(UserRepository.class);
     }
@@ -117,6 +118,17 @@ class EntityInheritanceTest {
         assertEquals(1, adults.size());
         assertEquals("qin", adults.get(0).name());
         assertEquals(30, adults.get(0).age());
+    }
+
+    /** 父接口声明的 default 属性列：save 自动调用父接口的 default 实现取值绑定。 */
+    @Test
+    void parentDefaultGetterColumnFilledOnSave() {
+        UserEntity user = repo.createEntity().name("qin").age(25);
+
+        repo.save(user);
+
+        UserEntity found = repo.findById(user.id());
+        assertNotNull(found.createdAt(), "parent interface default getter should be auto-called on save");
     }
 
     /** update 使用父接口属性作为 SET 列。 */

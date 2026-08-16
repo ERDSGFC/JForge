@@ -62,11 +62,14 @@ class ReadonlyColumnTest {
 
     /** update：纯只读与 INSERT_ONLY 列不变；BOTH 与 UPDATE_ONLY 列被 default 刷新。 */
     @Test
-    void updateRespectsWritePolicy() {
+    void updateRespectsWritePolicy() throws InterruptedException {
         StampUser user = repo.createEntity().name("qin").age(25);
         repo.save(user);
         StampUser original = repo.findById(user.id());
 
+        // sleep 拉大 save 与 update 的 now() 间隔——JIT 热路径下间隔可能小于 H2 的
+        // 时间戳存储精度（实测两值微秒截断后相等），isAfter 断言会偶发失败。
+        Thread.sleep(2);
         StampUser update = repo.createEntity().id(user.id()).name("renamed").age(26);
         repo.update(update);
 
