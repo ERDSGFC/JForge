@@ -145,4 +145,87 @@ class SelectQueryTest {
         assertNotNull(users.get(0).id());
         assertEquals(1L, users.get(0).id());
     }
+
+    // ---- @Query 动态 WHERE（方括号显式 / @Nullable 自动推断）----
+
+    /** 方括号动态段：null 时跳过，只剩静态条件。 */
+    @Test
+    void queryBracketedDynamicSegment() {
+        List<UserEntity> byName = repo.findDynamicByAgeAndName(null, "qin");
+        assertEquals(1, byName.size());
+        assertEquals("qin", byName.get(0).name());
+
+        List<UserEntity> both = repo.findDynamicByAgeAndName(25, "qin");
+        assertEquals(1, both.size());
+        assertEquals("qin", both.get(0).name());
+
+        List<UserEntity> none = repo.findDynamicByAgeAndName(30, "qin");
+        assertTrue(none.isEmpty());
+    }
+
+    /** @Nullable 自动推断：未用方括号的单占位符片段动态。 */
+    @Test
+    void queryAutoDynamicByNullable() {
+        List<UserEntity> byName = repo.findAutoDynamicByAgeAndName("qin", null);
+        assertEquals(1, byName.size());
+        assertEquals("qin", byName.get(0).name());
+
+        List<UserEntity> both = repo.findAutoDynamicByAgeAndName("qin", 25);
+        assertEquals(1, both.size());
+        assertEquals(25, both.get(0).age());
+
+        assertTrue(repo.findAutoDynamicByAgeAndName("qin", 30).isEmpty());
+    }
+
+    /** OR 连接符保留：动态段 null 时 OR 条件消失，其余条件原样。 */
+    @Test
+    void queryDynamicPreservesOrConnector() {
+        // age=null → WHERE user_name = ?（OR 段整体消失）
+        List<UserEntity> byName = repo.findDynamicOr(null, "qin");
+        assertEquals(1, byName.size());
+        assertEquals("qin", byName.get(0).name());
+
+        // age=25 → WHERE age = ? OR user_name = ?（OR 语义保留：qin 命中 age，lu 命中 name）
+        List<UserEntity> byAgeOrName = repo.findDynamicOr(25, "lu");
+        assertEquals(2, byAgeOrName.size());
+        assertTrue(byAgeOrName.stream().allMatch(u -> u.age() == 25 || u.name().equals("lu")));
+    }
+
+    /** 动态 @Query 与静态 @Query 共存（静态路径不变）。 */
+    @Test
+    void dynamicQueryCoexistsWithStatic() {
+        assertEquals(2, repo.findByAgeGreaterThan(20).size());
+        assertEquals(1, repo.countByAge(25));
+        assertEquals("qin", repo.findNameById(1L).user_name());
+    }
+
+    // ---- @Query + @Where 追加条件 ----
+
+    /** @Where 动态追加：SQL 写静态条件，@Nullable 参数追加 AND 条件。 */
+    @Test
+    void queryWithAppendedDynamicWhere() {
+        // age=null → 只按 name（追加条件跳过）
+        List<UserEntity> byName = repo.findWithAppendedWhere("qin", null);
+        assertEquals(1, byName.size());
+        assertEquals("qin", byName.get(0).name());
+
+        // age=20 → AND age > 20（qin/25 + wang/30）
+        List<UserEntity> adults = repo.findWithAppendedWhere("qin", 20);
+        assertEquals(1, adults.size());
+        assertEquals("qin", adults.get(0).name());
+
+        // age=30 → AND age > 30（无匹配）
+        assertTrue(repo.findWithAppendedWhere("qin", 30).isEmpty());
+    }
+
+    /** @Where 静态追加（无 @Nullable）：恒拼接，走 SQL 常量形态。 */
+    @Test
+    void queryWithAppendedStaticWhere() {
+        // WHERE user_name = ? AND age >= ?
+        List<UserEntity> users = repo.findWithAppendedStaticWhere("qin", 20);
+        assertEquals(1, users.size());
+        assertEquals("qin", users.get(0).name());
+
+        assertTrue(repo.findWithAppendedStaticWhere("qin", 30).isEmpty());
+    }
 }

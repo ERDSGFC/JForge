@@ -157,6 +157,37 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 - 非 SELECT → 返回影响行数;配合 `@ReturnGeneratedKeys` 可回写生成键到实体参数
 - 每方法只能有一个语句注解
 
+**@Query 动态 WHERE**(JSpecify `@Nullable` 驱动,两种语法):
+
+```java
+/** ① 方括号 [ ] 显式标记动态段(段内参数必须标 @Nullable,否则编译报错) */
+@Query("SELECT id, user_name, age FROM users WHERE [age = :age] AND user_name = :name")
+List<UserEntity> findDynamicByAgeAndName(@Bind("age") @Nullable Integer age, @Bind("name") String name);
+
+/** ② @Nullable 自动推断:恰好一个占位符的片段,参数标 @Nullable 即动态 */
+@Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND age = :age")
+List<UserEntity> findAutoDynamicByAgeAndName(@Bind("name") String name, @Bind("age") @Nullable Integer age);
+```
+
+- 动态段运行时参数为 `null` 时**整段移除**,非 null 时拼接——连接符(`AND`/`OR`)由生成器维护,首个实际执行的条件得 `WHERE`、其后按用户写的连接符,动态段跳过时连接符随之消失
+- 含动态段的 @Query 运行时拼接 SQL(不生成常量字段);纯静态 @Query 仍是 SQL 常量 + 静态绑定(零开销)
+- 多占位符片段不做自动推断(需方括号显式);方括号段强制"恰好一个占位符 + 参数标 `@Nullable`"
+
+**@Query + @Where 追加条件**(手写 SQL 之外自动追加条件):
+
+```java
+/** 动态追加:age 非 null 时 AND age > ?(null 时仅按 name 查) */
+@Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
+List<UserEntity> find(@Bind("name") String name, @Where(op = Op.GT) @Nullable Integer age);
+
+/** 静态追加:恒拼接(无 @Nullable),SQL 常量 + 静态绑定,零开销 */
+@Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
+List<UserEntity> find(@Bind("name") String name, @Where(value = "age", op = Op.GE) int minAge);
+```
+
+- 标注 `@Where` 的参数(可同时标 `@Bind`)自动追加为条件:`字段 = @Where.value`(缺省按参数名) → 实体列,`op` 指定操作符;追加条件用 `AND` 连接(无 WHERE 时补 `WHERE`)
+- `@Nullable` 决定动态性:标了则 null 时跳过(运行时拼接),未标则恒拼接(进入 SQL 常量)
+
 ### @Select 声明式查询（不写 SQL）
 
 `@Select` 方法不用写 SQL——处理器按返回类型与方法参数自动构造 SELECT:
@@ -183,6 +214,7 @@ List<UserNameDto> findNameDtoById(Long id);                        // record 投
 - **返回类型**决定 SELECT 列:实体/{@code List<实体>} → 全列(FROM 宿主表,只能返回宿主实体);record → 组件列(组件名经命名策略);标量(`long`/`int`/`boolean`) → `COUNT(*)`
 - **参数即条件**,默认等于(`col = ?`);`@Where(value = "字段名", op = Op.X)` 可指定字段(缺省按参数名)与操作符(`EQ/NE/GT/LT/GE/LE/LIKE/NOT_LIKE`);字段必须匹配实体字段或 record 组件,否则编译报错
 - **JSpecify `@Nullable` 参数动态拼接**(`org.jspecify.annotations.Nullable`,经 jforge-annotation 传递依赖提供):运行时为 `null` 时跳过该条件(MyBatis 风格动态 WHERE);未标注的参数始终拼接
+- **生成形态自动选择**:方法不含任何 `@Nullable` 参数时,编译期拼出完整 SQL 常量 + 静态索引绑定(与手写 JDBC 等价);含动态参数才生成运行时拼接(where 前缀变量 + 条件 if 块)
 - 与 `@Query` 互斥(同一方法只能标一个)
 
 ## 4. 配置

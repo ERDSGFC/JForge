@@ -35,6 +35,30 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
     @Query("UPDATE users SET age = :age WHERE id = :id")
     int updateAge(@Bind("id") long id, @Bind("age") int age);
 
+    /** 动态 WHERE：方括号显式动态段（age 为 null 时跳过）。 */
+    @Query("SELECT id, user_name, age FROM users WHERE [age = :age] AND user_name = :name")
+    List<UserEntity> findDynamicByAgeAndName(@Bind("age") @Nullable Integer age,
+            @Bind("name") String name);
+
+    /** 动态 WHERE：@Nullable 自动推断（片段仅一个占位符）。 */
+    @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND age = :age")
+    List<UserEntity> findAutoDynamicByAgeAndName(@Bind("name") String name,
+            @Bind("age") @Nullable Integer age);
+
+    /** 动态 WHERE：OR 连接符保留。 */
+    @Query("SELECT id, user_name, age FROM users WHERE [age = :age] OR user_name = :name")
+    List<UserEntity> findDynamicOr(@Bind("age") @Nullable Integer age, @Bind("name") String name);
+
+    /** @Where 追加条件：手写 SQL + 自动追加（age 非 null 时 AND age > ?，动态）。 */
+    @Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
+    List<UserEntity> findWithAppendedWhere(@Bind("name") String name,
+            @Where(op = Op.GT) @Nullable Integer age);
+
+    /** @Where 追加条件：静态追加（恒拼接），无 @Nullable。 */
+    @Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
+    List<UserEntity> findWithAppendedStaticWhere(@Bind("name") String name,
+            @Where(value = "age", op = Op.GE) int minAge);
+
     // ---- @Select 声明式查询（不写 SQL，参数即条件，默认等于）----
 
     /** 静态条件：{@code WHERE user_name = ?}。 */

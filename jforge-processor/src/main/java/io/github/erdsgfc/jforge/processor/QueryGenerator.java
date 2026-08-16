@@ -8,6 +8,7 @@ import io.github.erdsgfc.jforge.annotation.Bind;
 import io.github.erdsgfc.jforge.annotation.Query;
 import io.github.erdsgfc.jforge.annotation.ReturnGeneratedKeys;
 import io.github.erdsgfc.jforge.annotation.Table;
+import io.github.erdsgfc.jforge.annotation.Where;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Element;
@@ -111,17 +112,42 @@ final class QueryGenerator {
             TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         String methodName = method.getSimpleName().toString();
+        ParsedWhere parsed = parseWhere(query.value());
+        Map<String, VariableElement> binds = bindsOf(method);
+        // @Where 参数 → 追加条件片段（伪占位符 = 参数名，复用占位符绑定与 @Nullable 动态机制）。
+        Map<String, VariableElement> byName = new HashMap<>();
+        List<WhereFragment> appended = new ArrayList<>();
+        for (VariableElement parameter : method.getParameters()) {
+            byName.put(parameter.getSimpleName().toString(), parameter);
+            Where where = parameter.getAnnotation(Where.class);
+            if (where != null) {
+                WhereFragment fragment = appendFragment(info, method, parameter, where,
+                        parsed == null || parsed.fragments.isEmpty());
+                if (fragment == null) {
+                    return null;
+                }
+                appended.add(fragment);
+            }
+        }
+        // 片段序列 = SQL 中的片段 + @Where 追加片段；占位符查找 = @Bind 优先、参数名兜底。
+        List<WhereFragment> fragments = parsed != null ? new ArrayList<>(parsed.fragments) : new ArrayList<>();
+        fragments.addAll(appended);
+        Map<String, VariableElement> lookup = new HashMap<>(binds);
+        lookup.putAll(byName);
+        boolean hasDynamic = fragments.stream().anyMatch(fragment -> isDynamicFragment(fragment, lookup));
+        if (hasDynamic) {
+            return dynamicQueryMethod(info, method, query, builder, embedded, connection,
+                    preparedStatement, resultSet, sqlException, parsed, fragments, lookup);
+        }
+        // 静态路径：SQL 常量由 SqlFieldGenerator.querySql 统一生成（含静态 @Where 追加），
+        // 这里只需收集绑定占位符（含追加片段的伪占位符）。
         String sqlField = methodName + "Sql";
         List<String> placeholders = new ArrayList<>();
         SqlCodegen.convertPlaceholders(query.value(), placeholders);
-
-        // 映射占位符名 → 方法参数(经 @Bind)。
-        Map<String, VariableElement> binds = new HashMap<>();
-        for (VariableElement parameter : method.getParameters()) {
-            Bind bind = parameter.getAnnotation(Bind.class);
-            if (bind != null) {
-                binds.put(bind.value(), parameter);
-            }
+        for (WhereFragment fragment : appended) {
+            List<String> ph = new ArrayList<>();
+            SqlCodegen.convertPlaceholders(fragment.text, ph);
+            placeholders.addAll(ph);
         }
 
         TypeMirror returnType = method.getReturnType();
@@ -141,7 +167,7 @@ final class QueryGenerator {
         SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, generatedKeys, configHelper.logSql(info.element));
 
         for (int i = 0; i < placeholders.size(); i++) {
-            VariableElement parameter = binds.get(placeholders.get(i));
+            VariableElement parameter = lookup.get(placeholders.get(i));
             if (parameter == null) {
                 processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
                         "No @Bind(\"" + placeholders.get(i) + "\") parameter for query placeholder", method);
@@ -172,7 +198,8 @@ final class QueryGenerator {
             spec.endControlFlow();
         }
 
-        SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(), SqlFieldGenerator.querySql(method), configHelper.logSql(info.element));
+        SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(),
+                SqlFieldGenerator.querySql(info, method), configHelper.logSql(info.element));
         return spec.build();
     }
 
@@ -207,6 +234,146 @@ final class QueryGenerator {
             }
         }
         return "/* no entity parameter to write back the generated key */";
+    }
+
+    /**
+     * 构建含动态 WHERE 的 {@code @Query} 方法:WHERE 片段按方括号/@{@code @Nullable}
+     * 判定动态性,生成 StringBuilder 拼接 + where 前缀变量 + 双阶段 if 展开绑定
+     * (与 {@code @Select} 动态查询同一形态;静态片段原样保留,动态片段 null 时跳过)。
+     */
+    private MethodSpec dynamicQueryMethod(JForgeProcessor.DaoInfo info, ExecutableElement method, Query query,
+            TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded, ClassName connection,
+            ClassName preparedStatement, ClassName resultSet, ClassName sqlException,
+            ParsedWhere parsed, List<WhereFragment> fragments, Map<String, VariableElement> binds) {
+        String methodName = method.getSimpleName().toString();
+        TypeMirror returnType = method.getReturnType();
+        boolean isUpdate = !query.value().trim().toUpperCase().startsWith("SELECT");
+
+        // 每片段解析为绑定单元:占位符转 ? 的文本、绑定参数、动态判定。
+        List<String> texts = new ArrayList<>();
+        List<List<VariableElement>> bindUnits = new ArrayList<>();
+        List<Boolean> dynamics = new ArrayList<>();
+        for (WhereFragment fragment : fragments) {
+            List<String> placeholders = new ArrayList<>();
+            String text = SqlCodegen.convertPlaceholders(fragment.text, placeholders);
+            List<VariableElement> params = new ArrayList<>();
+            for (String placeholder : placeholders) {
+                VariableElement parameter = binds.get(placeholder);
+                if (parameter == null) {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "No @Bind(\"" + placeholder + "\") parameter for query placeholder", method);
+                    continue;
+                }
+                params.add(parameter);
+            }
+            if (fragment.bracketed) {
+                // 显式动态段:必须恰好一个占位符,且对应参数标注 @Nullable(与 @Select 同规则)。
+                if (placeholders.size() != 1) {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "Dynamic WHERE segment [...] must contain exactly one placeholder: "
+                                    + fragment.text, method);
+                    return null;
+                }
+                VariableElement parameter = binds.get(placeholders.get(0));
+                if (parameter == null || !isNullableParameter(parameter)) {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "Dynamic WHERE segment [...] requires a @Nullable parameter: "
+                                    + fragment.text, method);
+                    return null;
+                }
+            }
+            texts.add(text);
+            bindUnits.add(params);
+            dynamics.add(isDynamicFragment(fragment, binds));
+        }
+
+        MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(TypeNameUtils.toTypeNameWithGenerics(returnType));
+        for (VariableElement parameter : method.getParameters()) {
+            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType()),
+                    parameter.getSimpleName().toString());
+        }
+        // parsed 为 null = SQL 无 WHERE（@Where 追加片段提供首个条件）——selectPart 取整条 SQL。
+        String selectPart = parsed != null ? parsed.selectPart : query.value().trim();
+        boolean logSql = configHelper.logSql(info.element);
+        spec.addStatement("$T conn = getConnection()", connection);
+        spec.addStatement("$T sql = new $T($S)", ClassName.get("java.lang", "StringBuilder"),
+                ClassName.get("java.lang", "StringBuilder"), selectPart);
+        spec.addStatement("$T where = $S", ClassName.get("java.lang", "String"), " WHERE ");
+        // 拼接阶段:每片段 append(where) + 文本,where 置为下一片段连接符
+        // (首个执行片段得 " WHERE ",其后得用户写的 AND/OR;动态片段跳过时连接符随之消失)。
+        for (int i = 0; i < fragments.size(); i++) {
+            String nextConn = (i + 1 < fragments.size() && !fragments.get(i + 1).conn.isEmpty())
+                    ? fragments.get(i + 1).conn
+                    : " AND ";
+            if (dynamics.get(i)) {
+                spec.beginControlFlow("if ($N != null)", bindUnits.get(i).get(0).getSimpleName());
+            }
+            spec.addStatement("sql.append(where).append($S)", texts.get(i));
+            spec.addStatement("where = $S", nextConn);
+            if (dynamics.get(i)) {
+                spec.endControlFlow();
+            }
+        }
+        if (logSql) {
+            spec.beginControlFlow("if (log.isDebugEnabled())");
+            spec.addStatement("log.debug($S, sql.toString())", "Executing SQL: {}");
+            spec.endControlFlow();
+        }
+        spec.beginControlFlow("try ($T ps = conn.prepareStatement(sql.toString()))", preparedStatement);
+        // 绑定阶段:与拼接同条件展开,运行时索引 i 递增,类型精确 setXxx。
+        spec.addStatement("int i = 1");
+        for (int f = 0; f < fragments.size(); f++) {
+            if (dynamics.get(f)) {
+                spec.beginControlFlow("if ($N != null)", bindUnits.get(f).get(0).getSimpleName());
+            }
+            for (VariableElement parameter : bindUnits.get(f)) {
+                spec.addCode(SqlCodegen.bindParam(TypeNameUtils.plainTypeName(parameter.asType()),
+                        parameter.getSimpleName().toString(), "i++"));
+                spec.addCode("\n");
+            }
+            if (dynamics.get(f)) {
+                spec.endControlFlow();
+            }
+        }
+        if (isUpdate) {
+            spec.addStatement("return ps.executeUpdate()");
+        } else {
+            spec.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
+            appendResultMapping(spec, info, method, builder, embedded, returnType, selectPart);
+            spec.endControlFlow();
+        }
+        SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(), selectPart, logSql);
+        return spec.build();
+    }
+
+    /**
+     * 解析 {@code @Where} 参数为追加条件片段:字段名取 {@link Where#value()}(缺省按参数名),
+     * 列名从宿主实体字段映射,文本以参数名作伪占位符(复用占位符绑定与 @Nullable 动态机制)。
+     * 连接符:SQL 已有 WHERE 片段时用 {@code " AND "},否则空(where 前缀变量给 WHERE)。
+     */
+    private WhereFragment appendFragment(JForgeProcessor.DaoInfo info, ExecutableElement method,
+            VariableElement parameter, Where where, boolean first) {
+        String fieldName = where.value().isEmpty()
+                ? parameter.getSimpleName().toString()
+                : where.value();
+        String columnName = null;
+        for (EntityModel.ColumnModel column : info.model.columns()) {
+            if (column.fieldName.equals(fieldName)) {
+                columnName = column.columnName;
+                break;
+            }
+        }
+        if (columnName == null) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "@Where parameter field '" + fieldName + "' does not match any field of entity "
+                            + info.model.entityQualifiedName(), method);
+            return null;
+        }
+        return new WhereFragment(first ? "" : " AND ",
+                columnName + " " + where.op().sql() + " :" + parameter.getSimpleName(), false);
     }
 
     /**
@@ -385,6 +552,178 @@ final class QueryGenerator {
             sb.append("rs.").append(TypeNameUtils.jdbcGetter(typeName)).append("(").append(i + 1).append(")");
         }
         return sb.toString();
+    }
+
+    // ---- @Query 动态 WHERE（方括号显式 / @Nullable 自动推断） ------------------
+
+    /** {@code @Query} SQL 的解析结果：SELECT 部分 + WHERE 片段序列。 */
+    static final class ParsedWhere {
+        final String selectPart;
+        final List<WhereFragment> fragments;
+
+        ParsedWhere(String selectPart, List<WhereFragment> fragments) {
+            this.selectPart = selectPart;
+            this.fragments = fragments;
+        }
+    }
+
+    /** 一个 WHERE 条件片段：前导连接符 + 条件文本（占位符仍为 {@code :name}）。 */
+    static final class WhereFragment {
+        final String conn;       // 前导连接符（" AND "/" OR "；首片段 "")
+        final String text;       // 条件文本
+        final boolean bracketed; // 方括号 [ ] 显式动态段
+
+        WhereFragment(String conn, String text, boolean bracketed) {
+            this.conn = conn;
+            this.text = text;
+            this.bracketed = bracketed;
+        }
+    }
+
+    /**
+     * 解析 {@code @Query} 的 WHERE 部分为片段序列：顶层（括号外）AND/OR 切分，
+     * 方括号 {@code [ ]} 标记显式动态段。无 WHERE 或无法解析（方括号不配对等）
+     * 返回 {@code null}——调用方走静态路径。
+     */
+    static ParsedWhere parseWhere(String sql) {
+        int where = indexOfTopLevelKeyword(sql, "WHERE", 0);
+        if (where < 0) {
+            return null;
+        }
+        String selectPart = sql.substring(0, where);
+        String body = sql.substring(where + 5);
+        List<WhereFragment> fragments = new ArrayList<>();
+        String conn = "";
+        StringBuilder text = new StringBuilder();
+        boolean bracketed = false;
+        int paren = 0;
+        for (int i = 0; i < body.length(); i++) {
+            char c = body.charAt(i);
+            if (c == '(') {
+                paren++;
+                text.append(c);
+            } else if (c == ')') {
+                paren--;
+                text.append(c);
+            } else if (c == '[') {
+                if (paren > 0 || bracketed) {
+                    return null; // 括号内的 [ 不当标记；不支持嵌套方括号
+                }
+                flushFragment(fragments, conn, text, false);
+                conn = "";
+                bracketed = true;
+                text.setLength(0);
+            } else if (c == ']') {
+                if (!bracketed) {
+                    return null;
+                }
+                flushFragment(fragments, conn, text, true);
+                bracketed = false;
+                conn = "";
+                text.setLength(0);
+            } else if (paren == 0 && !bracketed && isAndOr(body, i)) {
+                flushFragment(fragments, conn, text, false);
+                text.setLength(0); // 清空缓冲——否则下一片段会累积上一片段的内容
+                // 连接符长度 = 关键字实际长度（AND=3 / OR=2），不能按固定 4 截取——
+                // 否则会把后续列名的首字符吃进去（如 "OR user_name" → "OR u"）。
+                // 前后各带空格（" AND "），拼接时与前后条件自然隔开。
+                int len = body.regionMatches(true, i, "AND", 0, 3) ? 3 : 2;
+                conn = " " + body.substring(i, i + len).toUpperCase() + " ";
+                i += len - 1;
+            } else {
+                text.append(c);
+            }
+        }
+        flushFragment(fragments, conn, text, bracketed);
+        return fragments.isEmpty() ? null : new ParsedWhere(selectPart, fragments);
+    }
+
+    private static void flushFragment(List<WhereFragment> out, String conn, StringBuilder text,
+            boolean bracketed) {
+        String s = text.toString().trim();
+        if (!s.isEmpty()) {
+            out.add(new WhereFragment(conn, s, bracketed));
+        }
+    }
+
+    /** 位置 {@code i} 是否为顶层 AND/OR 关键字（前后是词边界）。 */
+    private static boolean isAndOr(String s, int i) {
+        boolean and = s.regionMatches(true, i, "AND", 0, 3);
+        boolean or = s.regionMatches(true, i, "OR", 0, 2);
+        if (!and && !or) {
+            return false;
+        }
+        int len = and ? 3 : 2;
+        return (i == 0 || !isIdentifierChar(s.charAt(i - 1)))
+                && (i + len >= s.length() || !isIdentifierChar(s.charAt(i + len)));
+    }
+
+    /** 收集方法的 {@code @Bind} 参数映射（占位符名 → 参数元素）。 */
+    private static Map<String, VariableElement> bindsOf(ExecutableElement method) {
+        Map<String, VariableElement> binds = new HashMap<>();
+        for (VariableElement parameter : method.getParameters()) {
+            Bind bind = parameter.getAnnotation(Bind.class);
+            if (bind != null) {
+                binds.put(bind.value(), parameter);
+            }
+        }
+        return binds;
+    }
+
+    /**
+     * 判定片段是否动态：方括号段恒动态；普通段仅当"恰好一个占位符且对应参数标注
+     * JSpecify {@code @Nullable}"时自动推断为动态（多占位符片段保守处理为静态）。
+     */
+    private static boolean isDynamicFragment(WhereFragment fragment, Map<String, VariableElement> binds) {
+        if (fragment.bracketed) {
+            return true;
+        }
+        List<String> placeholders = new ArrayList<>();
+        SqlCodegen.convertPlaceholders(fragment.text, placeholders);
+        if (placeholders.size() != 1) {
+            return false;
+        }
+        VariableElement parameter = binds.get(placeholders.get(0));
+        return parameter != null && isNullableParameter(parameter);
+    }
+
+    /** 参数是否标注 JSpecify {@code @Nullable}（注解镜像遍历，类型 + 声明双查）。 */
+    static boolean isNullableParameter(VariableElement parameter) {
+        // @Nullable 是 TYPE_USE 注解,class 文件证实其落在 METHOD_FORMAL_PARAMETER 的
+        // 类型注解上(与 @Bind 混排时 javac 归类为类型注解)。用注解镜像字符串比较
+        // 读取——绕开 getAnnotation(Class) 的类解析路径,对 CLASS retention 注解最鲁棒。
+        for (var mirror : parameter.asType().getAnnotationMirrors()) {
+            if (mirror.getAnnotationType().toString().equals("org.jspecify.annotations.Nullable")) {
+                return true;
+            }
+        }
+        for (var mirror : parameter.getAnnotationMirrors()) {
+            if (mirror.getAnnotationType().toString().equals("org.jspecify.annotations.Nullable")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** {@code @Query} 方法是否含动态 WHERE（含动态段或动态 @Where 追加参数时 SQL 不能作为常量字段）。 */
+    static boolean hasDynamicWhere(ExecutableElement method) {
+        Query query = method.getAnnotation(Query.class);
+        if (query == null) {
+            return false;
+        }
+        ParsedWhere parsed = parseWhere(query.value());
+        Map<String, VariableElement> binds = bindsOf(method);
+        if (parsed != null
+                && parsed.fragments.stream().anyMatch(fragment -> isDynamicFragment(fragment, binds))) {
+            return true;
+        }
+        // @Where 追加参数标 @Nullable → 条件动态。
+        for (VariableElement parameter : method.getParameters()) {
+            if (parameter.getAnnotation(Where.class) != null && isNullableParameter(parameter)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ---- SELECT 列顺序解析(实体映射按下标读取) -------------------------------

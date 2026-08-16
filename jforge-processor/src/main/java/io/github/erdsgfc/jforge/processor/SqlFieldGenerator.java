@@ -2,11 +2,13 @@ package io.github.erdsgfc.jforge.processor;
 
 import com.palantir.javapoet.FieldSpec;
 import io.github.erdsgfc.jforge.annotation.Query;
+import io.github.erdsgfc.jforge.annotation.Where;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
+import javax.lang.model.element.VariableElement;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -41,8 +43,10 @@ final class SqlFieldGenerator {
         for (Element enclosed : info.element.getEnclosedElements()) {
             if (enclosed.getKind() == ElementKind.METHOD) {
                 ExecutableElement method = (ExecutableElement) enclosed;
-                if (method.getAnnotation(Query.class) != null) {
-                    fields.add(sqlField(method.getSimpleName() + "Sql", querySql(method)));
+                if (method.getAnnotation(Query.class) != null
+                        && !QueryGenerator.hasDynamicWhere(method)) {
+                    // 动态 WHERE 查询的 SQL 运行时拼接,不生成常量字段。
+                    fields.add(sqlField(method.getSimpleName() + "Sql", querySql(info, method)));
                 }
             }
         }
@@ -116,8 +120,36 @@ final class SqlFieldGenerator {
                 + info.model.idColumn().columnName + "=?";
     }
 
-    /** {@code @Query} 方法的 SQL：命名占位符转 {@code ?}（返回转换后的字符串）。 */
-    static String querySql(ExecutableElement method) {
-        return SqlCodegen.convertPlaceholders(method.getAnnotation(Query.class).value(), new ArrayList<>());
+    /**
+     * {@code @Query} 方法的 SQL：命名占位符转 {@code ?}，并拼接静态 {@code @Where}
+     * 追加参数（非 {@code @Nullable}）的条件——动态追加条件运行时拼接，不进入常量。
+     */
+    static String querySql(JForgeProcessor.DaoInfo info, ExecutableElement method) {
+        Query query = method.getAnnotation(Query.class);
+        String sql = SqlCodegen.convertPlaceholders(query.value(), new ArrayList<>());
+        QueryGenerator.ParsedWhere parsed = QueryGenerator.parseWhere(query.value());
+        boolean first = parsed == null || parsed.fragments.isEmpty();
+        for (VariableElement parameter : method.getParameters()) {
+            Where where = parameter.getAnnotation(Where.class);
+            if (where == null || QueryGenerator.isNullableParameter(parameter)) {
+                continue; // 动态追加（@Nullable）不进 SQL 常量
+            }
+            String fieldName = where.value().isEmpty()
+                    ? parameter.getSimpleName().toString()
+                    : where.value();
+            String columnName = null;
+            for (EntityModel.ColumnModel column : info.model.columns()) {
+                if (column.fieldName.equals(fieldName)) {
+                    columnName = column.columnName;
+                    break;
+                }
+            }
+            if (columnName == null) {
+                continue; // 字段不匹配的错误已在 queryMethod 报过
+            }
+            sql += (first ? " WHERE " : " AND ") + columnName + " " + where.op().sql() + " ?";
+            first = false;
+        }
+        return sql;
     }
 }
