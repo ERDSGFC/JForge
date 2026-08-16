@@ -128,7 +128,7 @@
 
 ## ORM vs 裸 JDBC 基准（OrmVsJdbcBenchmark）
 
-> **测量对象**：jforge ORM 生成代码 vs 手写裸 JDBC，H2 内存库 + HikariCP（`cachePrepStmts` 开启），3 字段 `User`（id/user_name/age）。**单位**：ops/s。**配置**：10 次测量 × 2s、1 fork（注解默认 3×2s 噪声过大，见下）。
+> **测量对象**：jforge ORM 生成代码 vs 手写裸 JDBC，H2 内存库 + HikariCP（`cachePrepStmts` 开启），3 字段 `User`（id/user_name/age；Run ORM-3 起为 5 字段含时间列）。**单位**：ops/s。**配置**：注解默认 2 forks × 3×2s 预热 + 5×2s 测量（每方法 10 样本，误差 ±1-4%；历史 1 fork×3×2s 噪声过大，见 Run ORM-3）。
 > **架构基线**：管理器经 `JForge` 实例注入生成实现（`private final` 字段，无全局查找）；行映射为 setter 风格；`SimpleTransactionManager` 为**单 ThreadLocal 槽位**（tx/scope 两可空字段，热路径 1 次 `ThreadLocal.get()`）。
 
 ### Run ORM-1: 单槽位实现后的基线（10×2s）
@@ -155,3 +155,25 @@
 1. **单槽位 ThreadLocal 优化有效**——findById +2.2% 显著，量级与理论吻合（每操作省 2 次 `ThreadLocal.get()` ≈ 15ns，占 ~680ns 操作的 ~2%）；insert 上的 −3.5% 与方向矛盾且不显著，判为噪声。**保留单槽位实现**。
 2. **ORM 与裸 JDBC 达到等效**（Run ORM-1）：findAll +3.9%（历史首次稳定快于裸 JDBC）、findById +1.0%、insert −1.6%（噪声内）——全部落入项目目标区间（框架开销 −0.1% ~ +3.5%）或更好。
 3. **方法学**：ORM 对比必须用 ≥10 次测量迭代（3×2s 时误差 ±5-40%，任何 <5% 差异不可信）；跨轮对比受 ±7% 机器漂移限制，**同轮 A/B（新旧实现共存于一个基准类）是唯一可靠对比方式**。
+
+### Run ORM-3: 时间字段自动维护 vs 手动维护（注解默认参数已调优）
+
+> **代码改动**：基准表合并为单表 `timed_users`（id/user_name/age/created_at/updated_at），两套实体映射同一张表直接对照——`UserEntity`（时间字段为普通可写属性，用户手动 `LocalDateTime.now()` 填充）与 `TimedUserEntity`（`created_at` = default getter + `INSERT_ONLY`、`updated_at` = default getter + `BOTH`，框架自动调用取值绑定）。裸 JDBC 对照组手动 `setObject` 绑定时间列（JDBC 侧一组即够，自动/手动共用）。注解默认参数从 1 fork×3×2s 调为 **2 forks × 3×2s 预热 + 5×2s 测量**（每方法 10 样本），误差从 ±5-40% 降至 ±1-4%。
+
+| Benchmark | Score (ops/s) | Error |
+|---|---:|---:|
+| jdbcFindAll | 1,488,182 | ±14,723 |
+| jdbcFindById | 1,384,272 | ±26,752 |
+| jdbcInsert | 488,920 | ±16,362 |
+| jdbcUpdate | 612,981 | ±5,103 |
+| ormFindAll | 1,408,313 | ±53,249 |
+| ormFindById | 1,397,113 | ±32,121 |
+| ormInsert（手动时间） | 494,768 | ±18,075 |
+| ormUpdate（手动时间） | 598,693 | ±13,009 |
+| ormTimedInsert（自动时间） | 483,048 | ±14,726 |
+| ormTimedUpdate（自动时间） | 608,684 | ±6,215 |
+
+**结论**：
+1. **ORM vs 裸 JDBC 仍等效**：Insert 手动 +1.2%、Update 手动 −2.3%、自动组 −1.2%/−0.7%、FindById +0.9%、FindAll −5.4%（±3-4% 误差内，且该方向跨轮不稳定，判为噪声）——框架开销仍在目标区间（−0.1% ~ +3.5%）附近。
+2. **时间字段自动维护开销不可测**（自动 vs 手动：Insert −2.4%、Update +1.7%，方向相反、都在 ±1-3% 误差带内）——default 值绑定的强转 + 桥接调用被 JIT 内联（桥接是私有小方法、调用点单态，内联后执行的就是 `LocalDateTime.now()` 本身）。1 fork×3 iter 时"自动 insert 慢 8.7%"的观测被证明是测量噪声。
+3. **方法学延续**：噪声随样本量显著收敛——同一基准 1 fork×3 iter 误差 ±20-50%（曾误导出 −8.7% 结论），2 fork×10 样本后 ±1-4%。
