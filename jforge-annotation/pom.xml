@@ -17,6 +17,12 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
-    <!-- Mapping annotations only. Zero dependencies: both orm (runtime) and
-         jforge-processor (compile-time) depend on this module. -->
+    <!-- Mapping annotations only. 唯一依赖 JSpecify（CLASS retention 纯注解 jar，无运行时负担）：
+         @Select 动态查询用 @Nullable 标注参数；用户经 jforge-core 传递获得。 -->
+    <dependencies>
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
+    </dependencies>
 </project>

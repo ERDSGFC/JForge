@@ -33,12 +33,14 @@ final class RepositoryGenerator {
     private final JForgeConfigHelper configHelper;
     private final CrudGenerator crudGenerator;
     private final QueryGenerator queryGenerator;
+    private final SelectGenerator selectGenerator;
 
     RepositoryGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper) {
         this.processingEnv = processingEnv;
         this.configHelper = configHelper;
         this.crudGenerator = new CrudGenerator(configHelper);
         this.queryGenerator = new QueryGenerator(processingEnv, configHelper);
+        this.selectGenerator = new SelectGenerator(processingEnv, configHelper, queryGenerator);
     }
 
     /**
@@ -136,6 +138,8 @@ final class RepositoryGenerator {
             builder.addMethod(method);
         }
         queryGenerator.queryMethods(info, builder, embedded, connection, preparedStatement, resultSet,
+                sqlException);
+        selectGenerator.selectMethods(info, builder, embedded, connection, preparedStatement, resultSet,
                 sqlException);
 
         return builder.build();

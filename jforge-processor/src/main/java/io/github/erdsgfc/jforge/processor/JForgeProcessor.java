@@ -37,7 +37,8 @@ import java.util.Set;
 @AutoService(javax.annotation.processing.Processor.class)
 @SupportedAnnotationTypes({
     "io.github.erdsgfc.jforge.annotation.Dao",
-    "io.github.erdsgfc.jforge.annotation.JForgeConfig"
+    "io.github.erdsgfc.jforge.annotation.JForgeConfig",
+    "io.github.erdsgfc.jforge.annotation.Select"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_25)
 public class JForgeProcessor extends AbstractProcessor {

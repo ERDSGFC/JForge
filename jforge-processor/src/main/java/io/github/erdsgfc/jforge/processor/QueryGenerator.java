@@ -221,7 +221,7 @@ final class QueryGenerator {
      * @param returnType 方法的返回类型
      * @param sql        {@code @Query} 的 SQL（实体映射解析 SELECT 列顺序用）
      */
-    private void appendResultMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info,
+    void appendResultMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info,
             ExecutableElement method, TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded,
             TypeMirror returnType, String sql) {
         boolean isList = returnType.getKind() == TypeKind.DECLARED
@@ -275,7 +275,7 @@ final class QueryGenerator {
      * @param sql        {@code @Query} 的 SQL（解析 SELECT 列顺序用）
      * @param method     标注了 {@code @Query} 的仓库方法（缺列报错绑定位置）
      */
-    private void appendEntityMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info,
+    void appendEntityMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info,
             TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded, TypeMirror entityType,
             boolean isList, String sql, ExecutableElement method) {
         TypeElement entityElement = (TypeElement) ((DeclaredType) entityType).asElement();
@@ -322,7 +322,7 @@ final class QueryGenerator {
      * 追加实体所有列的读取代码:优先按解析出的 SELECT 列顺序按下标读取
      * (与 CRUD mapRow 一致;SELECT 缺实体列时编译报错),解析失败回退按列名。
      */
-    private void appendEntityColumnReads(MethodSpec.Builder spec, EntityModel model, String sql,
+    void appendEntityColumnReads(MethodSpec.Builder spec, EntityModel model, String sql,
             ExecutableElement method) {
         List<String> selectColumns = parseSelectColumns(sql);
         for (EntityModel.ColumnModel column : model.columns()) {
@@ -349,7 +349,7 @@ final class QueryGenerator {
      * @param record DTO record 元素
      * @param isList 方法是否返回列表
      */
-    private void appendRecordMapping(MethodSpec.Builder spec, TypeElement record, boolean isList) {
+    void appendRecordMapping(MethodSpec.Builder spec, TypeElement record, boolean isList) {
         ClassName recordClass = ClassName.get(record);
         List<? extends Element> components = record.getRecordComponents();
         if (isList) {

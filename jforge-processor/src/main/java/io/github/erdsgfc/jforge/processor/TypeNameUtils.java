@@ -189,7 +189,39 @@ public final class TypeNameUtils {
                 return ParameterizedTypeName.get(
                         ClassName.get((TypeElement) declared.asElement()), args.toArray(new TypeName[0]));
             }
+            // 非泛型直接由元素构造——不经 toString（TypeMirror.toString 会输出
+            // TYPE_USE 注解前缀如 "java.lang.@org.jspecify.annotations.Nullable Integer"，
+            // bestGuess 无法解析）。
+            return ClassName.get((TypeElement) declared.asElement());
         }
         return TypeNameUtils.toTypeName(type.toString());
+    }
+
+    /**
+     * 返回类型镜像的"干净"类型名字符串（全限定名），供 JDBC 绑定/读取 API 映射——
+     * 剥除 TYPE_USE 注解：javac 的 {@code TypeMirror.toString()} 会把类型注解
+     * 拼进字符串（如 {@code java.lang.@org.jspecify.annotations.Nullable Integer}），
+     * 与 {@link #jdbcSetter}/{@link #jdbcGetter} 的精确匹配不兼容。
+     *
+     * @param type 类型镜像（可能带 TYPE_USE 注解）
+     * @return 无注解的全限定类型名，如 {@code "java.lang.Integer"}、{@code "java.lang.List<java.lang.String>"}
+     */
+    public static String plainTypeName(TypeMirror type) {
+        if (type.getKind() == TypeKind.DECLARED) {
+            DeclaredType declared = (DeclaredType) type;
+            String qualified = ((TypeElement) declared.asElement()).getQualifiedName().toString();
+            if (declared.getTypeArguments().isEmpty()) {
+                return qualified;
+            }
+            StringBuilder sb = new StringBuilder(qualified).append('<');
+            for (int i = 0; i < declared.getTypeArguments().size(); i++) {
+                if (i > 0) {
+                    sb.append(',');
+                }
+                sb.append(plainTypeName(declared.getTypeArguments().get(i)));
+            }
+            return sb.append('>').toString();
+        }
+        return type.toString(); // 基本类型/数组无 TYPE_USE 注解，toString 干净
     }
 }
