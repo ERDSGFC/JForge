@@ -5,11 +5,13 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** 将实体类映射到数据库表。 */
+
+/**
+ * 设置实体对应的表名
+ */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface Table {
 
-    /** 表名。 */
     String name();
 }

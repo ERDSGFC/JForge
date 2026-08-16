@@ -6,22 +6,20 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * 注解处理器的全局配置——可以放在<em>任何位置</em>
- * （{@code package-info.java}、应用类、仓库接口……），
- * 它控制编译中的所有实体和仓库。
+ * 注解处理器的全局配置——标在{@code package-info.java}（包级）或实体/仓库接口（类型级），
+ * 控制编译中所有实体和仓库的生成行为。
  *
- * <p>所有 {@code @JForgeConfig} 出现处会被合并为一个全局配置：
- * 某项配置取自将其设为非默认值的那一处；若两处将同一配置项设为不同的非默认值，
- * 则编译报错（冲突会被报告）。未配置的配置项回退到下文记录的默认值。
- * 仓库级别的粒度由专用注解处理（例如 {@link BatchSize}）。</p>
+ * <p>解析规则（不合并、不冲突报错）：接口上直接标注的配置优先；否则沿包链向上
+ * （所在包 → 父包 → …）取最近的、其 {@code package-info} 上标有
+ * {@code @JForgeConfig} 的包——放在公共父包即可覆盖其全部子包。
+ * 无匹配时回退到各项的默认值。仓库/方法级粒度由专用注解处理（例如 {@link BatchSize}）。</p>
  *
  * <pre>{@code
- * // 任意位置——比如一个全局配置类
+ * // package-info.java——对本包及其所有子包生效
  * @JForgeConfig(dialect = Dialect.POSTGRESQL,
  *               naming = NamingStrategy.CAMEL_TO_SNAKE,
- *               implSuffix = "Impl",
  *               springBeans = true)
- * public final class OrmConfiguration { }
+ * package com.example;
  * }</pre>
  */
 @Retention(RetentionPolicy.SOURCE)
@@ -33,7 +31,7 @@ public @interface JForgeConfig {
 
     /**
      * 生成的实现类所在的包名。
-     * 空字符串（默认值）表示"与源接口同包"。
+     * 空字符串（默认值）表示"与源同包"。
      */
     String generatedPackage() default "";
 
@@ -44,35 +42,31 @@ public @interface JForgeConfig {
     NamingStrategy naming() default NamingStrategy.NONE;
 
     /**
-     * 生成的仓库实现类是否标注为 Spring {@code @Repository} bean，
-     * 并使用接收 {@code DataSource} 的 {@code @Autowired} 构造器，
-     * 从而让 Spring Boot 组件扫描自动将其注册到应用上下文中。
-     * 要求使用方模块的 classpath 中包含 Spring。默认 {@code false}。
+     * 生成的仓库实现类是否标注 Spring {@code @Repository}，并去掉 {@code final}
+     * （final 类无法被 CGLIB 代理）；构造器标注 {@code @Autowired}（接收
+     * {@code DataSource} 与 {@code TransactionManager}），由 Spring Boot 组件扫描
+     * 自动注册为 bean。要求使用方模块的 classpath 包含 Spring。默认 {@code false}。
      */
     boolean springBeans() default false;
 
     /**
-     * 生成的 {@code save(List<T>)} 方法的 JDBC 批处理大小。正值会按该大小分块
-     * 启用 {@code PreparedStatement.addBatch()/executeBatch()}，
-     * 即每 {@code batchSize} 行 flush 一次批量插入，每次批量仅一次网络往返；
-     * 生成的 id 会从批次的 generated-keys 结果集回写到实体中。
+     * 生成的 {@code save(List<T>)} 方法的 JDBC 批处理大小。正值按该大小分块
+     * 使用 {@code PreparedStatement.addBatch()/executeBatch()}，每 {@code batchSize}
+     * 行 flush 一次批量插入，每次批量仅一次网络往返；生成的键从批次的
+     * generated-keys 结果集按插入序回写到实体。
      *
-     * <p>默认值为 {@code 50}。{@code 0} 表示禁用批处理：行逐条插入，
-     * 但与早期版本不同——仍然使用单条共享连接。</p>
-     *
-     * <p>可按仓库在仓库接口上用 {@link BatchSize} 覆盖，也可按方法在重声明的
-     * {@code save(List<T>)} 上用 {@link BatchSize} 覆盖。生成键的批处理要求驱动
-     * 支持 {@code executeBatch} 与 {@code RETURN_GENERATED_KEYS} 配合使用（H2 和
-     * PostgreSQL 支持；某些驱动，例如旧版 MySQL Connector/J，只返回批次中
-     * 最后一条语句的键）。</p>
+     * <p>默认值为 {@code 50}；{@code 0} 表示禁用批处理——逐条插入，但仍使用单条
+     * 共享连接。可按仓库或按方法用 {@link BatchSize} 覆盖。生成键的批处理要求驱动
+     * 支持 {@code executeBatch} 与 {@code RETURN_GENERATED_KEYS} 配合（H2 与
+     * PostgreSQL 支持；某些驱动，例如旧版 MySQL Connector/J，只返回批次中最后
+     * 一条的键）。</p>
      */
     int batchSize() default 50;
 
     /**
-     * 生成的仓库实现是否输出 DEBUG/WARN 级别的 SQL 日志
-     * （一个 SLF4J {@code Logger} 字段，外加每条 SQL 语句的 {@code log.debug(...)}
-     * 和失败时的 {@code log.warn(...)}）。默认 {@code false}——除非启用，
-     * 否则生成代码不带任何日志开销，从而保持"与手写 JDBC 等价"的保证。
+     * 生成的仓库实现是否输出 DEBUG/WARN 级 SQL 日志（SLF4J {@code Logger} 字段 +
+     * 每条 SQL 的 {@code log.debug(...)}，失败时 {@code log.warn(...)}）。
+     * 默认 {@code false}——关闭时不生成任何日志代码，保持"与手写 JDBC 等效"的零开销。
      */
     boolean logSql() default false;
 }
