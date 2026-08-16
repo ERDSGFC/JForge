@@ -6,25 +6,24 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Per-package / per-repository configuration for the annotation processor.
+ * Global configuration for the annotation processor — place it <em>anywhere</em>
+ * (a {@code package-info.java}, an application class, a repository interface, ...)
+ * and it controls every entity and repository in the compilation.
  *
- * <p>May be placed either on a {@code package-info.java} (applies to every entity and
- * repository in the package) or directly on a {@code @Table} entity / {@code @Dao}
- * repository interface (applies to that element only, overriding the package
- * configuration).  Unconfigured options fall back to the defaults documented below.</p>
+ * <p>All {@code @JForgeConfig} occurrences are merged into one global
+ * configuration: an option is taken from the occurrence that sets it to a
+ * non-default value; two occurrences setting the same option to different
+ * non-default values are a compile error (the conflict is reported). Unconfigured
+ * options fall back to the defaults documented below. Per-repository granularity
+ * is handled by dedicated annotations instead (e.g. {@link BatchSize}).</p>
  *
  * <pre>{@code
- * // 包级（package-info.java）
+ * // 任意位置——比如一个全局配置类
  * @JForgeConfig(dialect = Dialect.POSTGRESQL,
  *               naming = NamingStrategy.CAMEL_TO_SNAKE,
- *               generatedPackage = "com.example.data.generated",
  *               implSuffix = "Impl",
  *               springBeans = true)
- * package com.example.data;
- *
- * // 或元素级（直接标在接口上，覆盖包级配置）
- * @JForgeConfig(springBeans = true)
- * public interface UserRepository extends BaseRepository<UserEntity, Long> { ... }
+ * public final class OrmConfiguration { }
  * }</pre>
  */
 @Retention(RetentionPolicy.SOURCE)

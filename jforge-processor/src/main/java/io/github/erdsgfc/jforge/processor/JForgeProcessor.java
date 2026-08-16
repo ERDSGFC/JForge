@@ -3,6 +3,7 @@ package io.github.erdsgfc.jforge.processor;
 import com.google.auto.service.AutoService;
 import com.palantir.javapoet.*;
 import io.github.erdsgfc.jforge.annotation.Dao;
+import io.github.erdsgfc.jforge.annotation.JForgeConfig;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
@@ -89,6 +90,9 @@ public class JForgeProcessor extends AbstractProcessor {
         if (roundEnv.processingOver()) {
             return true;
         }
+        // 每轮开头一次性收集全部 @JForgeConfig(package-info),后续查询只查表 +
+        // 字符串前缀继承,不依赖元素模型的包层次导航。
+        configHelper.collect(roundEnv.getElementsAnnotatedWith(JForgeConfig.class));
         for (Element element : roundEnv.getElementsAnnotatedWith(Dao.class)) {
             if (element.getKind() != ElementKind.INTERFACE) {
                 continue;
@@ -128,7 +132,7 @@ public class JForgeProcessor extends AbstractProcessor {
         info.element = dao;
         info.daoQualifiedName = dao.getQualifiedName().toString();
         info.daoSimpleName = dao.getSimpleName().toString();
-        info.daoPackage = packageOf(info.daoQualifiedName);
+        info.daoPackage = CommonUtils.packageOf(info.daoQualifiedName);
         info.implName = info.daoSimpleName + configHelper.implSuffix(dao);
 
         TypeMirror entityMirror = null;
@@ -230,17 +234,6 @@ public class JForgeProcessor extends AbstractProcessor {
         } catch (IOException e) {
             error(null, "Failed to generate Repositories: " + e.getMessage());
         }
-    }
-
-    /**
-     * 从全限定名提取包名。
-     *
-     * @param qualifiedName the fully qualified name
-     * @return the package name, or an empty string for the default package
-     */
-    private static String packageOf(String qualifiedName) {
-        int dot = qualifiedName.lastIndexOf('.');
-        return dot < 0 ? "" : qualifiedName.substring(0, dot);
     }
 
     /**

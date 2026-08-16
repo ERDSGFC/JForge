@@ -141,7 +141,7 @@ catch (Exception e) { txManager.rollback(s); throw e; }
 
 ORM 自身的 `repo.execute(...)` / `beginTransaction()` 与上述方式**可混用且正确组合**：在 Spring 事务内调用会 join（`PROPAGATION_REQUIRED`），不会开新事务。
 
-**仓库自动注入**：`@JForgeConfig(springBeans = true)`（`jforge-annotation`，由 `OrmConfig` 改名）可放 package-info（整包生效）或直接标在接口上（元素级，覆盖包级），生成的 `XxxRepository_Impl` 标 `@Repository` + `@Autowired` 构造器并去掉 `final`，Spring 组件扫描自动注册为 bean——无需手写 `Repositories.createXxxRepository`。处理器在 `@SupportedAnnotationTypes` 声明 `@JForgeConfig`；仅用字符串形式的 Spring 类名生成注解，核心模块无 Spring 依赖。
+**仓库自动注入**：`@JForgeConfig(springBeans = true)`（`jforge-annotation`，由 `OrmConfig` 改名，**全局配置**——任意位置标注，合并后对全部仓库生效）生成的 `XxxRepository_Impl` 标 `@Repository` + `@Autowired` 构造器并去掉 `final`，Spring 组件扫描自动注册为 bean——无需手写 `Repositories.createXxxRepository`。处理器在 `@SupportedAnnotationTypes` 声明 `@JForgeConfig`；仅用字符串形式的 Spring 类名生成注解，核心模块无 Spring 依赖。
 
 测试覆盖：`SpringTransactionControlTest`（三种机制提交/回滚端到端）、`OrmTransactionAutoConfigurationTest`（自动配置注册 + imports 文件发现）、`SpringTransactionManagerTest`（包装器单元集成）。
 

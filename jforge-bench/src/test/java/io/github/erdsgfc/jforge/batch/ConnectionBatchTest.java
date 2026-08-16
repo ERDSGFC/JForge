@@ -37,7 +37,7 @@ class ConnectionBatchTest {
 
     private HikariDataSource pool;
     private CountingDataSource ds;
-    private PackageBatchRepository packageRepo;   // 包级 @JForgeConfig(batchSize = 2)
+    private PackageBatchRepository packageRepo;   // 全局 @JForgeConfig(batchSize = 2)(BatchConfig 类)
     private TypeBatchRepository typeRepo;         // @BatchSize(3) 类型级
     private MethodBatchRepository methodRepo;     // @BatchSize(5) 方法级
     private NoBatchRepository noBatchRepo;        // @BatchSize(0) 显式关闭批处理
@@ -121,9 +121,9 @@ class ConnectionBatchTest {
     // ---- no batching (default 0) --------------------------------------------
 
     @Test
-    void defaultBatchSizeAppliesWhenUnconfigured() {
-        // The main-tree UserRepository has no JForgeConfig: the default batch size
-        // (50) applies, so 3 rows flush in a single batch.
+    void fallsBackToDefaultsWithoutPackageChain() {
+        // 主树 UserRepository 的包链(io.github.erdsgfc.jforge)无 package-info 配置,
+        // 且整个编译存在多个 @JForgeConfig(单标注全局兜底不生效)→ 默认 batchSize=50。
         io.github.erdsgfc.jforge.UserRepository repo =
                 new JForge(ds).repository(io.github.erdsgfc.jforge.UserRepository.class);
         List<UserEntity> entities = new ArrayList<>();

@@ -108,7 +108,12 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 
 ## 4. 配置
 
-`@JForgeConfig` 放在包的 `package-info.java`(**包级策略**,不支持元素级):
+`@JForgeConfig` 可放在**包**(`package-info.java`)或**接口**(实体/仓库接口)上,两层解析:
+
+1. **接口自身标注优先**:接口上直接标了 `@JForgeConfig` → 用接口自己的
+2. **包链继承**:否则沿包链向上(所在包 → 父包 → …)找最近的包级配置——放在公共父包可管理全部子包
+
+都没有 → 用默认值(配置不做合并、不冲突检测):
 
 ```java
 @JForgeConfig(

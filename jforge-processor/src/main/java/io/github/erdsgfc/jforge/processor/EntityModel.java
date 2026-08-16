@@ -82,7 +82,7 @@ public final class EntityModel {
         if (table != null && !table.name().isEmpty()) {
             model.tableName = table.name();
         } else {
-            model.tableName = JForgeConfigHelper.camelToSnake(entity.getSimpleName().toString());
+            model.tableName = CommonUtils.camelToSnake(entity.getSimpleName().toString());
         }
 
         // Pass 1: collect the property getters (setters may be declared before their
@@ -127,12 +127,10 @@ public final class EntityModel {
         return model;
     }
 
-    /** Casts the element to a method, or returns {@code null} for non-method elements. */
     private static ExecutableElement asMethod(Element enclosed) {
         return enclosed.getKind() == ElementKind.METHOD ? (ExecutableElement) enclosed : null;
     }
 
-    /** Methods that are not part of the property contract and are skipped silently. */
     private static boolean isIgnored(ExecutableElement method) {
         // static/default methods carry their own implementation, so the generated
         // impl does not need to (and must not) override them; the interface itself
@@ -265,9 +263,7 @@ public final class EntityModel {
 
     /** Package of the entity interface. */
     public String entityPackage() {
-        String qualified = entityQualifiedName();
-        int dot = qualified.lastIndexOf('.');
-        return dot < 0 ? "" : qualified.substring(0, dot);
+        return CommonUtils.packageOf(entityQualifiedName());
     }
 
     /** The active impl suffix (from @JForgeConfig or default "_Impl"). */
