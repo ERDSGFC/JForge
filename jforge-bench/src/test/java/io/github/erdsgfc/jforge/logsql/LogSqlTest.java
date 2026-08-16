@@ -14,8 +14,8 @@ import java.sql.Statement;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Verifies that a repository generated with {@code @JForgeConfig(logSql=true)} still
- * compiles and runs (its impl carries an SLF4J Logger and emits DEBUG/WARN SQL logging).
+ * 验证以 {@code @JForgeConfig(logSql=true)} 生成的仓库仍能编译并正常运行
+ * (其实现类携带 SLF4J Logger,并输出 DEBUG/WARN 级别的 SQL 日志)。
  */
 class LogSqlTest {
 

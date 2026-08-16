@@ -14,84 +14,77 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Reads the {@link JForgeConfig} for the annotation processor.
+ * 为注解处理器读取 {@link JForgeConfig} 配置。
  *
- * <p>{@code @JForgeConfig} may be placed on a package ({@code package-info.java})
- * or on an entity/repository interface. The effective configuration of an element
- * is resolved in two steps: the element's <em>own</em> annotation (interface-level)
- * wins; otherwise the package chain is walked upward (by qualified name:
- * {@code com.example.sub} → {@code com.example} → {@code com}) and the nearest
- * package with a {@code @JForgeConfig} on its {@code package-info} applies.
- * Putting a configuration on a common parent package therefore covers all of its
- * sub-packages, and any interface can override it for itself. No match → defaults;
- * configurations are never merged or silently combined.</p>
+ * <p>{@code @JForgeConfig} 可放在包({@code package-info.java})或实体/仓库接口上。
+ * 元素的有效配置分两步解析:元素<em>自身</em>的标注(接口级)优先;否则沿包链向上
+ * (按全限定名:{@code com.example.sub} → {@code com.example} → {@code com}),
+ * 取最近的、其 {@code package-info} 上有 {@code @JForgeConfig} 的包。
+ * 因此把配置放在公共父包即可覆盖其全部子包,任何接口都可以为自身覆盖。无匹配 → 默认值;
+ * 配置从不合并或静默组合。</p>
  *
- * <p>Package occurrences are collected once at the start of processing via
- * {@link #collect}; interface occurrences need no collection — {@link #configFor}
- * reads them directly with {@code getAnnotation}. {@code @JForgeConfig} is
- * {@code SOURCE}-retained and cannot change during compilation, so later rounds
- * must not re-collect. The processor is single-threaded, so a plain
- * {@code HashMap} is sufficient.</p>
+ * <p>包上的标注在 processing 开始时经 {@link #collect} 收集一次;接口上的标注无需收集——
+ * {@link #configFor} 直接以 {@code getAnnotation} 读取。{@code @JForgeConfig} 是
+ * {@code SOURCE} 保留期,编译期间不可变,因此后续轮次不得重新收集。处理器单线程,
+ * 普通 {@code HashMap} 足够。</p>
  */
 public final class JForgeConfigHelper {
 
     private final Elements elementUtils;
 
-    /** {@code @JForgeConfig} occurrences mapped by qualified package name. */
+    /** 按限定包名映射的 {@code @JForgeConfig} 出现位置。 */
     private final Map<String, JForgeConfig> configs = new HashMap<>();
 
     private boolean collected;
 
-    /** Creates the helper bound to the given processing environment. */
+    /** 创建绑定到给定处理环境的 helper。 */
     public JForgeConfigHelper(ProcessingEnvironment processingEnv) {
         this.elementUtils = processingEnv.getElementUtils();
     }
 
     // ---- public API --------------------------------------------------------
 
-    /** Reads the configured dialect (default {@link Dialect#POSTGRESQL}). */
+    /** 读取配置的方言(默认 {@link Dialect#POSTGRESQL})。 */
     public Dialect dialect(Element element) {
         JForgeConfig config = configFor(element);
         return config != null ? config.dialect() : Dialect.POSTGRESQL;
     }
 
-    /** Reads the configured naming strategy (default {@link NamingStrategy#NONE}). */
+    /** 读取配置的命名策略(默认 {@link NamingStrategy#NONE})。 */
     public NamingStrategy naming(Element element) {
         JForgeConfig config = configFor(element);
         return config != null ? config.naming() : NamingStrategy.NONE;
     }
 
     /**
-     * Returns the package where generated impl classes should be placed.
-     * An empty string means "same package as the source".
+     * 返回生成的实现类应放置的包。空字符串表示"与源码同包"。
      */
     public String generatedPackage(Element element) {
         JForgeConfig config = configFor(element);
         return config != null ? config.generatedPackage() : "";
     }
 
-    /** Returns the impl class suffix (default {@code "_Impl"}). */
+    /** 返回实现类后缀(默认 {@code "_Impl"})。 */
     public String implSuffix(Element element) {
         JForgeConfig config = configFor(element);
         return config != null ? config.implSuffix() : "_Impl";
     }
 
-    /** Whether generated repository impls should be Spring {@code @Repository} beans. */
+    /** 生成的仓库实现是否为 Spring {@code @Repository} bean。 */
     public boolean springBeans(Element element) {
         JForgeConfig config = configFor(element);
         return config != null && config.springBeans();
     }
 
-    /** Whether generated repository impls should emit SQL logging (default {@code false}). */
+    /** 生成的仓库实现是否输出 SQL 日志(默认 {@code false})。 */
     public boolean logSql(Element element) {
         JForgeConfig config = configFor(element);
         return config != null && config.logSql();
     }
 
     /**
-     * Reads the configured JDBC batch size.
-     * The default ({@code 50}) matches {@code JForgeConfig.batchSize()};
-     * {@code 0} means "no batching" (rows inserted one by one on one connection).
+     * 读取配置的 JDBC 批处理大小。默认({@code 50})与 {@code JForgeConfig.batchSize()} 一致;
+     * {@code 0} 表示不批处理(在一个连接上逐条插入)。
      */
     public int batchSize(Element element) {
         JForgeConfig config = configFor(element);
@@ -101,11 +94,11 @@ public final class JForgeConfigHelper {
     // ---- Naming ------------------------------------------------------------
 
     /**
-     * Applies the naming strategy to a property method name.
+     * 对属性方法名应用命名策略。
      *
-     * @param element the context element (determines which package chain to search)
-     * @param methodName the property method name (e.g. {@code "userName"})
-     * @return the column name
+     * @param element    上下文元素(决定搜索哪条包链)
+     * @param methodName 属性方法名,如 {@code "userName"}
+     * @return 列名
      */
     public String columnName(Element element, String methodName) {
         NamingStrategy strategy = naming(element);
@@ -118,16 +111,13 @@ public final class JForgeConfigHelper {
     // ---- Internals ---------------------------------------------------------
 
     /**
-     * Collects every {@code @JForgeConfig} occurrence
-     * (from {@code roundEnv.getElementsAnnotatedWith(JForgeConfig.class)}) and maps
-     * it to a package: {@code package-info} annotations to their own package,
-     * annotations on any other element to its containing package (so an annotation
-     * on a class in {@code com.example} configures {@code com.example} and all of
-     * its sub-packages). A {@code package-info} annotation wins over a non-package
-     * annotation in the same package. Called once at the start of processing; later
-     * rounds are no-ops.
+     * 收集每个 {@code @JForgeConfig} 出现位置(来自
+     * {@code roundEnv.getElementsAnnotatedWith(JForgeConfig.class)}):只把标在
+     * {@code package-info} 上的按包名入表,供包链查找使用;接口上的标注不入表——
+     * {@link #configFor} 查询时直接读元素自身。在 processing 开始时调用一次;
+     * 后续轮次为 no-op。
      *
-     * @param annotated the elements annotated with {@code @JForgeConfig} in the first round
+     * @param annotated 第一轮中标注了 {@code @JForgeConfig} 的元素
      */
     void collect(Set<? extends Element> annotated) {
         if (collected) {
@@ -146,11 +136,9 @@ public final class JForgeConfigHelper {
     }
 
     /**
-     * Resolves the effective configuration for the element: the nearest ancestor
-     * package (including the element's own package) with a mapped
-     * {@code @JForgeConfig} occurrence, or {@code null} (defaults). The ancestor
-     * walk is a plain string lookup on the collected table, so it is deterministic
-     * regardless of how javac models the package hierarchy.
+     * 解析元素的有效配置:元素自身标注优先;否则取最近的、有 {@code @JForgeConfig}
+     * 映射的祖先包(含元素所在包);都没有则返回 {@code null}(默认值)。祖先包查找是
+     * 对收集表的纯字符串查找,因此不依赖 javac 如何建模包层次,行为确定。
      */
     private JForgeConfig configFor(Element element) {
         // 1. 接口上直接标注的配置优先(仓库/实体接口自身)。

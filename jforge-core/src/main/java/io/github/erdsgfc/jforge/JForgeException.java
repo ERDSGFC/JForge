@@ -1,29 +1,26 @@
 package io.github.erdsgfc.jforge;
 
 /**
- * Runtime exception thrown by the ORM for connection, SQL, transaction, mapping and
- * configuration errors.
+ * ORM 在连接、SQL、事务、映射和配置错误时抛出的运行时异常。
  *
- * <p>Carries a coarse error {@link Code} category plus an optional SQL statement so
- * callers can programmatically classify the failure ({@link #code()}), read the
- * offending SQL ({@link #sql()}) and get a self-contained message — the generated
- * repository code embeds the operation, table name and SQL in the message, so the
- * root cause does not have to be dug out of the {@link #getCause()} chain to
- * understand what failed.</p>
+ * <p>携带粗粒度的错误 {@link Code} 分类及可选的 SQL 语句，使调用方可以编程方式对失败分类
+ * （{@link #code()}）、读取出错的 SQL（{@link #sql()}）并获得自包含的消息——生成的仓库代码
+ * 会把操作、表名和 SQL 嵌入消息中，因此无需从 {@link #getCause()} 链条里挖掘根因即可
+ * 弄清失败原因。</p>
  */
 public class JForgeException extends RuntimeException {
 
-    /** Coarse error category for programmatic handling. */
+    /** 供编程式处理使用的粗粒度错误分类。 */
     public enum Code {
-        /** Connection acquisition/release failed. */
+        /** 连接获取/释放失败。 */
         CONNECTION,
-        /** SQL statement execution failed. */
+        /** SQL 语句执行失败。 */
         SQL,
-        /** Transaction begin/commit/rollback failed. */
+        /** 事务开启/提交/回滚失败。 */
         TRANSACTION,
-        /** Entity/row mapping failed. */
+        /** 实体/行映射失败。 */
         MAPPING,
-        /** Configuration/validation error. */
+        /** 配置/校验错误。 */
         CONFIGURATION
     }
 
@@ -31,52 +28,52 @@ public class JForgeException extends RuntimeException {
     private final String sql;
 
     /**
-     * Creates an exception with the default {@link Code#SQL} category.
+     * 以默认的 {@link Code#SQL} 分类创建异常。
      *
-     * @param message the error message
+     * @param message 错误消息
      */
     public JForgeException(String message) {
         this(Code.SQL, message, null, null);
     }
 
     /**
-     * Creates an exception with the default {@link Code#SQL} category and a cause.
+     * 以默认的 {@link Code#SQL} 分类和原因创建异常。
      *
-     * @param message the error message
-     * @param cause   the underlying cause
+     * @param message 错误消息
+     * @param cause   底层原因
      */
     public JForgeException(String message, Throwable cause) {
         this(Code.SQL, message, null, cause);
     }
 
     /**
-     * Creates an exception with an explicit category and no cause.
+     * 以显式分类且无原因创建异常。
      *
-     * @param code    the error category
-     * @param message the error message
+     * @param code    错误分类
+     * @param message 错误消息
      */
     public JForgeException(Code code, String message) {
         this(code, message, null, null);
     }
 
     /**
-     * Creates an exception with an explicit category and cause.
+     * 以显式分类和原因创建异常。
      *
-     * @param code    the error category
-     * @param message the error message
-     * @param cause   the underlying cause
+     * @param code    错误分类
+     * @param message 错误消息
+     * @param cause   底层原因
      */
     public JForgeException(Code code, String message, Throwable cause) {
         this(code, message, null, cause);
     }
 
     /**
-     * Creates an exception with an explicit category, SQL context and cause.
+     * 以显式分类、SQL 上下文和原因创建异常。
      *
-     * @param code    the error category
-     * @param message the error message
-     * @param sql     the SQL statement that failed, or {@code null}
-     * @param cause   the underlying cause
+     * @param code    错误分类
+     * @param message 错误消息
+     * @param sql     执行失败的 SQL 语句，或 {@code null}
+     * @param cause   底层原因
      */
     public JForgeException(Code code, String message, String sql, Throwable cause) {
         super(message, cause);
@@ -84,12 +81,12 @@ public class JForgeException extends RuntimeException {
         this.sql = sql;
     }
 
-    /** Returns the coarse error category. */
+    /** 返回粗粒度的错误分类。 */
     public Code code() {
         return code;
     }
 
-    /** Returns the SQL statement that failed, or {@code null} when not applicable. */
+    /** 返回执行失败的 SQL 语句，不适用时为 {@code null}。 */
     public String sql() {
         return sql;
     }

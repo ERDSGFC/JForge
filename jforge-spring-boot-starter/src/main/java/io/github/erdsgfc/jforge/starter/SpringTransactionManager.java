@@ -19,87 +19,77 @@ import java.sql.Connection;
 import java.sql.SQLException;
 
 /**
- * {@link TransactionManager} backed by Spring's {@link PlatformTransactionManager},
- * supplied by the {@code jforge-spring-boot-starter} auto-configuration as the
- * bean injected into generated repositories (in place of the built-in
- * {@link io.github.erdsgfc.jforge.SimpleTransactionManager}).
+ * 基于 Spring 的 {@link PlatformTransactionManager} 实现的 {@link TransactionManager}，
+ * 由 {@code jforge-spring-boot-starter} 自动配置提供，作为注入到生成仓库的 Bean
+ * （取代内置的 {@link io.github.erdsgfc.jforge.SimpleTransactionManager}）。
  *
- * <p>Every method delegates to the standard Spring utilities so a transaction begun
- * here fully participates in Spring's transaction infrastructure:
+ * <p>每个方法都委托给标准 Spring 工具类，因此在此开始的事务完全参与 Spring 的
+ * 事务设施：
  * <ul>
- *   <li>{@link #connection} uses {@link DataSourceUtils#getConnection} — inside an
- *       active Spring transaction on the same data source it returns the shared
- *       transaction connection, otherwise a fresh pooled connection.</li>
- *   <li>{@link #release} uses {@link DataSourceUtils#releaseConnection} — the
- *       transaction-bound connection is kept open, any other connection is closed.</li>
- *   <li>{@link #begin} starts the transaction with default propagation
- *       ({@code PROPAGATION_REQUIRED}), so calling it inside an existing Spring
- *       transaction (e.g. a {@code @Transactional} service method) joins that
- *       transaction instead of starting a new one.</li>
+ *   <li>{@link #connection} 使用 {@link DataSourceUtils#getConnection} —— 在同一数据源
+ *       上存在活动 Spring 事务时返回共享的事务连接，否则返回新的池化连接。</li>
+ *   <li>{@link #release} 使用 {@link DataSourceUtils#releaseConnection} —— 事务绑定的
+ *       连接保持打开，其他连接被关闭。</li>
+ *   <li>{@link #begin} 以默认传播行为（{@code PROPAGATION_REQUIRED}）开始事务，因此在
+ *       已有 Spring 事务（如 {@code @Transactional} 服务方法）内调用会加入该事务，
+ *       而不是新开一个。</li>
  * </ul>
- * The thread-bound {@link TransactionStatus} mirrors the connection-ownership model
- * of {@code SimpleTransactionManager}: {@code beginTransaction()} without a matching
- * {@code commit()/rollback()} leaks the status on the thread (the same abandoned
- * transaction contract, best avoided through the {@code execute} template).</p>
+ * 线程绑定的 {@link TransactionStatus} 复刻了 {@code SimpleTransactionManager} 的
+ * 连接所有权模型：{@code beginTransaction()} 没有配对的 {@code commit()/rollback()}
+ * 会在线程上遗留状态（与遗留事务契约相同，最好通过 {@code execute} 模板避免）。</p>
  */
 public final class SpringTransactionManager implements TransactionManager {
 
     private static final Logger LOG = LoggerFactory.getLogger(SpringTransactionManager.class);
 
     /**
-     * Transaction definition shared by every ORM-level transaction: default
-     * propagation ({@code PROPAGATION_REQUIRED}), no isolation or timeout override.
-     * Effectively immutable (no setter is ever called), so a single {@code static
-     * final} instance is safe to share and avoids a per-call allocation — following
-     * this project's principle that {@code static final} references let the JIT
-     * constant-fold.
+     * 所有 ORM 级事务共享的事务定义：默认传播行为（{@code PROPAGATION_REQUIRED}），
+     * 不覆盖隔离级别或超时。实际上不可变（从不调用 setter），因此单个 {@code static
+     * final} 实例可以安全共享并避免每次调用分配对象——遵循本项目"static final 引用
+     * 便于 JIT 常量折叠"的原则。
      */
     private static final TransactionDefinition DEFINITION = new DefaultTransactionDefinition();
 
-    /** The Spring transaction manager this wrapper delegates to. */
+    /** 该包装器委托的 Spring 事务管理器。 */
     private final PlatformTransactionManager delegate;
 
     /**
-     * Thread-bound status of the transaction begun through the ORM API. {@code null}
-     * when no ORM-level transaction is active on this thread. Tying the status to the
-     * thread lets multiple repositories sharing the thread share one transaction —
-     * the same ownership model as {@code SimpleTransactionManager}.
+     * 通过 ORM API 开始的事务的线程绑定状态。当本线程上没有活动的 ORM 级事务时为
+     * {@code null}。将状态绑定到线程，使共享同一线程的多个仓库共享一个事务——
+     * 与 {@code SimpleTransactionManager} 相同的所有权模型。
      */
     private final ThreadLocal<TransactionStatus> status = new ThreadLocal<>();
 
     /**
-     * Thread-bound nesting depth of connection scopes begun by this wrapper. Only
-     * scopes that bound their own {@link ConnectionHolder} (no active Spring
-     * transaction) are counted, so {@link #endScope} can tell "still inside an
-     * outer scope" (decrement) from "scope joined a transaction" (nothing bound,
-     * nothing to clean). Scope state itself lives in Spring's
-     * {@code TransactionSynchronizationManager}, keyed by data source.
+     * 由本包装器开始的连接作用域的线程绑定嵌套深度。只有绑定了自己的
+     * {@link ConnectionHolder}（没有活动 Spring 事务）的作用域才被计数，因此
+     * {@link #endScope} 可以区分"仍在外层作用域内"（递减）与"作用域已加入事务"
+     * （未绑定任何东西，无需清理）。作用域状态本身存放在 Spring 的
+     * {@code TransactionSynchronizationManager} 中，以数据源为键。
      */
     private final ThreadLocal<Integer> scopeDepth = new ThreadLocal<>();
 
     /**
-     * Creates a wrapper around the given Spring transaction manager.
+     * 创建给定 Spring 事务管理器的包装器。
      *
-     * @param delegate the Spring transaction manager to delegate to; must be bound to
-     *                 the same {@code DataSource} the ORM repositories use
+     * @param delegate 要委托的 Spring 事务管理器；必须绑定到 ORM 仓库使用的同一个
+     *                 {@code DataSource}
      */
     public SpringTransactionManager(PlatformTransactionManager delegate) {
         this.delegate = delegate;
     }
 
     /**
-     * Returns the connection for the given data source: the Spring-bound transaction
-     * connection when one is active, or a fresh pooled connection otherwise.
+     * 返回给定数据源的连接：有活动的 Spring 绑定事务连接时返回之，否则返回新的池化连接。
      *
-     * <p>{@code DataSourceUtils.getConnection} inspects Spring's
-     * {@code TransactionSynchronizationManager} for a resource bound to this data
-     * source — a repository bound to a different data source gets its own pooled
-     * connection and stays outside the active transaction, matching the
-     * {@code SimpleTransactionManager} isolation semantics.</p>
+     * <p>{@code DataSourceUtils.getConnection} 会在 Spring 的
+     * {@code TransactionSynchronizationManager} 中查找绑定到该数据源的资源——绑定到不同
+     * 数据源的仓库会获得自己的池化连接并停留在活动事务之外，与
+     * {@code SimpleTransactionManager} 的隔离语义一致。</p>
      *
-     * @param dataSource the data source to obtain a connection from
-     * @return a usable {@link Connection} participating in any active transaction
-     * @throws JForgeException if the connection cannot be obtained
+     * @param dataSource 获取连接的数据源
+     * @return 一个可用的 {@link Connection}，参与任何活动事务
+     * @throws JForgeException 如果无法获取连接
      */
     @Override
     public Connection connection(DataSource dataSource) {
@@ -111,41 +101,36 @@ public final class SpringTransactionManager implements TransactionManager {
     }
 
     /**
-     * Releases a connection obtained via {@link #connection(DataSource)}: closes it
-     * unless it is the transaction-bound connection, which stays open until
-     * {@code commit()/rollback()} ends the transaction.
+     * 释放通过 {@link #connection(DataSource)} 获取的连接：除事务绑定的连接外均关闭之，
+     * 事务绑定的连接保持打开，直到 {@code commit()/rollback()} 结束事务。
      *
-     * @param conn       the connection to release
-     * @param dataSource the data source the connection was obtained from
+     * @param conn       要释放的连接
+     * @param dataSource 获取该连接的数据源
      */
     @Override
     public void release(Connection conn, DataSource dataSource) {
         try {
             DataSourceUtils.releaseConnection(conn, dataSource);
         } catch (CannotGetJdbcConnectionException ignored) {
-            // best effort: a failed close must not mask the caller's result
+            // 尽力而为：关闭失败不得掩盖调用方的结果
         }
     }
 
     /**
-     * Starts a new transaction. The data source parameter is unused here — the
-     * wrapped {@link PlatformTransactionManager} already knows its data source and
-     * Spring resolves the connection through {@link DataSourceUtils} at first use.
+     * 开始一个新事务。此处不使用数据源参数——被包装的 {@link PlatformTransactionManager}
+     * 已经知道自己的数据源，Spring 在首次使用时通过 {@link DataSourceUtils} 解析连接。
      *
-     * <p>Uses {@code PROPAGATION_REQUIRED}: when a Spring transaction is already
-     * active on this thread (e.g. a {@code @Transactional} service method) the call
-     * joins it and the eventual {@code commit()/rollback()} becomes a no-op or a
-     * rollback-only marker. A nested ORM-level begin (another {@code begin} without
-     * an intervening commit/rollback) is rejected.</p>
+     * <p>使用 {@code PROPAGATION_REQUIRED}：当本线程已有活动 Spring 事务（如
+     * {@code @Transactional} 服务方法）时，该调用加入它，随后的 {@code commit()/rollback()}
+     * 变为 no-op 或 rollback-only 标记。嵌套的 ORM 级 begin（没有中间 commit/rollback
+     * 的又一次 {@code begin}）被拒绝。</p>
      *
-     * <p>Registers a transaction completion hook so a transaction begun manually and
-     * left to an outer Spring {@code @Transactional} boundary (no {@code commit()/
-     * rollback()} call) cannot leak a stale status: without it, the same pooled
-     * thread would report a spurious "already active" on its next transaction.</p>
+     * <p>注册事务完成钩子，使手动开始但交由外层 Spring {@code @Transactional} 边界结束
+     * （未调用 {@code commit()/rollback()}）的事务不会遗留过期状态：没有该钩子，
+     * 同一个池化线程下次开启事务时会误报 "already active"。</p>
      *
-     * @param dataSource the data source the transaction belongs to (unused)
-     * @throws JForgeException if a transaction is already active on this thread, or the
-     *                      transaction cannot be started
+     * @param dataSource 事务所属的数据源（未使用）
+     * @throws JForgeException 如果本线程已有活动事务，或无法开始事务
      */
     @Override
     public void begin(DataSource dataSource) {
@@ -158,10 +143,9 @@ public final class SpringTransactionManager implements TransactionManager {
         } catch (RuntimeException e) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "Cannot begin transaction", e);
         }
-        // Synchronizations are active right after getTransaction (Spring initialized
-        // them), so registration is safe. The hook clears our status when the Spring
-        // transaction completes — however it ends — even if the caller never called
-        // commit()/rollback().
+        // getTransaction 之后同步机制立即可用（Spring 已初始化它们），因此注册是安全的。
+        // 无论 Spring 事务以何种方式结束——即使调用方从未调用 commit()/rollback()——
+        // 该钩子都会在事务完成时清除我们的状态。
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
@@ -173,11 +157,10 @@ public final class SpringTransactionManager implements TransactionManager {
     }
 
     /**
-     * Commits the active transaction and clears the thread-bound status. When the
-     * transaction joined an outer Spring transaction (not started here), the commit
-     * is delegated to Spring and behaves as a no-op on the participating status.
+     * 提交活动事务并清除线程绑定状态。当事务加入了外层 Spring 事务（非在此开始）时，
+     * 提交被委托给 Spring，对参与的状态表现为 no-op。
      *
-     * @throws JForgeException if no transaction is active, or the commit fails
+     * @throws JForgeException 如果没有活动事务，或提交失败
      */
     @Override
     public void commit() {
@@ -191,17 +174,16 @@ public final class SpringTransactionManager implements TransactionManager {
         } catch (RuntimeException e) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "Commit failed", e);
         } finally {
-            // Always detach, even on failure, so the thread never leaks the status.
+            // 即使失败也始终解除绑定，确保线程不会遗留状态。
             status.remove();
         }
     }
 
     /**
-     * Rolls back the active transaction and clears the thread-bound status. When the
-     * transaction joined an outer Spring transaction, the rollback marks that
-     * transaction rollback-only so Spring discards it at the service boundary.
+     * 回滚活动事务并清除线程绑定状态。当事务加入了外层 Spring 事务时，回滚将该事务
+     * 标记为 rollback-only，使 Spring 在服务边界将其丢弃。
      *
-     * @throws JForgeException if no transaction is active, or the rollback fails
+     * @throws JForgeException 如果没有活动事务，或回滚失败
      */
     @Override
     public void rollback() {
@@ -215,19 +197,17 @@ public final class SpringTransactionManager implements TransactionManager {
         } catch (RuntimeException e) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "Rollback failed", e);
         } finally {
-            // Always detach, even on failure, so the thread never leaks the status.
+            // 即使失败也始终解除绑定，确保线程不会遗留状态。
             status.remove();
         }
     }
 
     /**
-     * Returns whether a transaction is currently active on this thread: either one
-     * begun via the ORM API, or an outer Spring transaction (e.g. a
-     * {@code @Transactional} service method) the repository calls are participating
-     * in. The latter is detected through
-     * {@link TransactionSynchronizationManager#isActualTransactionActive()}.
+     * 返回本线程当前是否有活动事务：要么是通过 ORM API 开始的事务，要么是仓库调用
+     * 正在参与的外层 Spring 事务（如 {@code @Transactional} 服务方法）。后者通过
+     * {@link TransactionSynchronizationManager#isActualTransactionActive()} 检测。
      *
-     * @return {@code true} when a transaction is active on this thread
+     * @return 当本线程有活动事务时返回 {@code true}
      */
     @Override
     public boolean isActive() {
@@ -240,8 +220,8 @@ public final class SpringTransactionManager implements TransactionManager {
         if (txStatus == null) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "No active transaction to mark rollback-only");
         }
-        // On a participating status (joined an outer @Transactional transaction) this
-        // marks the outer transaction rollback-only — standard Spring semantics.
+        // 对于参与的状态（已加入外层 @Transactional 事务），这会把外层事务标记为
+        // rollback-only——标准的 Spring 语义。
         txStatus.setRollbackOnly();
     }
 
@@ -251,39 +231,35 @@ public final class SpringTransactionManager implements TransactionManager {
         return txStatus != null && txStatus.isRollbackOnly();
     }
 
-    // ---- Connection scope (no transaction) ----------------------------------
+    // ---- 连接作用域（无事务） ----------------------------------
 
     /**
-     * Begins a connection scope: binds a fresh pooled connection to this thread
-     * (as a {@link ConnectionHolder}) so every repository call on the data source
-     * shares it, until {@link #endScope}. The connection keeps auto-commit
-     * enabled — a scope only saves pool round-trips, it provides no atomicity.
+     * 开始一个连接作用域：将一个全新的池化连接绑定到本线程（作为 {@link ConnectionHolder}），
+     * 使该数据源上的所有仓库调用共享它，直到 {@link #endScope}。连接保持启用
+     * auto-commit——作用域只节省池往返，不提供原子性。
      *
-     * <p>When a Spring transaction is already active on this data source, the
-     * scope becomes a no-op and returns the transaction connection — the same
-     * join semantics as {@link #begin}. When an outer scope already bound a
-     * holder (nested scope), the outer connection is reused and the nesting is
-     * counted in {@link #scopeDepth}. Binding a plain holder without an active
-     * transaction is the same mechanism MyBatis-Spring uses for non-transactional
-     * sessions; {@code DataSourceUtils} treats it as the shared connection and
-     * {@code releaseConnection} keeps it open until the holder is unbound.</p>
+     * <p>当该数据源已有活动 Spring 事务时，作用域变为 no-op 并返回事务连接——与
+     * {@link #begin} 相同的 join 语义。当外层作用域已绑定 holder（嵌套作用域）时，
+     * 复用外层连接并在 {@link #scopeDepth} 中计数嵌套。在没有活动事务时绑定普通 holder，
+     * 与 MyBatis-Spring 用于非事务会话的机制相同；{@code DataSourceUtils} 将其视为共享
+     * 连接，{@code releaseConnection} 在 holder 解除绑定前保持其打开。</p>
      *
-     * @param dataSource the data source the scope's connection is borrowed from
-     * @return the shared scope connection, owned by the scope — do not close it
-     *         directly, and do not use it after {@link #endScope}
-     * @throws JForgeException if the connection cannot be obtained
+     * @param dataSource 作用域连接所借用的数据源
+     * @return 共享的作用域连接，归作用域所有——不要直接关闭它，也不要在
+     *         {@link #endScope} 之后使用
+     * @throws JForgeException 如果无法获取连接
      */
     @Override
     public Connection beginScope(DataSource dataSource) {
         if (TransactionSynchronizationManager.isActualTransactionActive()
                 && TransactionSynchronizationManager.hasResource(dataSource)) {
-            // An active Spring transaction owns the connection for this data
-            // source: the scope is a no-op — endScope() is then also a no-op.
+            // 活动 Spring 事务拥有该数据源的连接：作用域是 no-op——
+            // 因此 endScope() 也是 no-op。
             return DataSourceUtils.getConnection(dataSource);
         }
         if (TransactionSynchronizationManager.hasResource(dataSource)) {
-            // No active transaction but a holder is bound: an outer scope on this
-            // thread. Reuse its connection and count the nesting.
+            // 没有活动事务但已绑定 holder：本线程上有外层作用域。
+            // 复用其连接并计数嵌套。
             scopeDepth.set(scopeDepth.get() + 1);
             return DataSourceUtils.getConnection(dataSource);
         }
@@ -298,22 +274,21 @@ public final class SpringTransactionManager implements TransactionManager {
     }
 
     /**
-     * Ends the connection scope begun by {@link #beginScope}: unbinds the holder
-     * this wrapper bound and returns the connection to the pool. A no-op when the
-     * scope joined an active Spring transaction (nothing was bound), or when the
-     * thread is still inside an outer scope (nesting decremented only).
+     * 结束由 {@link #beginScope} 开始的连接作用域：解除本包装器绑定的 holder 并将
+     * 连接归还池中。当作用域已加入活动 Spring 事务（未绑定任何东西），或线程仍处于
+     * 外层作用域内（仅递减嵌套）时为 no-op。
      *
-     * @param dataSource the data source the scope was begun on
+     * @param dataSource 作用域开始时所在的数据源
      */
     @Override
     public void endScope(DataSource dataSource) {
         Integer depth = scopeDepth.get();
         if (depth == null) {
-            return; // scope joined an active Spring transaction — nothing of ours to clean
+            return; // 作用域已加入活动 Spring 事务——没有需要我们清理的东西
         }
         if (depth > 1) {
             scopeDepth.set(depth - 1);
-            return; // still inside an outer scope on this thread
+            return; // 本线程仍在外层作用域内
         }
         scopeDepth.remove();
         Object resource = TransactionSynchronizationManager.unbindResourceIfPossible(dataSource);
@@ -321,7 +296,7 @@ public final class SpringTransactionManager implements TransactionManager {
             try {
                 holder.getConnection().close();
             } catch (SQLException ignored) {
-                // best effort: a failed close must not mask the caller's result
+                // 尽力而为：关闭失败不得掩盖调用方的结果
             }
         }
     }

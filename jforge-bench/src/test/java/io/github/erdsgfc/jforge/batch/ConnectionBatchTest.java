@@ -25,13 +25,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * Integration tests for the JDBC batch insert of {@code save(List<T>)}: the
- * batch size resolution (method {@code @BatchSize} &gt; type {@code @BatchSize}
- * &gt; {@code @JForgeConfig.batchSize} &gt; 0), chunked {@code addBatch()/
- * executeBatch()} flushing, generated-id write-back, and the single-connection
- * guarantee in both the batched and the non-batched paths. A {@code DataSource}
- * decorator counts pool borrows; a {@code Connection} proxy counts
- * {@code executeBatch()} and {@code executeUpdate()} calls.
+ * {@code save(List<T>)} JDBC 批量插入的集成测试:批量大小解析
+ * (方法级 {@code @BatchSize} &gt; 类型级 {@code @BatchSize} &gt;
+ * {@code @JForgeConfig.batchSize} &gt; 0)、分块 {@code addBatch()/
+ * executeBatch()} 刷新、生成键回写,以及批量与非批量两条路径下的单连接保证。
+ * {@code DataSource} 装饰器统计池借用次数;{@code Connection} 代理统计
+ * {@code executeBatch()} 与 {@code executeUpdate()} 调用次数。
  */
 class ConnectionBatchTest {
 
@@ -165,10 +164,9 @@ class ConnectionBatchTest {
     }
 
     /**
-     * DataSource decorator counting pool borrows plus, via a {@code Connection}
-     * proxy, {@code executeBatch()} and {@code executeUpdate()} invocations. The
-     * proxy unwraps {@link InvocationTargetException} so callers see the original
-     * {@link SQLException}.
+     * DataSource 装饰器,统计池借用次数,并经由 {@code Connection} 代理统计
+     * {@code executeBatch()} 与 {@code executeUpdate()} 调用次数。代理会解开
+     * {@link InvocationTargetException},使调用方看到原始的 {@link SQLException}。
      */
     private static final class CountingDataSource implements DataSource {
         private final HikariDataSource delegate;
@@ -214,7 +212,7 @@ class ConnectionBatchTest {
                     });
         }
 
-        /** Wraps a statement in a proxy counting {@code executeBatch}/{@code executeUpdate}. */
+        /** 用计数 {@code executeBatch}/{@code executeUpdate} 的代理包装语句。 */
         private PreparedStatement countingStatement(PreparedStatement real) {
             return (PreparedStatement) Proxy.newProxyInstance(
                     getClass().getClassLoader(), new Class<?>[]{PreparedStatement.class},

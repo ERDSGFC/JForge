@@ -5,11 +5,11 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Maps an entity class to a database table. */
+/** 将实体类映射到数据库表。 */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface Table {
 
-    /** Table name. */
+    /** 表名。 */
     String name();
 }

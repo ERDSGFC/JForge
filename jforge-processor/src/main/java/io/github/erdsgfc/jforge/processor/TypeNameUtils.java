@@ -12,17 +12,17 @@ import javax.lang.model.type.TypeMirror;
 import java.util.ArrayList;
 import java.util.List;
 
-/** TypeMirror-string → JavaPoet TypeName and JDBC binder/reader mapping helpers. */
+/** TypeMirror 字符串 → JavaPoet TypeName 以及 JDBC 绑定/读取映射的辅助工具。 */
 public final class TypeNameUtils {
 
     private TypeNameUtils() {
     }
 
     /**
-     * Converts a TypeMirror string to a JavaPoet type name.
+     * 把 TypeMirror 字符串转换为 JavaPoet 类型名。
      *
-     * @param typeName the type string, e.g. {@code "int"}, {@code "byte[]"}, {@code "java.lang.Long"}
-     * @return the corresponding JavaPoet type (primitive, array, or class)
+     * @param typeName 类型字符串，如 {@code "int"}、{@code "byte[]"}、{@code "java.lang.Long"}
+     * @return 对应的 JavaPoet 类型（基本类型、数组或类）
      */
     public static TypeName toTypeName(String typeName) {
         if (typeName.equals("byte[]")) {
@@ -42,11 +42,11 @@ public final class TypeNameUtils {
     }
 
     /**
-     * Returns the JDBC result-set getter method name for a field type.
+     * 返回字段类型对应的 JDBC 结果集 getter 方法名。
      *
-     * @param typeName the field type string, e.g. {@code "long"}, {@code "java.lang.String"}
-     * @return the getter method name, e.g. {@code "getLong"}, {@code "getString"}, or
-     *         {@code "getObject"} for types without a dedicated getter (LocalDate etc.)
+     * @param typeName 字段类型字符串，如 {@code "long"}、{@code "java.lang.String"}
+     * @return getter 方法名，如 {@code "getLong"}、{@code "getString"}；没有专用 getter 的类型
+     *         （LocalDate 等）返回 {@code "getObject"}
      */
     public static String jdbcGetter(String typeName) {
         switch (typeName) {
@@ -82,16 +82,16 @@ public final class TypeNameUtils {
             case "byte[]":
                 return "getBytes";
             default:
-                return "getObject"; // LocalDate/LocalDateTime/enums etc.
+                return "getObject"; // LocalDate/LocalDateTime/enums 等
         }
     }
 
     /**
-     * Returns the JDBC prepared-statement setter method name for a field type.
+     * 返回字段类型对应的 JDBC 预编译语句 setter 方法名。
      *
-     * @param typeName the field type string, e.g. {@code "long"}, {@code "java.lang.String"}
-     * @return the setter method name, e.g. {@code "setLong"}, {@code "setString"}, or
-     *         {@code "setObject"} for types without a dedicated setter
+     * @param typeName 字段类型字符串，如 {@code "long"}、{@code "java.lang.String"}
+     * @return setter 方法名，如 {@code "setLong"}、{@code "setString"}；没有专用 setter 的类型
+     *         返回 {@code "setObject"}
      */
     public static String jdbcSetter(String typeName) {
         switch (typeName) {
@@ -132,10 +132,10 @@ public final class TypeNameUtils {
     }
 
     /**
-     * Returns the boxed type name for a primitive type (used for setter casts).
+     * 返回基本类型的包装类型名（用于 setter 强制转换）。
      *
-     * @param typeName the type string, e.g. {@code "int"}
-     * @return the boxed type name, e.g. {@code "Integer"}; non-primitives pass through unchanged
+     * @param typeName 类型字符串，如 {@code "int"}
+     * @return 包装类型名，如 {@code "Integer"}；非基本类型原样返回
      */
     public static String boxedType(String typeName) {
         switch (typeName) {
@@ -161,24 +161,22 @@ public final class TypeNameUtils {
     }
 
     /**
-     * Returns the JDBC generated-key reader suffix for a field type: the
-     * {@code getXxx} method name without the leading {@code "get"} (e.g.
-     * {@code "getLong"} → {@code "Long"}, {@code "getString"} → {@code "String"}).
-     * Used to emit {@code keys.getXxx(1)} write-back expressions.
+     * 返回字段类型对应的 JDBC 生成键读取器后缀：{@code getXxx} 方法名去掉开头的
+     * {@code "get"}（如 {@code "getLong"} → {@code "Long"}、{@code "getString"} → {@code "String"}）。
+     * 用于生成 {@code keys.getXxx(1)} 回写表达式。
      *
-     * @param typeName the field type string
-     * @return the suffix for the generated-key reader
+     * @param typeName 字段类型字符串
+     * @return 生成键读取器的后缀
      */
     public static String jdbcReturnSuffix(String typeName) {
         return jdbcGetter(typeName).substring(3);
     }
 
     /**
-     * Converts a TypeMirror to a JavaPoet TypeName, preserving generic arguments
-     * (e.g. {@code List<UserEntity>}).
+     * 把 TypeMirror 转换为 JavaPoet TypeName，保留泛型参数（如 {@code List<UserEntity>}）。
      *
-     * @param type the type mirror
-     * @return the corresponding JavaPoet type
+     * @param type 类型镜像
+     * @return 对应的 JavaPoet 类型
      */
     public static TypeName toTypeNameWithGenerics(TypeMirror type) {
         if (type.getKind() == TypeKind.DECLARED) {

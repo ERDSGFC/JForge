@@ -41,7 +41,7 @@ final class RepositoryGenerator {
     /**
      * 为一个 {@code @Dao} 生成仓库实现类并写入源文件。
      *
-     * @param info the parsed repository info
+     * @param info 已解析的仓库信息
      */
     void generate(JForgeProcessor.DaoInfo info) {
         TypeSpec typeSpec = buildImpl(info);
@@ -60,8 +60,8 @@ final class RepositoryGenerator {
      * 组装仓库实现类：类声明、Spring 注解、构造器，然后委托各生成器产出固定 SQL 字段、
      * 行映射、CRUD 方法与 {@code @Query} 方法。
      *
-     * @param info the parsed repository info
-     * @return the generated class specification
+     * @param info 已解析的仓库信息
+     * @return 生成的类规格
      */
     private TypeSpec buildImpl(JForgeProcessor.DaoInfo info) {
         ClassName daoClass = ClassName.get(info.daoPackage, info.daoSimpleName);
@@ -129,10 +129,10 @@ final class RepositoryGenerator {
     }
 
     /**
-     * Reports a compile-time error attached to the given element.
+     * 上报绑定到指定元素的编译期错误。
      *
-     * @param element the offending element
-     * @param message the error message
+     * @param element 出错的元素
+     * @param message 错误消息
      */
     private void error(Element element, String message) {
         processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, message, element);

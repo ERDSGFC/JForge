@@ -6,19 +6,16 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Per-repository or per-method override of the JDBC batch size for the generated
- * {@code save(List<T>)} method.
+ * 针对生成的 {@code save(List<T>)} 方法，按仓库或按方法覆盖 JDBC 批处理大小。
  *
- * <p>Takes precedence over {@link JForgeConfig#batchSize()}: the processor
- * resolves, in order: a {@code @BatchSize} on the method, then on the repository
- * interface, then the {@code JForgeConfig} value (package or element), then the
- * default ({@code 50}).</p>
+ * <p>优先级高于 {@link JForgeConfig#batchSize()}：处理器按以下顺序解析：
+ * 方法上的 {@code @BatchSize}，然后是仓库接口上的，
+ * 然后是 {@code JForgeConfig} 值（包级或元素级），最后是默认值（{@code 50}）。</p>
  *
- * <p>On a repository interface ({@code TYPE}) it applies to every batchable
- * generated method of that repository. On a method ({@code METHOD}) it applies to
- * that method only — the generated batch methods ({@code save(List<T>)} etc.) are
- * inherited from {@code BaseRepository}, so to annotate one the repository must
- * redeclare it with an identical signature:</p>
+ * <p>标注在仓库接口上（{@code TYPE}）时，作用于该仓库所有可批处理的生成方法；
+ * 标注在方法上（{@code METHOD}）时，仅作用于该方法——生成的批处理方法
+ * （{@code save(List<T>)} 等）继承自 {@code BaseRepository}，因此要标注某个方法，
+ * 仓库必须以完全相同的签名重声明它：</p>
  *
  * <pre>{@code
  * public interface UserRepository extends BaseRepository<UserEntity, Long> {
@@ -28,18 +25,17 @@ import java.lang.annotation.Target;
  * }
  * }</pre>
  *
- * <p>A value of {@code 0} disables batching for the annotated element (rows are
- * inserted one by one on a single connection).</p>
+ * <p>值为 {@code 0} 时，对被标注的元素禁用批处理（行在单条连接上逐条插入）。</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target({ElementType.TYPE, ElementType.METHOD})
 public @interface BatchSize {
 
     /**
-     * The JDBC batch chunk size: {@code addBatch()} is called {@code value} times
-     * before each {@code executeBatch()}. {@code 0} disables batching.
+     * JDBC 批处理块大小：每次 {@code executeBatch()} 之前调用 {@code addBatch()}
+     * {@code value} 次。{@code 0} 表示禁用批处理。
      *
-     * @return the batch size
+     * @return 批处理大小
      */
     int value();
 }

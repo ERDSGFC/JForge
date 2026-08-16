@@ -6,8 +6,8 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a primary-key field as database-generated (e.g. IDENTITY / AUTO_INCREMENT).
- * After insert, the generated key is written back into the entity field.
+ * 将主键字段标记为数据库生成（例如 IDENTITY / AUTO_INCREMENT）。
+ * 插入后，生成的键会被回写到实体字段中。
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)

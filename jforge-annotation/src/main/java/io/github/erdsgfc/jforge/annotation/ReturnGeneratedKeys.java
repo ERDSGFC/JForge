@@ -6,8 +6,8 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * On an INSERT {@link Query}, requests {@code RETURN_GENERATED_KEYS} and writes the
- * generated key back into the passed entity's {@code @Id} field.
+ * 在 INSERT 类型的 {@link Query} 上，请求 {@code RETURN_GENERATED_KEYS}，
+ * 并将生成的键回写到传入实体的 {@code @Id} 字段中。
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)

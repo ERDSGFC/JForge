@@ -22,16 +22,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * Verifies that with {@code @JForgeConfig(springBeans = true)} on a package, the
- * generated repository impl (annotated {@code @Repository}, {@code @Autowired}
- * constructor taking the {@code DataSource} + {@code TransactionManager}) is
- * auto-registered by Spring component scanning and injectable — no manual
- * {@code JForge} / repository creation needed.
+ * 验证当包上标有 {@code @JForgeConfig(springBeans = true)} 时，生成的仓库实现
+ * （标注 {@code @Repository}、构造器带 {@code @Autowired} 并接收 {@code DataSource} +
+ * {@code TransactionManager}）会被 Spring 组件扫描自动注册且可注入——无需手动
+ * {@code JForge} / 仓库创建。
  */
 @SpringJUnitConfig(RepositoryAutoInjectionTest.Config.class)
 class RepositoryAutoInjectionTest {
 
-    /** Scans only the {@code autoinject} package (the entities/repository under test). */
+    /** 仅扫描 {@code autoinject} 包（被测的实体/仓库）。 */
     @Configuration
     @ComponentScan("io.github.erdsgfc.jforge.starter.autoinject")
     static class Config {

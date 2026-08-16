@@ -25,28 +25,24 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * End-to-end proof that repository work can be controlled directly by Spring's
- * three transaction mechanisms — {@code @Transactional} (declarative),
- * {@link TransactionTemplate} (programmatic template) and
- * {@link PlatformTransactionManager} (manual) — once {@link SpringTransactionManager}
- * is installed as the global ORM manager.
+ * 端到端验证：一旦 {@link SpringTransactionManager} 被安装为全局 ORM 管理器，
+ * 仓库工作就可由 Spring 的三种事务机制直接控制——{@code @Transactional}
+ * （声明式）、{@link TransactionTemplate}（编程式模板）和
+ * {@link PlatformTransactionManager}（手动）。
  *
- * <p>The context wires a real {@code DataSourceTransactionManager} plus a
- * {@link SpringTransactionManager} bean, mirroring what the auto-configuration
- * does in a Spring Boot application. All three mechanisms participate in the same
- * transaction because the generated repository code obtains connections through
- * its injected {@link TransactionManager} →
- * {@code DataSourceUtils.getConnection}, which returns the Spring-bound
- * transaction connection while one is active.</p>
+ * <p>测试上下文装配了真实的 {@code DataSourceTransactionManager} 与一个
+ * {@link SpringTransactionManager} Bean，模拟 Spring Boot 应用中自动配置的行为。
+ * 三种机制参与同一个事务，因为生成的仓库代码通过注入的 {@link TransactionManager} →
+ * {@code DataSourceUtils.getConnection} 获取连接，在存在活动事务时它返回
+ * Spring 绑定的事务连接。</p>
  */
 @SpringJUnitConfig(SpringTransactionControlTest.TxConfiguration.class)
 class SpringTransactionControlTest {
 
     /**
-     * Explicit application wiring: data source, Spring transaction manager,
-     * {@link TransactionTemplate}, the ORM repository, the {@code @Transactional}
-     * service, and the ORM {@link SpringTransactionManager} injected into the
-     * repository's facade.
+     * 显式的应用装配：数据源、Spring 事务管理器、{@link TransactionTemplate}、
+     * ORM 仓库、{@code @Transactional} 服务，以及注入仓库门面的 ORM
+     * {@link SpringTransactionManager}。
      */
     @Configuration
     @EnableTransactionManagement

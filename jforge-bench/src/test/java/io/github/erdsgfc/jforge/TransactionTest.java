@@ -19,10 +19,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Integration tests for the programmatic transaction API inherited from
- * {@link BaseRepository} via {@link io.github.erdsgfc.jforge.core.TransactionOperations}:
- * the {@code execute} template, manual begin/commit/rollback, thread-bound state,
- * and transaction sharing across repository instances on the same data source.
+ * 编程式事务 API 的集成测试,该 API 经 {@link io.github.erdsgfc.jforge.core.TransactionOperations}
+ * 由 {@link BaseRepository} 继承而来:{@code execute} 模板、手动 begin/commit/rollback、
+ * 线程绑定的状态,以及同一数据源上多个仓库实例间的事务共享。
  */
 class TransactionTest {
 
@@ -108,7 +107,7 @@ class TransactionTest {
         repo.beginTransaction();
         UserEntity saved = repo.save(repo.createEntity().name("pending").age(5));
 
-        // Same thread-local connection: the uncommitted row must be readable.
+        // 同一个线程本地连接:未提交的行必须可读。
         assertNotNull(repo.findById(saved.id()));
         repo.rollback();
 

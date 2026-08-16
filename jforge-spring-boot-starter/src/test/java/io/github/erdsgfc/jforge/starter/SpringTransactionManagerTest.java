@@ -26,11 +26,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Integration tests for {@link SpringTransactionManager}: the ORM's programmatic
- * transaction API wired through Spring's {@link PlatformTransactionManager} instead
- * of the built-in thread-local implementation. Exercises the {@code execute}
- * template, manual begin/commit/rollback, thread-bound state, and participation in
- * an outer Spring transaction.
+ * {@link SpringTransactionManager} 的集成测试：ORM 的编程式事务 API 通过 Spring 的
+ * {@link PlatformTransactionManager} 而非内置的 thread-local 实现驱动。覆盖
+ * {@code execute} 模板、手动 begin/commit/rollback、线程绑定状态以及外层 Spring
+ * 事务的参与。
  */
 class SpringTransactionManagerTest {
 
@@ -117,7 +116,7 @@ class SpringTransactionManagerTest {
         repo.beginTransaction();
         TestUser saved = repo.save(repo.createEntity().name("pending").age(5));
 
-        // Same thread-bound Spring connection: the uncommitted row must be readable.
+        // 同一个线程绑定的 Spring 连接：未提交的行必须可读。
         assertNotNull(repo.findById(saved.id()));
         repo.rollback();
 
@@ -126,8 +125,8 @@ class SpringTransactionManagerTest {
 
     @Test
     void joinsOuterSpringTransaction() {
-        // Simulates a @Transactional service method: a Spring transaction is already
-        // active on the thread; repository work must join it, not start a new one.
+        // 模拟 @Transactional 服务方法：线程上已有活动 Spring 事务；
+        // 仓库工作必须加入它，而不是新开一个。
         TransactionStatus outer = txManager.getTransaction(new DefaultTransactionDefinition());
         repo.save(repo.createEntity().name("outer").age(6));
         assertTrue(repo.isTransactionActive(), "outer Spring tx must be reported active");
@@ -213,7 +212,7 @@ class SpringTransactionManagerTest {
     @Test
     void nestedExecuteRejected() {
         JForgeException ex = assertThrows(JForgeException.class, () -> repo.execute(conn -> {
-            repo.execute(ignored -> null); // nested begin must fail fast
+            repo.execute(ignored -> null); // 嵌套 begin 必须快速失败
             return null;
         }));
 
@@ -246,7 +245,7 @@ class SpringTransactionManagerTest {
             Savepoint sp = conn.setSavepoint("after-keep");
             repo.save(repo.createEntity().name("discard").age(2));
 
-            conn.rollback(sp); // keep the first insert, discard the second
+            conn.rollback(sp); // 保留第一次插入，丢弃第二次
             return null;
         });
 
@@ -268,17 +267,16 @@ class SpringTransactionManagerTest {
 
     @Test
     void manualBeginLeftToOuterTransactionIsClearedOnCompletion() {
-        // Simulates an outer @Transactional boundary that completes without the ORM
-        // committing/rolling back its joined transaction: the completion hook must
-        // clear the stale ORM status so the same thread does not report a spurious
-        // "already active" on its next transaction.
+        // 模拟一个外层 @Transactional 边界在 ORM 未提交/回滚其加入的事务的情况下完成：
+        // 完成钩子必须清除过期的 ORM 状态，使同一线程在下一次事务中不会误报
+        // "already active"。
         TransactionStatus outer = txManager.getTransaction(new DefaultTransactionDefinition());
-        repo.beginTransaction();               // joins the outer tx, stores status
+        repo.beginTransaction();               // 加入外层事务，存储状态
         assertTrue(repo.isTransactionActive());
-        txManager.commit(outer);               // outer completes; ORM status must be cleared
+        txManager.commit(outer);               // 外层完成；ORM 状态必须被清除
 
         assertFalse(repo.isTransactionActive(), "stale status must be cleared by the completion hook");
-        repo.execute(conn -> {                 // must not report "already active"
+        repo.execute(conn -> {                 // 不得误报 "already active"
             repo.save(repo.createEntity().name("after").age(10));
             return null;
         });

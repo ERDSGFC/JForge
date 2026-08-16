@@ -26,9 +26,9 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * ORM (compile-time generated repository) vs raw JDBC: same table, same operations,
- * same connection pool (both with statement caching). The generated repository emits
- * direct JDBC code, so the framework overhead should be negligible.
+ * ORM(编译期生成的仓库)与裸 JDBC 对比:同一张表、相同的操作、
+ * 同一个连接池(两者均启用语句缓存)。生成的仓库输出直接 JDBC 代码,
+ * 因此框架开销应可忽略不计。
  */
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
@@ -44,7 +44,7 @@ public class OrmVsJdbcBenchmark {
     private UserRepository repo;
     private long seededId;
 
-    /** Creates the shared HikariCP pool (with statement caching) and seeds one row. */
+    /** 创建共享的 HikariCP 连接池(带语句缓存)并预置一行数据。 */
     @Setup(Level.Trial)
     public void setUp() throws SQLException {
         HikariConfig config = new HikariConfig();
@@ -69,35 +69,35 @@ public class OrmVsJdbcBenchmark {
         repo = new JForge(dataSource).repository(UserRepository.class);
     }
 
-    /** Closes the shared pool. */
+    /** 关闭共享连接池。 */
     @TearDown(Level.Trial)
     public void tearDown() {
         dataSource.close();
     }
 
-    // ==================== ORM (generated repository) ====================
+    // ==================== ORM(生成的仓库) ====================
 
-    /** Generated insert with generated-key write-back. */
+    /** 生成的插入,带生成主键回写。 */
     @Benchmark
     public UserEntity ormInsert() {
         return repo.save(new UserEntity_Impl().name("heihei").age(25));
     }
 
-    /** Generated select by primary key. */
+    /** 按主键查询的生成代码。 */
     @Benchmark
     public UserEntity ormFindById() {
         return repo.findById(seededId);
     }
 
-    /** Generated select all rows. */
+    /** 查询全部行的生成代码。 */
     @Benchmark
     public List<UserEntity> ormFindAll() {
         return repo.findAll();
     }
 
-    // ==================== Raw JDBC ====================
+    // ==================== 裸 JDBC ====================
 
-    /** Raw JDBC insert with generated-key read-back. */
+    /** 裸 JDBC 插入,读回生成的主键。 */
     @Benchmark
     public UserEntity jdbcInsert() throws SQLException {
         try (Connection conn = dataSource.getConnection();
@@ -117,7 +117,7 @@ public class OrmVsJdbcBenchmark {
         }
     }
 
-    /** Raw JDBC select by primary key (column-index reads). */
+    /** 裸 JDBC 按主键查询(按列索引读取)。 */
     @Benchmark
     public UserEntity jdbcFindById() throws SQLException {
         try (Connection conn = dataSource.getConnection();
@@ -134,7 +134,7 @@ public class OrmVsJdbcBenchmark {
         }
     }
 
-    /** Raw JDBC select all rows (column-index reads). */
+    /** 裸 JDBC 查询全部行(按列索引读取)。 */
     @Benchmark
     public List<UserEntity> jdbcFindAll() throws SQLException {
         try (Connection conn = dataSource.getConnection();

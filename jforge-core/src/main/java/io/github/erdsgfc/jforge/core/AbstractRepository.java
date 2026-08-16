@@ -25,8 +25,8 @@ public abstract class AbstractRepository implements TransactionOperations {
     protected final TransactionManager transactionManager;
 
     /**
-     * @param dataSource         the data source the repository reads/writes through
-     * @param transactionManager the transaction manager the repository delegates to
+     * @param dataSource         仓库读写所用数据源
+     * @param transactionManager 仓库委托的事务管理器
      */
     protected AbstractRepository(DataSource dataSource, TransactionManager transactionManager) {
         this.dataSource = dataSource;
@@ -34,20 +34,19 @@ public abstract class AbstractRepository implements TransactionOperations {
     }
 
     /**
-     * Returns the thread-bound connection: the shared transaction connection while a
-     * transaction is active, otherwise a fresh pooled connection.
+     * 返回线程绑定的连接：事务激活时为共享的事务连接，否则为新的池化连接。
      *
-     * @return a usable {@link Connection}
+     * @return 一个可用的 {@link Connection}
      */
     protected final Connection getConnection() {
         return transactionManager.connection(dataSource);
     }
 
     /**
-     * Releases a connection obtained via {@link #getConnection()}: closes it unless it
-     * is the transaction-bound connection, which stays open until commit/rollback.
+     * 释放经 {@link #getConnection()} 获取的连接：除非是事务绑定的连接（保持打开直到
+     * commit/rollback），否则将其关闭。
      *
-     * @param conn the connection to release
+     * @param conn 要释放的连接
      */
     protected final void releaseConnection(Connection conn) {
         transactionManager.release(conn, dataSource);

@@ -29,7 +29,7 @@ public final class JForge {
     /**
      * 使用内置 {@link SimpleTransactionManager} 创建门面。
      *
-     * @param dataSource the data source all repositories will use
+     * @param dataSource 所有仓库将使用的数据源
      */
     public JForge(DataSource dataSource) {
         this(dataSource, new SimpleTransactionManager());
@@ -39,8 +39,8 @@ public final class JForge {
      * 使用指定事务管理器创建门面。该管理器只归此门面持有：经 {@link #repository(Class)}
      * 创建仓库时传入生成的实现（构造器注入，无全局状态），不同门面实例的管理器完全隔离。
      *
-     * @param dataSource         the data source all repositories will use
-     * @param transactionManager the transaction manager bound to this facade
+     * @param dataSource         所有仓库将使用的数据源
+     * @param transactionManager 绑定到此门面的事务管理器
      */
     public JForge(DataSource dataSource, TransactionManager transactionManager) {
         this.dataSource = dataSource;
@@ -48,27 +48,26 @@ public final class JForge {
         LOG.info("JForge initialized with TransactionManager {}", transactionManager.getClass().getSimpleName());
     }
 
-    /** Returns the data source bound to this facade. */
+    /** 返回绑定到此门面的数据源。 */
     public DataSource dataSource() {
         return dataSource;
     }
 
-    /** Returns the transaction manager installed by this facade. */
+    /** 返回此门面安装的事务管理器。 */
     public TransactionManager transactionManager() {
         return transactionManager;
     }
 
     /**
-     * Returns the (cached) repository instance for the given type. The first call creates
-     * it via the generated {@link Repositories#create(Class, DataSource, TransactionManager)},
-     * passing this facade's {@link #transactionManager} so the generated impl holds it as a
-     * {@code private final} field (JIT-friendly, no per-call static lookup); subsequent
-     * calls return the same instance.
+     * 返回给定类型的（缓存）仓库实例。首次调用经生成的
+     * {@link Repositories#create(Class, DataSource, TransactionManager)} 创建，传入本门面的
+     * {@link #transactionManager}，使生成的实现以 {@code private final} 字段持有它（利于 JIT，
+     * 无每次调用的静态查找）；后续调用返回同一实例。
      *
-     * @param type the repository interface type
-     * @param <T>  the repository type
-     * @return a cached repository instance of type {@code T}
-     * @throws IllegalArgumentException if no repository was generated for {@code type}
+     * @param type 仓库接口类型
+     * @param <T>  仓库类型
+     * @return 类型为 {@code T} 的缓存仓库实例
+     * @throws IllegalArgumentException 若未为 {@code type} 生成仓库
      */
     @SuppressWarnings("unchecked")
     public <T> T repository(Class<T> type) {

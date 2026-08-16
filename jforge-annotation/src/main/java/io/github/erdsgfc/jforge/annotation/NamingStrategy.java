@@ -1,14 +1,13 @@
 package io.github.erdsgfc.jforge.annotation;
 
 /**
- * Determines how a property method name is mapped to a database column name
- * when no {@code @Column} annotation is present.
+ * 决定在没有 {@code @Column} 注解时，属性方法名如何映射为数据库列名。
  */
 public enum NamingStrategy {
 
-    /** Keep the method name as-is (e.g. {@code userName()} → column {@code userName}). */
+    /** 方法名原样保留（例如 {@code userName()} → 列 {@code userName}）。 */
     NONE,
 
-    /** Convert lower camel case to snake case (e.g. {@code userName()} → column {@code user_name}). */
+    /** 将小驼峰转换为蛇形命名（例如 {@code userName()} → 列 {@code user_name}）。 */
     CAMEL_TO_SNAKE;
 }

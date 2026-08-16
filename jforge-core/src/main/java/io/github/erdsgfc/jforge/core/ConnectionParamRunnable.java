@@ -4,31 +4,28 @@ import java.sql.Connection;
 import java.sql.SQLException;
 
 /**
- * Void-returning callback executed with a framework-provided {@link Connection}
- * together with an externally supplied parameter via
- * {@link TransactionOperations#run(Object, ConnectionParamRunnable)} — or on a
- * single shared connection without a transaction via
- * {@link TransactionOperations#runWithoutTransaction(Object, ConnectionParamRunnable)}.
- * The counterpart of {@link ConnectionParamCallback} for side-effect-only bodies
- * that need no {@code return null}.
+ * 无返回值、由框架提供 {@link Connection} 并附带外部参数的回调,经
+ * {@link TransactionOperations#run(Object, ConnectionParamRunnable)} 在事务内执行——
+ * 或经
+ * {@link TransactionOperations#runWithoutTransaction(Object, ConnectionParamRunnable)}
+ * 在无事务的单个共享连接上执行。是 {@link ConnectionParamCallback} 的对应物,用于
+ * 只需副作用、无需 {@code return null} 的工作体。
  *
- * <p>The callback receives the transaction-bound (or scope-shared)
- * {@link Connection} and the user-supplied parameter; a {@link SQLException} is
- * wrapped into {@link io.github.erdsgfc.jforge.JForgeException} with a rollback
- * (or, for a scope, without one — statements already executed stay committed).</p>
+ * <p>回调接收事务绑定(或作用域共享)的 {@link Connection} 与用户提供的参数;
+ * {@link SQLException} 会被包装为 {@link io.github.erdsgfc.jforge.JForgeException}
+ * 并回滚(作用域场景则无回滚——已执行的语句保持已提交)。</p>
  *
- * @param <P> the type of the externally supplied parameter
+ * @param <P> 外部提供的参数类型
  */
 @FunctionalInterface
 public interface ConnectionParamRunnable<P> {
 
     /**
-     * Runs the work with the shared connection and the supplied parameter.
+     * 在共享连接上、使用提供的参数执行工作。
      *
-     * @param conn  the connection bound to the active transaction, or shared by
-     *              the active connection scope
-     * @param param the externally supplied parameter
-     * @throws SQLException if a JDBC operation fails
+     * @param conn  绑定到活动事务的连接,或由活动连接作用域共享的连接
+     * @param param 外部提供的参数
+     * @throws SQLException 若 JDBC 操作失败
      */
     void doInConnection(Connection conn, P param) throws SQLException;
 }

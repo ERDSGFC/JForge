@@ -9,198 +9,164 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
- * Programmatic transaction contract inherited by every repository.
+ * 每个仓库都继承的编程式事务契约。
  *
- * <p>User {@code @Dao} interfaces extend {@link BaseRepository}, which extends
- * this interface, so every generated repository exposes {@code beginTransaction/
- * commit/rollback/isTransactionActive} plus the {@link #execute} template. The
- * transaction lives on the current thread (backed by the global
- * {@link io.github.erdsgfc.jforge.TransactionManager}); while it is active, all repositories
- * bound to the same {@code DataSource} share one connection and one transaction
- * boundary, so multi-repository work can be wrapped in a single transaction.</p>
+ * <p>用户的 {@code @Dao} 接口继承 {@link BaseRepository}，而后者继承本接口，因此每个生成的
+ * 仓库都暴露 {@code beginTransaction/commit/rollback/isTransactionActive} 及 {@link #execute}
+ * 模板。事务存活于当前线程（由全局 {@link io.github.erdsgfc.jforge.TransactionManager} 支撑）；
+ * 激活期间，绑定到同一 {@code DataSource} 的所有仓库共享一个连接与一个事务边界，
+ * 因此多仓库工作可包进单个事务。</p>
  *
- * <p>Nested ORM-level transactions are not supported: calling {@link #beginTransaction()}
- * while a transaction begun via this API is still active on the thread throws an
- * {@link io.github.erdsgfc.jforge.JForgeException}. With the {@code jforge-spring-boot-starter}
- * installed, calling it inside an outer Spring transaction (e.g. a
- * {@code @Transactional} service method) instead joins that transaction
- * ({@code PROPAGATION_REQUIRED}).</p>
+ * <p>不支持 ORM 层级的嵌套事务：本线程上经此 API 开启的事务仍处于活动状态时再调用
+ * {@link #beginTransaction()} 会抛出 {@link io.github.erdsgfc.jforge.JForgeException}。
+ * 安装了 {@code jforge-spring-boot-starter} 后，在外层 Spring 事务（如 {@code @Transactional}
+ * 服务方法）内调用则改为加入该事务（{@code PROPAGATION_REQUIRED}）。</p>
  *
- * <p>Both the transactional family ({@code execute}/{@code run}) and the
- * connection-scope family ({@code executeWithoutTransaction}/
- * {@code runWithoutTransaction}) cover the full shape matrix — with or without an
- * external parameter, with or without a return value, and with or without the
- * {@link Connection} exposed to the callback. All variants delegate to one
- * private core each ({@link #inTransaction} / {@link #inScope}), so the
- * commit/rollback (or borrow/release) logic lives in exactly one place.</p>
+ * <p>事务族（{@code execute}/{@code run}）与连接作用域族（{@code executeWithoutTransaction}/
+ * {@code runWithoutTransaction}）都覆盖完整的方法形态矩阵——带或不带外部参数、带或不带返回值、
+ * 是否向回调暴露 {@link Connection}。所有变体各自委托给一个私有核心（{@link #inTransaction} /
+ * {@link #inScope}），使 commit/rollback（或借/还）逻辑只存在于一处。</p>
  */
 public interface TransactionOperations {
 
     /**
-     * Starts a new transaction on the current thread: acquires a connection from
-     * the repository's data source, disables auto-commit, and binds it to the
-     * thread so all subsequent repository calls join the transaction.
+     * 在当前线程开启新事务：从仓库的数据源获取连接、关闭 auto-commit，并绑定到线程，
+     * 使后续所有仓库调用都加入该事务。
      *
-     * <p>Returns the transaction-bound {@link Connection} so callers can apply
-     * raw-JDBC control (isolation, savepoints, direct SQL) — and so the default
-     * {@link #execute} can hand it to the callback. The connection is owned by the
-     * transaction: do not close it directly, and do not use it after
-     * {@link #commit()} or {@link #rollback()}.</p>
+     * <p>返回事务绑定的 {@link Connection}，让调用方可以进行原生 JDBC 控制（隔离级别、保存点、
+     * 直接 SQL）——默认的 {@link #execute} 也会把它交给回调。连接归事务所有：不要直接关闭它，
+     * 也不要在 {@link #commit()} 或 {@link #rollback()} 之后使用。</p>
      *
-     * <p>With the {@code jforge-spring-boot-starter} installed, calling this inside an
-     * already-active Spring transaction joins it ({@code PROPAGATION_REQUIRED})
-     * instead of throwing; the throw is reserved for a second ORM-level begin
-     * without an intervening commit/rollback.</p>
+     * <p>安装了 {@code jforge-spring-boot-starter} 后，在已激活的 Spring 事务内调用本方法会
+     * 加入该事务（{@code PROPAGATION_REQUIRED}）而非抛出；抛出仅保留给中间没有 commit/rollback
+     * 的第二次 ORM 层级 begin。</p>
      *
-     * @return the connection bound to the newly started transaction
-     * @throws io.github.erdsgfc.jforge.JForgeException if another ORM-level transaction is already
-     *                                  active on this thread, or the connection
-     *                                  cannot be obtained
+     * @return 绑定到新开启事务的连接
+     * @throws io.github.erdsgfc.jforge.JForgeException 若本线程已有另一个 ORM 层级事务处于活动
+     *                                  状态，或无法获取连接
      */
     Connection beginTransaction();
 
     /**
-     * Commits the active transaction and releases its connection.
+     * 提交当前活动事务并释放其连接。
      *
-     * @throws io.github.erdsgfc.jforge.JForgeException if no transaction is active, or the commit fails
+     * @throws io.github.erdsgfc.jforge.JForgeException 若没有活动事务，或提交失败
      */
     void commit();
 
     /**
-     * Rolls back the active transaction and releases its connection.
+     * 回滚当前活动事务并释放其连接。
      *
-     * @throws io.github.erdsgfc.jforge.JForgeException if no transaction is active, or the rollback fails
+     * @throws io.github.erdsgfc.jforge.JForgeException 若没有活动事务，或回滚失败
      */
     void rollback();
 
     /**
-     * Returns whether a transaction is currently active on this thread. With the
-     * built-in {@code SimpleTransactionManager} this is true only for a transaction
-     * begun via {@link #beginTransaction()}; with the {@code jforge-spring-boot-starter}
-     * installed it is also true while the thread participates in an outer Spring
-     * transaction (e.g. a {@code @Transactional} service method), detected through
-     * Spring's {@code TransactionSynchronizationManager}.
+     * 返回本线程当前是否有活动事务。使用内置 {@code SimpleTransactionManager} 时，仅对经
+     * {@link #beginTransaction()} 开启的事务返回 true；安装了 {@code jforge-spring-boot-starter}
+     * 后，当线程参与外层 Spring 事务（如 {@code @Transactional} 服务方法）时也返回 true，
+     * 通过 Spring 的 {@code TransactionSynchronizationManager} 检测。
      *
-     * @return {@code true} when a transaction is active on this thread
+     * @return 本线程有活动事务时返回 {@code true}
      */
     boolean isTransactionActive();
 
     /**
-     * Marks the active transaction for rollback without throwing: the transaction is
-     * rolled back when it completes, even if {@link #execute} returns normally. Used
-     * to abort on a business rule while still returning a result from the callback.
+     * 不抛出异常地标记当前事务为回滚：即使 {@link #execute} 正常返回，事务完成时也会被回滚。
+     * 用于违反业务规则时中止，同时仍能从回调返回结果。
      *
-     * @throws io.github.erdsgfc.jforge.JForgeException if no transaction is active
+     * @throws io.github.erdsgfc.jforge.JForgeException 若没有活动事务
      */
     void markRollbackOnly();
 
     /**
-     * Returns whether the active transaction has been marked for rollback via
-     * {@link #markRollbackOnly()}. With the Spring starter installed this is also
-     * {@code true} when the outer Spring transaction the ORM joined has been marked
-     * rollback-only.
+     * 返回当前活动事务是否已通过 {@link #markRollbackOnly()} 标记为回滚。安装了 Spring starter
+     * 后，当 ORM 加入的外层 Spring 事务被标记为 rollback-only 时同样返回 {@code true}。
      *
-     * @return {@code true} when the active transaction is marked for rollback
+     * @return 当前活动事务被标记为回滚时返回 {@code true}
      */
     boolean isRollbackOnly();
 
     // ---- 事务族:execute/run ----------------------------------------------
 
     /**
-     * Runs {@code callback} inside a transaction: begins a transaction, invokes the
-     * callback with the transaction-bound {@link Connection}, then commits on
-     * success. If the callback or the commit throws, the transaction is rolled back
-     * and the exception propagated — an {@link SQLException} from the callback is
-     * wrapped into {@link JForgeException}; any {@link RuntimeException} or
-     * {@link Error} propagates unchanged.
+     * 在事务内运行 {@code callback}：开启事务，以事务绑定的 {@link Connection} 调用回调，
+     * 成功后提交。若回调或提交抛出异常，则回滚事务并传播异常——来自回调的 {@link SQLException}
+     * 被包装为 {@link JForgeException}；任何 {@link RuntimeException} 或 {@link Error}
+     * 原样传播。
      *
-     * <p>The {@code Connection} parameter gives callers the raw-JDBC control the ORM
-     * deliberately does not abstract — isolation level, savepoints, read-only, query
-     * timeouts or direct SQL that participates in the transaction — without exposing
-     * connection ownership: {@code execute} manages the connection's lifecycle, and
-     * the low-level get/release pair stays private in the generated implementation.</p>
+     * <p>{@code Connection} 参数赋予调用方 ORM 刻意不抽象的原生 JDBC 控制——隔离级别、保存点、
+     * 只读、查询超时或参与事务的直接 SQL——同时不暴露连接所有权：{@code execute} 管理连接的
+     * 生命周期，底层的获取/释放对在生成实现中保持私有。</p>
      *
-     * @param callback the transactional work, receiving the transaction-bound connection
-     * @param <T>      the callback's return type
-     * @return the callback's result, or {@code null} for side-effect-only bodies
-     * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
-     *                      or the callback throws SQLException
+     * @param callback 事务工作，接收事务绑定的连接
+     * @param <T>      回调的返回类型
+     * @return 回调的结果，仅副作用（无返回值）的代码体返回 {@code null}
+     * @throws JForgeException 若事务无法开启、提交或回滚，或回调抛出 SQLException
      */
     default <T> T execute(ConnectionCallback<T> callback) {
         return inTransaction(callback);
     }
 
     /**
-     * Runs {@code callback} inside a transaction, passing it the externally supplied
-     * {@code param} alongside the transaction-bound {@link Connection}. Behaviour is
-     * identical to {@link #execute(ConnectionCallback)}: commit on success, rollback
-     * and propagate on any exception (an {@link SQLException} from the callback is
-     * wrapped into {@link JForgeException}). The parameter must be a typed value so the
-     * compiler can infer {@code P}; a literal {@code null} requires an explicit type
-     * (a cast or an explicitly-typed lambda parameter). To run a transaction without
-     * a parameter, use {@link #execute(ConnectionCallback)}.
+     * 在事务内运行 {@code callback}，把外部提供的 {@code param} 与事务绑定的
+     * {@link Connection} 一并传给回调。行为与 {@link #execute(ConnectionCallback)} 相同：
+     * 成功提交，任何异常都回滚并传播（来自回调的 {@link SQLException} 被包装为
+     * {@link JForgeException}）。参数必须是类型化的值，编译器才能推断 {@code P}；字面量
+     * {@code null} 需要显式类型（强制转换或显式类型的 lambda 参数）。要运行无参数的事务，
+     * 请使用 {@link #execute(ConnectionCallback)}。
      *
-     * @param param    the externally supplied parameter, forwarded to the callback
-     * @param callback the transactional work, receiving the connection and the parameter
-     * @param <T>      the callback's return type
-     * @param <P>      the parameter type
-     * @return the callback's result, or {@code null} for side-effect-only bodies
-     * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
-     *                      or the callback throws SQLException
+     * @param param    外部提供的参数，转发给回调
+     * @param callback 事务工作，接收连接与参数
+     * @param <T>      回调的返回类型
+     * @param <P>      参数类型
+     * @return 回调的结果，仅副作用的代码体返回 {@code null}
+     * @throws JForgeException 若事务无法开启、提交或回滚，或回调抛出 SQLException
      */
     default <T, P> T execute(P param, ConnectionParamCallback<T, P> callback) {
         return inTransaction(conn -> callback.doInConnection(conn, param));
     }
 
     /**
-     * Runs {@code supplier} inside a transaction without exposing the connection —
-     * for bodies that call only repository methods (which join the transaction
-     * implicitly) and never need raw-JDBC control. No checked-exception handling is
-     * required: without the {@code Connection} there is no {@link SQLException}
-     * path; repository failures surface as the unchecked {@link JForgeException}.
-     * Commit/rollback semantics are identical to
-     * {@link #execute(ConnectionCallback)}.
+     * 在事务内运行 {@code supplier} 但不暴露连接——适用于只调用仓库方法（隐式加入事务）
+     * 且不需要原生 JDBC 控制的代码体。无需处理受检异常：没有 {@code Connection} 就没有
+     * {@link SQLException} 路径；仓库失败以非受检的 {@link JForgeException} 呈现。
+     * 提交/回滚语义与 {@link #execute(ConnectionCallback)} 相同。
      *
-     * @param supplier the transactional work, returning a value
-     * @param <T>      the result type
-     * @return the supplier's result
-     * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
-     *                      or a repository call fails
+     * @param supplier 事务工作，返回一个值
+     * @param <T>      结果类型
+     * @return supplier 的结果
+     * @throws JForgeException 若事务无法开启、提交或回滚，或仓库调用失败
      */
     default <T> T execute(Supplier<T> supplier) {
         return inTransaction(ignored -> supplier.get());
     }
 
     /**
-     * Runs {@code function} inside a transaction, passing it the externally supplied
-     * {@code param} but not the connection — the parameterised counterpart of
-     * {@link #execute(Supplier)} for bodies that call only repository methods.
-     * No checked-exception handling is required (no {@link SQLException} path);
-     * commit/rollback semantics are identical to
-     * {@link #execute(Object, ConnectionParamCallback)}.
+     * 在事务内运行 {@code function}，把外部提供的 {@code param} 传给它但不传连接——
+     * {@link #execute(Supplier)} 的带参版本，适用于只调用仓库方法的代码体。
+     * 无需处理受检异常（无 {@link SQLException} 路径）；提交/回滚语义与
+     * {@link #execute(Object, ConnectionParamCallback)} 相同。
      *
-     * @param param    the externally supplied parameter, forwarded to the body
-     * @param function the transactional work, receiving the parameter
-     * @param <T>      the result type
-     * @param <P>      the parameter type
-     * @return the function's result
-     * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
-     *                      or a repository call fails
+     * @param param    外部提供的参数，转发给代码体
+     * @param function 事务工作，接收参数
+     * @param <T>      结果类型
+     * @param <P>      参数类型
+     * @return function 的结果
+     * @throws JForgeException 若事务无法开启、提交或回滚，或仓库调用失败
      */
     default <T, P> T execute(P param, Function<P, T> function) {
         return inTransaction(ignored -> function.apply(param));
     }
 
     /**
-     * Runs {@code runnable} inside a transaction without a return value — the
-     * void counterpart of {@link #execute(ConnectionCallback)}, for side-effect-only
-     * bodies that need no {@code return null}. Behaviour is identical: commit on
-     * success, rollback and propagate on any exception (an {@link SQLException} from
-     * the body is wrapped into {@link JForgeException}).
+     * 在事务内运行 {@code runnable} 且无返回值——{@link #execute(ConnectionCallback)} 的
+     * void 版本，适用于无需 {@code return null} 的仅副作用代码体。行为相同：成功提交，
+     * 任何异常都回滚并传播（来自代码体的 {@link SQLException} 被包装为
+     * {@link JForgeException}）。
      *
-     * @param runnable the transactional work
-     * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
-     *                      or the body throws SQLException
+     * @param runnable 事务工作
+     * @throws JForgeException 若事务无法开启、提交或回滚，或代码体抛出 SQLException
      */
     default void run(ConnectionRunnable runnable) {
         execute(conn -> {
@@ -210,16 +176,14 @@ public interface TransactionOperations {
     }
 
     /**
-     * Runs {@code runnable} inside a transaction, passing it the externally supplied
-     * {@code param} alongside the transaction-bound {@link Connection}, without a
-     * return value — the void counterpart of
-     * {@link #execute(Object, ConnectionParamCallback)}.
+     * 在事务内运行 {@code runnable}，把外部提供的 {@code param} 与事务绑定的
+     * {@link Connection} 一并传给它，且无返回值——{@link #execute(Object, ConnectionParamCallback)}
+     * 的 void 版本。
      *
-     * @param param    the externally supplied parameter, forwarded to the body
-     * @param runnable the transactional work, receiving the connection and the parameter
-     * @param <P>      the parameter type
-     * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
-     *                      or the body throws SQLException
+     * @param param    外部提供的参数，转发给代码体
+     * @param runnable 事务工作，接收连接与参数
+     * @param <P>      参数类型
+     * @throws JForgeException 若事务无法开启、提交或回滚，或代码体抛出 SQLException
      */
     default <P> void run(P param, ConnectionParamRunnable<P> runnable) {
         execute(param, (conn, p) -> {
@@ -229,15 +193,13 @@ public interface TransactionOperations {
     }
 
     /**
-     * Runs {@code runnable} inside a transaction without a return value and without
-     * exposing the connection — the void counterpart of {@link #execute(Supplier)}
-     * for side-effect-only bodies that call only repository methods. No
-     * checked-exception handling is required (no {@link SQLException} path);
-     * commit/rollback semantics are identical to {@link #run(ConnectionRunnable)}.
+     * 在事务内运行 {@code runnable}，无返回值且不暴露连接——{@link #execute(Supplier)}
+     * 的 void 版本，适用于只调用仓库方法的仅副作用代码体。无需处理受检异常
+     * （无 {@link SQLException} 路径）；提交/回滚语义与 {@link #run(ConnectionRunnable)}
+     * 相同。
      *
-     * @param runnable the transactional work
-     * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
-     *                      or a repository call fails
+     * @param runnable 事务工作
+     * @throws JForgeException 若事务无法开启、提交或回滚，或仓库调用失败
      */
     default void run(Runnable runnable) {
         execute(ignored -> {
@@ -247,17 +209,15 @@ public interface TransactionOperations {
     }
 
     /**
-     * Runs {@code consumer} inside a transaction, passing it the externally supplied
-     * {@code param} but not the connection, without a return value — the void
-     * counterpart of {@link #execute(Object, Function)}. No checked-exception
-     * handling is required (no {@link SQLException} path); commit/rollback
-     * semantics are identical to {@link #run(Object, ConnectionParamRunnable)}.
+     * 在事务内运行 {@code consumer}，把外部提供的 {@code param} 传给它但不传连接，
+     * 且无返回值——{@link #execute(Object, Function)} 的 void 版本。无需处理受检异常
+     * （无 {@link SQLException} 路径）；提交/回滚语义与
+     * {@link #run(Object, ConnectionParamRunnable)} 相同。
      *
-     * @param param    the externally supplied parameter, forwarded to the body
-     * @param consumer the transactional work, receiving the parameter
-     * @param <P>      the parameter type
-     * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
-     *                      or a repository call fails
+     * @param param    外部提供的参数，转发给代码体
+     * @param consumer 事务工作，接收参数
+     * @param <P>      参数类型
+     * @throws JForgeException 若事务无法开启、提交或回滚，或仓库调用失败
      */
     default <P> void run(P param, Consumer<P> consumer) {
         execute(param, (ignored, p) -> {
@@ -269,129 +229,107 @@ public interface TransactionOperations {
     // ---- 作用域族:executeWithoutTransaction/runWithoutTransaction -----------
 
     /**
-     * Begins a connection scope on the current thread: borrows a single connection
-     * from the repository's data source and binds it to the thread so all
-     * repository calls share it until {@link #endConnectionScope()}. The generated
-     * implementation delegates to {@code TransactionManager.beginScope(dataSource)}.
+     * 在当前线程开启连接作用域：从仓库的数据源借用单个连接并绑定到线程，使所有仓库调用共享
+     * 它，直到 {@link #endConnectionScope()}。生成的实现委托给
+     * {@code TransactionManager.beginScope(dataSource)}。
      *
-     * <p>Unlike {@link #beginTransaction()} the connection keeps auto-commit
-     * enabled: a scope only saves pool round-trips, it does not provide atomicity.
-     * A scope begun inside an active transaction (or Spring {@code @Transactional})
-     * reuses the transaction connection and needs no cleanup.</p>
+     * <p>与 {@link #beginTransaction()} 不同，连接保持 auto-commit 启用：作用域只是省去连接池
+     * 往返，不提供原子性。在活动事务（或 Spring {@code @Transactional}）内开启的作用域复用
+     * 事务连接，无需清理。</p>
      *
-     * @return the shared scope connection, owned by the scope — do not close it
-     *         directly, and do not use it after {@link #endConnectionScope()}
-     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained
+     * @return 共享的作用域连接，归作用域所有——不要直接关闭它，也不要在
+     *         {@link #endConnectionScope()} 之后使用
+     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接
      */
     Connection beginConnectionScope();
 
     /**
-     * Ends the connection scope begun by {@link #beginConnectionScope()}: returns
-     * the scope connection to the pool. A no-op when the thread has no active
-     * scope (e.g. a scope that joined an active transaction).
+     * 结束由 {@link #beginConnectionScope()} 开启的连接作用域：把作用域连接归还连接池。
+     * 当线程没有活动作用域（如并入活动事务的作用域）时为 no-op。
      */
     void endConnectionScope();
 
     /**
-     * Runs {@code callback} on a single shared connection but without a
-     * transaction: the ORM borrows one connection from the pool, the callback's
-     * repository calls reuse it, and the connection is returned to the pool when
-     * the callback finishes — success or failure. The connection keeps auto-commit
-     * enabled, so every SQL statement commits independently: unlike
-     * {@link #execute(ConnectionCallback)} there is <em>no atomicity</em> —
-     * statements executed before the callback throws stay committed.
+     * 在单个共享连接上运行 {@code callback} 但不开启事务：ORM 从连接池借用一条连接，回调中的
+     * 仓库调用复用该连接，回调结束后（无论成败）归还连接池。连接保持 auto-commit 启用，
+     * 因此每条 SQL 语句独立提交：与 {@link #execute(ConnectionCallback)} 不同，
+     * 这里 <em>没有原子性</em>——回调抛出前已执行的语句保持已提交。
      *
-     * <p>The callback type is the shared {@link ConnectionCallback} — the same
-     * functional shape as the transactional {@link #execute(ConnectionCallback)},
-     * so a lambda works unchanged in both contexts. Use this for multi-statement
-     * work that only wants to avoid a pool round-trip per statement and needs no
-     * rollback semantics; use {@link #execute(ConnectionCallback)} when the
-     * statements must commit or roll back together. A transaction cannot be begun
-     * inside the scope (it throws {@link io.github.erdsgfc.jforge.JForgeException}).</p>
+     * <p>回调类型是共享的 {@link ConnectionCallback}——与事务版 {@link #execute(ConnectionCallback)}
+     * 的函数形态相同，因此同一个 lambda 在两种上下文中无需改动即可使用。当多语句工作只想省去
+     * 每条语句的池往返、不需要回滚语义时用它；当语句必须一起提交或回滚时用
+     * {@link #execute(ConnectionCallback)}。作用域内不能开启事务（会抛出
+     * {@link io.github.erdsgfc.jforge.JForgeException}）。</p>
      *
-     * @param callback the work to run on the shared connection
-     * @param <T>      the callback's return type
-     * @return the callback's result, or {@code null} for side-effect-only bodies
-     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
-     *                                  or the callback throws {@link SQLException}
+     * @param callback 在共享连接上运行的工作
+     * @param <T>      回调的返回类型
+     * @return 回调的结果，仅副作用的代码体返回 {@code null}
+     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接，或回调抛出
+     *                                  {@link SQLException}
      */
     default <T> T executeWithoutTransaction(ConnectionCallback<T> callback) {
         return inScope(callback);
     }
 
     /**
-     * Runs {@code callback} on a single shared connection without a transaction,
-     * passing it the externally supplied {@code param} alongside the shared
-     * {@link Connection} — the parameterised counterpart of
-     * {@link #executeWithoutTransaction(ConnectionCallback)}. Behaviour is
-     * identical: one borrowed connection, kept auto-commit (no atomicity), returned
-     * to the pool in a {@code finally}; a {@link SQLException} from the callback is
-     * wrapped into {@link JForgeException}.
+     * 在单个共享连接上运行 {@code callback} 但不开启事务，把外部提供的 {@code param} 与共享的
+     * {@link Connection} 一并传给它——{@link #executeWithoutTransaction(ConnectionCallback)}
+     * 的带参版本。行为相同：借用一条连接，保持 auto-commit（无原子性），在 {@code finally}
+     * 中归还连接池；来自回调的 {@link SQLException} 被包装为 {@link JForgeException}。
      *
-     * @param param    the externally supplied parameter, forwarded to the callback
-     * @param callback the work to run on the shared connection
-     * @param <T>      the callback's return type
-     * @param <P>      the parameter type
-     * @return the callback's result, or {@code null} for side-effect-only bodies
-     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
-     *                                  or the callback throws {@link SQLException}
+     * @param param    外部提供的参数，转发给回调
+     * @param callback 在共享连接上运行的工作
+     * @param <T>      回调的返回类型
+     * @param <P>      参数类型
+     * @return 回调的结果，仅副作用的代码体返回 {@code null}
+     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接，或回调抛出
+     *                                  {@link SQLException}
      */
     default <T, P> T executeWithoutTransaction(P param, ConnectionParamCallback<T, P> callback) {
         return inScope(conn -> callback.doInConnection(conn, param));
     }
 
     /**
-     * Runs {@code supplier} on a single shared connection without a transaction,
-     * without exposing the connection — for bodies that call only repository
-     * methods (which share the scope connection implicitly) and never need
-     * raw-JDBC control. No checked-exception handling is required (no
-     * {@link SQLException} path); borrow/release semantics are identical to
-     * {@link #executeWithoutTransaction(ConnectionCallback)}.
+     * 在单个共享连接上运行 {@code supplier} 但不开启事务，也不暴露连接——适用于只调用仓库方法
+     * （隐式共享作用域连接）且不需要原生 JDBC 控制的代码体。无需处理受检异常（无
+     * {@link SQLException} 路径）；借/还语义与
+     * {@link #executeWithoutTransaction(ConnectionCallback)} 相同。
      *
-     * @param supplier the work to run on the shared connection, returning a value
-     * @param <T>      the result type
-     * @return the supplier's result
-     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
-     *                                  or a repository call fails
+     * @param supplier 在共享连接上运行的工作，返回一个值
+     * @param <T>      结果类型
+     * @return supplier 的结果
+     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接，或仓库调用失败
      */
     default <T> T executeWithoutTransaction(Supplier<T> supplier) {
         return inScope(ignored -> supplier.get());
     }
 
     /**
-     * Runs {@code function} on a single shared connection without a transaction,
-     * passing it the externally supplied {@code param} but not the connection —
-     * the parameterised counterpart of
-     * {@link #executeWithoutTransaction(Supplier)}. No checked-exception handling
-     * is required (no {@link SQLException} path); borrow/release semantics are
-     * identical to
-     * {@link #executeWithoutTransaction(Object, ConnectionParamCallback)}.
+     * 在单个共享连接上运行 {@code function} 但不开启事务，把外部提供的 {@code param} 传给它
+     * 但不传连接——{@link #executeWithoutTransaction(Supplier)} 的带参版本。无需处理受检异常
+     * （无 {@link SQLException} 路径）；借/还语义与
+     * {@link #executeWithoutTransaction(Object, ConnectionParamCallback)} 相同。
      *
-     * @param param    the externally supplied parameter, forwarded to the body
-     * @param function the work to run on the shared connection, receiving the parameter
-     * @param <T>      the result type
-     * @param <P>      the parameter type
-     * @return the function's result
-     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
-     *                                  or a repository call fails
+     * @param param    外部提供的参数，转发给代码体
+     * @param function 在共享连接上运行的工作，接收参数
+     * @param <T>      结果类型
+     * @param <P>      参数类型
+     * @return function 的结果
+     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接，或仓库调用失败
      */
     default <T, P> T executeWithoutTransaction(P param, Function<P, T> function) {
         return inScope(ignored -> function.apply(param));
     }
 
     /**
-     * Runs {@code runnable} on a single shared connection without a transaction —
-     * the void counterpart of
-     * {@link #executeWithoutTransaction(ConnectionCallback)}, for
-     * side-effect-only bodies that need no {@code return null}. Behaviour is
-     * identical: one borrowed connection shared by every repository call, kept
-     * auto-commit (no atomicity), returned to the pool in a {@code finally} (a
-     * {@link SQLException} from the body is wrapped into
-     * {@link io.github.erdsgfc.jforge.JForgeException}).
+     * 在单个共享连接上、无事务地执行 {@code runnable}——
+     * {@link #executeWithoutTransaction(ConnectionCallback)} 的无返回值对应物,
+     * 用于只需副作用、无需 {@code return null} 的工作体。行为完全一致:借用一个连接
+     * 供每次仓库调用共享,保持 auto-commit(无原子性),在 {@code finally} 中归还
+     * 连接池({@link SQLException} 包装为 {@link io.github.erdsgfc.jforge.JForgeException})。
      *
-     * @param runnable the work to run on the shared connection
-     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
-     *                                  or the body throws {@link SQLException}
+     * @param runnable 在共享连接上执行的工作
+     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接,或工作体抛出 {@link SQLException}
      */
     default void runWithoutTransaction(ConnectionRunnable runnable) {
         executeWithoutTransaction(conn -> {
@@ -401,19 +339,16 @@ public interface TransactionOperations {
     }
 
     /**
-     * Runs {@code runnable} on a single shared connection without a transaction,
-     * passing it the externally supplied {@code param} alongside the shared
-     * {@link Connection} — the parameterised counterpart of
-     * {@link #runWithoutTransaction(ConnectionRunnable)}. Behaviour is
-     * identical: one borrowed connection, kept auto-commit (no atomicity),
-     * returned to the pool in a {@code finally}; a {@link SQLException} from the
-     * body is wrapped into {@link io.github.erdsgfc.jforge.JForgeException}.
+     * 在单个共享连接上、无事务地执行 {@code runnable},把外部提供的 {@code param}
+     * 与共享的 {@link Connection} 一起传入——{@link #runWithoutTransaction(ConnectionRunnable)}
+     * 的带参数对应物。行为完全一致:借用一个连接、保持 auto-commit(无原子性)、
+     * 在 {@code finally} 中归还连接池;{@link SQLException} 包装为
+     * {@link io.github.erdsgfc.jforge.JForgeException}。
      *
-     * @param param    the externally supplied parameter, forwarded to the body
-     * @param runnable the work to run on the shared connection
-     * @param <P>      the parameter type
-     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
-     *                                  or the body throws {@link SQLException}
+     * @param param    外部提供的参数,转发给工作体
+     * @param runnable 在共享连接上执行的工作
+     * @param <P>      参数类型
+     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接,或工作体抛出 {@link SQLException}
      */
     default <P> void runWithoutTransaction(P param, ConnectionParamRunnable<P> runnable) {
         executeWithoutTransaction(conn -> {
@@ -423,20 +358,15 @@ public interface TransactionOperations {
     }
 
     /**
-     * Runs {@code runnable} on a single shared connection without a transaction —
-     * the no-parameter, no-connection counterpart of
-     * {@link #runWithoutTransaction(ConnectionRunnable)} for bodies that
-     * call only repository methods and never touch the connection directly. The
-     * body needs no checked-exception handling: without the {@code Connection}
-     * there is no raw-JDBC path, so only the unchecked
-     * {@link io.github.erdsgfc.jforge.JForgeException} from repository calls can
-     * escape. Behaviour is otherwise identical: one borrowed connection shared by
-     * every repository call, kept auto-commit (no atomicity), returned to the
-     * pool in a {@code finally}.
+     * 在单个共享连接上、无事务地执行 {@code runnable}——无参数、无连接的
+     * {@link #runWithoutTransaction(ConnectionRunnable)} 对应物,用于只调用仓库方法、
+     * 从不直接接触连接的工作体。工作体无需受检异常处理:没有 {@code Connection} 就没有
+     * 裸 JDBC 路径,只会从仓库调用逃出非受检的 {@link io.github.erdsgfc.jforge.JForgeException}。
+     * 其余行为一致:借用一个连接供每次仓库调用共享,保持 auto-commit(无原子性),
+     * 在 {@code finally} 中归还连接池。
      *
-     * @param runnable the work to run on the shared connection
-     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
-     *                                  or a repository call fails
+     * @param runnable 在共享连接上执行的工作
+     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接,或仓库调用失败
      */
     default void runWithoutTransaction(Runnable runnable) {
         executeWithoutTransaction(ignored -> {
@@ -446,19 +376,16 @@ public interface TransactionOperations {
     }
 
     /**
-     * Runs {@code consumer} on a single shared connection without a transaction,
-     * passing it the externally supplied {@code param} but not the connection,
-     * without a return value — the parameterised, no-connection counterpart of
-     * {@link #runWithoutTransaction(ConnectionRunnable)}. No checked-exception
-     * handling is required (no {@link SQLException} path); borrow/release
-     * semantics are identical to
-     * {@link #runWithoutTransaction(Object, ConnectionParamRunnable)}.
+     * 在单个共享连接上、无事务地执行 {@code consumer},把外部提供的 {@code param}
+     * 传入但不暴露连接、无返回值——{@link #runWithoutTransaction(ConnectionRunnable)}
+     * 的带参数、无连接对应物。无需受检异常处理(没有 {@link SQLException} 路径);
+     * 借用/归还语义与
+     * {@link #runWithoutTransaction(Object, ConnectionParamRunnable)} 一致。
      *
-     * @param param    the externally supplied parameter, forwarded to the body
-     * @param consumer the work to run on the shared connection, receiving the parameter
-     * @param <P>      the parameter type
-     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
-     *                                  or a repository call fails
+     * @param param    外部提供的参数,转发给工作体
+     * @param consumer 在共享连接上执行的工作,接收参数
+     * @param <P>      参数类型
+     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接,或仓库调用失败
      */
     default <P> void runWithoutTransaction(P param, Consumer<P> consumer) {
         executeWithoutTransaction(ignored -> {
@@ -470,71 +397,60 @@ public interface TransactionOperations {
     // ---- 私有核心:每个族只有一处生命周期逻辑 --------------------------------
 
     /**
-     * Shared transaction lifecycle, the single implementation of the commit/
-     * rollback semantics behind every {@code execute}/{@code run} variant: begins
-     * a transaction, runs the body, then commits — or rolls back when the body
-     * (or an outer Spring transaction) marked the transaction rollback-only, or
-     * when the body or the commit throws. An {@link SQLException} from the body
-     * is wrapped into {@link JForgeException}; a failed commit is followed by a
-     * quiet rollback so it cannot mask the original exception.
+     * 共享的事务生命周期——每个 {@code execute}/{@code run} 变体背后唯一的提交/回滚
+     * 语义实现:开启事务、执行工作体,然后提交——或当工作体(或外层 Spring 事务)把事务
+     * 标记为 rollback-only、或工作体/提交本身抛异常时回滚。工作体的 {@link SQLException}
+     * 包装为 {@link JForgeException};提交失败后跟一次静默回滚,以免掩盖原始异常。
      *
-     * @param callback the transactional work, receiving the transaction-bound connection
-     * @param <T>      the callback's return type
-     * @return the callback's result
-     * @throws JForgeException if the transaction cannot be begun, committed or rolled back,
-     *                      or the callback throws SQLException
+     * @param callback 事务工作,接收事务绑定连接
+     * @param <T>      回调的返回类型
+     * @return 回调的结果
+     * @throws JForgeException 若事务无法开启、提交或回滚,或回调抛出 SQLException
      */
     private <T> T inTransaction(ConnectionCallback<T> callback) {
         Connection conn = beginTransaction();
         try {
             T result = callback.doInConnection(conn);
             if (isRollbackOnly()) {
-                // The callback (or an outer Spring transaction) marked the transaction
-                // rollback-only to abort without throwing: roll back, but still return
-                // the callback's result normally.
+                // 回调(或外层 Spring 事务)把事务标记为 rollback-only 以在不抛出异常的情况下
+                // 中止:回滚,但仍正常返回回调的结果。
                 rollback();
             } else {
                 commit();
             }
             return result;
         } catch (SQLException e) {
-            // Wrap JDBC failures from the callback, matching the ORM's
-            // no-checked-exceptions contract; keep the JDBC error message as context.
+            // 包装回调的 JDBC 失败,与 ORM 的"无受检异常"契约一致;保留 JDBC 错误消息作为上下文。
             rollbackQuietly();
             throw new JForgeException(
                     JForgeException.Code.SQL,
                     "Transaction failed" + (e.getMessage() != null ? ": " + e.getMessage() : ""), e);
         } catch (RuntimeException | Error ex) {
-            // Roll back the partially-executed body; a failed commit has already
-            // released the connection, so a quiet rollback prevents masking the
-            // original exception with a secondary "no active transaction" error.
+            // 回滚部分执行的工作体;提交失败时连接已释放,静默回滚可避免用次要的
+            // "无活动事务"错误掩盖原始异常。
             rollbackQuietly();
             throw ex;
         }
     }
 
     /**
-     * Shared connection-scope lifecycle, the single implementation of the
-     * borrow/release semantics behind every {@code executeWithoutTransaction}/
-     * {@code runWithoutTransaction} variant: borrows one connection, runs the
-     * body, and returns the connection to the pool in a {@code finally} — success
-     * or failure. Auto-commit stays enabled (no atomicity); an
-     * {@link SQLException} from the body is wrapped into {@link JForgeException}.
+     * 共享的连接作用域生命周期——每个 {@code executeWithoutTransaction}/
+     * {@code runWithoutTransaction} 变体背后唯一的借用/归还语义实现:借用一个连接、
+     * 执行工作体,并在 {@code finally} 中归还连接池——无论成功还是失败。auto-commit
+     * 保持开启(无原子性);工作体的 {@link SQLException} 包装为 {@link JForgeException}。
      *
-     * @param callback the work to run on the shared connection
-     * @param <T>      the callback's return type
-     * @return the callback's result
-     * @throws io.github.erdsgfc.jforge.JForgeException if the connection cannot be obtained,
-     *                                  or the callback throws {@link SQLException}
+     * @param callback 在共享连接上执行的工作
+     * @param <T>      回调的返回类型
+     * @return 回调的结果
+     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接,或回调抛出 {@link SQLException}
      */
     private <T> T inScope(ConnectionCallback<T> callback) {
         Connection conn = beginConnectionScope();
         try {
             return callback.doInConnection(conn);
         } catch (SQLException e) {
-            // Match the execute() contract: JDBC failures from the callback are
-            // wrapped into JForgeException. The scope connection is still returned to
-            // the pool by the finally block.
+            // 与 execute() 契约一致:回调的 JDBC 失败包装为 JForgeException。
+            // 作用域连接仍由 finally 块归还连接池。
             throw new JForgeException(
                     JForgeException.Code.SQL,
                     "Connection scope failed" + (e.getMessage() != null ? ": " + e.getMessage() : ""), e);
@@ -544,15 +460,14 @@ public interface TransactionOperations {
     }
 
     /**
-     * Rolls back the active transaction, swallowing a "no transaction" failure.
-     * Used by {@link #inTransaction} so a commit failure does not hide the primary
-     * error.
+     * 回滚当前活动事务,吞掉"无事务"失败。供 {@link #inTransaction} 使用,使提交失败
+     * 不会掩盖主错误。
      */
     private void rollbackQuietly() {
         try {
             rollback();
         } catch (RuntimeException ignored) {
-            // Best effort: the commit failure path already cleared the thread state.
+            // 尽力而为:提交失败路径已清空线程状态。
         }
     }
 }

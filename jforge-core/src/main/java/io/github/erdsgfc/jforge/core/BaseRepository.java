@@ -3,123 +3,120 @@ package io.github.erdsgfc.jforge.core;
 import java.util.List;
 
 /**
- * Base repository contract for an entity {@code T} with primary key {@code ID}.
+ * 实体 {@code T}（主键 {@code ID}）的仓库基础契约。
  *
- * <p>User repositories extend this interface (e.g. {@code interface UserRepository
- * extends BaseRepository<UserEntity, Long>}) and are implemented at compile time by
- * the annotation processor: a concrete {@code XxxImpl} class is generated for each
- * {@code @Dao} interface, inheriting the CRUD behaviour below and adding derived
- * query methods declared on the interface (e.g. {@code findByAgeGreaterThan}).</p>
+ * <p>用户仓库继承该接口（如 {@code interface UserRepository extends BaseRepository<UserEntity,
+ * Long>}），由注解处理器在编译期实现：为每个 {@code @Dao} 接口生成具体的 {@code XxxImpl} 类，
+ * 继承下述 CRUD 行为并增加接口上声明的派生查询方法（如 {@code findByAgeGreaterThan}）。</p>
  *
- * <p>Every repository also exposes the {@link TransactionOperations} contract —
- * programmatic {@code beginTransaction/commit/rollback} and the {@code execute}
- * template — so multi-statement work can run inside a single transaction.</p>
+ * <p>每个仓库还暴露 {@link TransactionOperations} 契约——编程式
+ * {@code beginTransaction/commit/rollback} 与 {@code execute} 模板——使多语句工作可运行在
+ * 单个事务内。</p>
  *
- * @param <T>  the entity type
- * @param <ID> the primary-key type
+ * @param <T>  实体类型
+ * @param <ID> 主键类型
  */
 public interface BaseRepository<T, ID> extends TransactionOperations {
 
     /**
-     * Inserts the entity and writes back a generated id into it.
+     * 插入实体并回写生成的主键 id。
      *
-     * @param entity the entity to persist (its {@code @Id} field is updated when generated)
-     * @return the same entity instance, now carrying its id
+     * @param entity 要持久化的实体（其 {@code @Id} 字段在生成时被更新）
+     * @return 同一个实体实例，现在带上了它的 id
      */
     T save(T entity);
 
     /**
-     * Inserts all entities, writing back generated ids.
+     * 批量插入所有实体并回写生成的主键 id。
      *
-     * @param entities the entities to persist
-     * @return the same list instance, each entity carrying its id
+     * @param entities 要持久化的实体列表
+     * @return 同一个列表实例，每个实体都带上了它的 id
      */
     List<T> save(List<T> entities);
 
     /**
-     * Deletes the row mapped by the entity's id.
+     * 删除该实体 id 映射的行。
      *
-     * @param entity the entity to delete
-     * @return {@code true} if a row was deleted
+     * @param entity 要删除的实体
+     * @return 若删除了某行则返回 {@code true}
      */
     boolean delete(T entity);
 
     /**
-     * Deletes the rows mapped by the entities' ids.
+     * 删除这些实体 id 映射的行。
      *
-     * @param entities the entities to delete
-     * @return the number of deleted rows
+     * @param entities 要删除的实体列表
+     * @return 被删除的行数
      */
     int delete(List<T> entities);
 
     /**
-     * Deletes the row with the given id.
+     * 删除指定 id 的行。
      *
-     * @param id the primary key of the row to delete
-     * @return {@code true} if a row was deleted
+     * @param id 要删除行的主键
+     * @return 若删除了某行则返回 {@code true}
      */
     boolean deleteById(ID id);
 
     /**
-     * Deletes the rows with the given ids.
+     * 删除指定 id 列表的行。
      *
-     * @param ids the primary keys of the rows to delete
-     * @return the number of deleted rows
+     * @param ids 要删除行的主键列表
+     * @return 被删除的行数
      */
     int deleteByIds(List<ID> ids);
 
     /**
-     * Updates all mapped columns of the entity, matched by its id.
+     * 按实体 id 匹配并更新其所有映射列。
      *
-     * @param entity the entity carrying the new values and the id to match
-     * @return {@code true} if a row was updated
+     * @param entity 携带新值与待匹配 id 的实体
+     * @return 若更新了某行则返回 {@code true}
      */
     boolean update(T entity);
 
     /**
-     * Loads the entity by its id.
+     * 按 id 加载实体。
      *
-     * @param id the primary key
-     * @return the entity, or {@code null} if absent
+     * @param id 主键
+     * @return 实体，若不存在则返回 {@code null}
      */
     T findById(ID id);
 
     /**
-     * Loads the entities with the given ids.
+     * 按给定 id 列表加载实体。
      *
-     * @param ids the primary keys
-     * @return the matching entities in an unspecified order (absent ids are skipped)
+     * @param ids 主键列表
+     * @return 匹配的实体（顺序不保证，不存在的 id 会被跳过）
      */
     List<T> findByIds(List<ID> ids);
 
     /**
-     * Loads all rows of the entity's table.
+     * 加载实体表的全部行。
      *
-     * @return all entities
+     * @return 所有实体
      */
     List<T> findAll();
 
     /**
-     * Returns the total number of rows in the entity's table.
+     * 返回实体表的总行数。
      *
-     * @return the row count
+     * @return 行数
      */
     long count();
 
     /**
-     * Returns whether a row with the given id exists.
+     * 返回指定 id 的行是否存在。
      *
-     * @param id the primary key
-     * @return {@code true} if a row with the id exists
+     * @param id 主键
+     * @return 若该 id 的行存在则返回 {@code true}
      */
     boolean existsById(ID id);
 
     /**
-     * Creates a new empty entity with all fields at their default values.
-     * Useful as a factory when callers cannot (or must not) reference the
-     * generated impl class directly.
+     * 创建一个所有字段均为默认值的全新空实体。当调用方无法（或不允许）直接引用生成的
+     * 实现类时，可把它当作工厂使用。
      *
-     * @return a new entity instance of type {@code T}
+     * @return 类型为 {@code T} 的新实体实例
      */
     T createEntity();
 

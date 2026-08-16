@@ -4,31 +4,27 @@ import java.sql.Connection;
 import java.sql.SQLException;
 
 /**
- * Callback executed with a framework-provided {@link Connection} together with
- * an externally supplied parameter via
- * {@link TransactionOperations#execute(Object, ConnectionParamCallback)}.
+ * 由框架提供 {@link Connection}、同时附带外部参数的回调,经
+ * {@link TransactionOperations#execute(Object, ConnectionParamCallback)} 执行。
  *
- * <p>Like {@link ConnectionCallback}, but the callback additionally receives a
- * user-supplied parameter (of any type), so external state can be passed into
- * the work body without capturing it in a closure.</p>
+ * <p>与 {@link ConnectionCallback} 类似,但回调额外接收一个用户提供的参数
+ * (任意类型),因此无需在闭包中捕获即可把外部状态传入工作体。</p>
  *
- * @param <T> the return type of the work body
- * @param <P> the type of the externally supplied parameter
+ * @param <T> 工作体的返回类型
+ * @param <P> 外部提供的参数类型
  */
 @FunctionalInterface
 public interface ConnectionParamCallback<T, P> {
 
     /**
-     * Runs the work with the shared connection and the supplied parameter. May
-     * throw {@link SQLException} — the caller wraps it into
-     * {@link io.github.erdsgfc.jforge.JForgeException} and rolls back.
+     * 在共享连接上、使用提供的参数执行工作。可能抛出 {@link SQLException}——
+     * 调用方会将其包装为 {@link io.github.erdsgfc.jforge.JForgeException} 并回滚。
      *
-     * @param conn  the connection bound to the active transaction, or shared by
-     *              the active connection scope
-     * @param param the externally supplied parameter
-     * @return the value to return from {@link TransactionOperations#execute}, or
-     *         {@code null} when the body is run for side effects only
-     * @throws SQLException if a JDBC operation fails
+     * @param conn  绑定到活动事务的连接,或由活动连接作用域共享的连接
+     * @param param 外部提供的参数
+     * @return 从 {@link TransactionOperations#execute} 返回的值,或当工作体
+     *         只做副作用时返回 {@code null}
+     * @throws SQLException 若 JDBC 操作失败
      */
     T doInConnection(Connection conn, P param) throws SQLException;
 }

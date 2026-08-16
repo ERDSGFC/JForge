@@ -4,29 +4,26 @@ import java.sql.Connection;
 import java.sql.SQLException;
 
 /**
- * Void-returning callback executed with a framework-provided {@link Connection}
- * via {@link TransactionOperations#run(ConnectionRunnable)} (inside a
- * programmatic transaction) — or on a single shared connection without a
- * transaction via
- * {@link TransactionOperations#runWithoutTransaction(ConnectionRunnable)}.
- * The counterpart of {@link ConnectionCallback} for side-effect-only bodies
- * that need no {@code return null}.
+ * 无返回值、由框架提供 {@link Connection} 的回调,经
+ * {@link TransactionOperations#run(ConnectionRunnable)} 在编程式事务内执行——
+ * 或经
+ * {@link TransactionOperations#runWithoutTransaction(ConnectionRunnable)}
+ * 在无事务的单个共享连接上执行。是 {@link ConnectionCallback} 的对应物,用于
+ * 只需副作用、无需 {@code return null} 的工作体。
  *
- * <p>Like {@link ConnectionCallback}, the callback receives the transaction-bound
- * (or scope-shared) {@link Connection} for raw-JDBC control, and a
- * {@link SQLException} is wrapped into {@link io.github.erdsgfc.jforge.JForgeException}
- * with a rollback (or, for a scope, without one — statements already executed
- * stay committed).</p>
+ * <p>与 {@link ConnectionCallback} 一样,回调接收事务绑定(或作用域共享)的
+ * {@link Connection} 做裸 JDBC 控制;{@link SQLException} 会被包装为
+ * {@link io.github.erdsgfc.jforge.JForgeException} 并回滚(作用域场景则无回滚——
+ * 已执行的语句保持已提交)。</p>
  */
 @FunctionalInterface
 public interface ConnectionRunnable {
 
     /**
-     * Runs the work with the shared connection.
+     * 在共享连接上执行工作。
      *
-     * @param conn the connection bound to the active transaction, or shared by
-     *             the active connection scope
-     * @throws SQLException if a JDBC operation fails
+     * @param conn 绑定到活动事务的连接,或由活动连接作用域共享的连接
+     * @throws SQLException 若 JDBC 操作失败
      */
     void doInConnection(Connection conn) throws SQLException;
 }

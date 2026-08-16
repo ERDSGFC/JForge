@@ -5,8 +5,7 @@ import io.github.erdsgfc.jforge.annotation.Dao;
 import io.github.erdsgfc.jforge.core.BaseRepository;
 
 /**
- * Batch-test repository overriding the package-level batch size with
- * {@code @BatchSize(3)} on the repository type.
+ * 在仓库类型上用 {@code @BatchSize(3)} 覆盖包级批处理大小的批处理测试仓库。
  */
 @Dao
 @BatchSize(3)

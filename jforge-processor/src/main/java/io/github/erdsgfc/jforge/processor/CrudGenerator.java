@@ -30,22 +30,22 @@ final class CrudGenerator {
     private final JForgeConfigHelper configHelper;
 
     /**
-     * @param configHelper the shared ORM config helper (for batch-size resolution)
+     * @param configHelper 共享的 ORM 配置助手（用于批大小解析）
      */
     CrudGenerator(JForgeConfigHelper configHelper) {
         this.configHelper = configHelper;
     }
 
     /**
-     * Builds all 13 CRUD methods inherited from {@code BaseRepository}.
+     * 构建继承自 {@code BaseRepository} 的全部 13 个 CRUD 方法。
      *
-     * @param info             the repository info
-     * @param entityImpl       the generated entity impl class
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param resultSet        the ResultSet class
-     * @param sqlException     the SQLException class
-     * @return the CRUD method specifications
+     * @param info             仓库信息
+     * @param entityImpl       生成的实体 impl 类
+     * @param connection       Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param resultSet        ResultSet 类
+     * @param sqlException     SQLException 类
+     * @return CRUD 方法规格
      */
     List<MethodSpec> crudMethods(JForgeProcessor.DaoInfo info, ClassName entityImpl,
             ClassName connection, ClassName preparedStatement, ClassName resultSet,
@@ -68,12 +68,12 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds {@code createEntity()}: returns a new empty entity impl instance —
-     * the entity factory for callers that must not reference the impl class directly.
+     * 构建 {@code createEntity()}：返回一个新的空实体 impl 实例——供不能直接引用 impl 类的
+     * 调用方作为实体工厂使用。
      *
-     * @param info       the repository info
-     * @param entityImpl the generated entity impl class
-     * @return the createEntity method specification
+     * @param info       仓库信息
+     * @param entityImpl 生成的实体 impl 类
+     * @return createEntity 方法规格
      */
     private MethodSpec createEntityMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl) {
         return MethodSpec.methodBuilder("createEntity")
@@ -85,14 +85,14 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds {@code save(T)}: INSERT (SQL 取 {@code saveSql} 字段) with type-exact binds;
-     * when the id is generated, uses {@code RETURN_GENERATED_KEYS} and writes the key back.
+     * 构建 {@code save(T)}：INSERT（SQL 取 {@code saveSql} 字段）+ 类型精确绑定；
+     * id 为生成策略时使用 {@code RETURN_GENERATED_KEYS} 并回写主键。
      *
-     * @param info             the repository info
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param sqlException     the SQLException class
-     * @return the save method specification
+     * @param info             仓库信息
+     * @param connection       Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param sqlException     SQLException 类
+     * @return save 方法规格
      */
     private MethodSpec saveMethod(JForgeProcessor.DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName sqlException) {
@@ -124,24 +124,22 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds the batch {@code save(List<T>)}: inserts all entities on a single
-     * connection — with or without batching, so a batch insert never pays a pool
-     * round-trip per row (earlier versions looped {@code save(entity)} and
-     * acquired one connection per entity).
+     * 构建批量 {@code save(List<T>)}:在单个连接上插入全部实体——无论是否批处理,
+     * 批量插入都不会为每行付出一次连接池往返(早期版本循环调用 {@code save(entity)},
+     * 每个实体取一次连接)。
      *
-     * <p>With a positive configured batch size (see {@link #batchSizeFor}) the
-     * rows are flushed via {@code addBatch()/executeBatch()} in chunks of that
-     * size; generated ids are written back from each chunk's generated-keys
-     * result set, whose rows drivers return in insertion order (H2 and PostgreSQL
-     * do; see {@code JForgeConfig.batchSize()} for the caveat). With {@code 0}
-     * (no batching) the rows are inserted one by one on the shared connection.</p>
+     * <p>配置了正数的批处理大小(见 {@link #batchSizeFor})时,行经
+     * {@code addBatch()/executeBatch()} 按该大小分块 flush;生成的主键从每个分块的
+     * generated-keys 结果集回写,驱动按插入顺序返回这些行(H2 与 PostgreSQL 如此;
+     * 注意事项见 {@code JForgeConfig.batchSize()})。为 {@code 0}(不批处理)时,
+     * 行在共享连接上逐条插入。</p>
      *
-     * @param info              the repository info
-     * @param connection        the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param resultSet         the ResultSet class
-     * @param sqlException      the SQLException class
-     * @return the batch save method specification
+     * @param info              仓库信息
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param resultSet         ResultSet 类
+     * @param sqlException      SQLException 类
+     * @return 批量 save 方法规格
      */
     private MethodSpec saveAllMethod(JForgeProcessor.DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
@@ -168,8 +166,8 @@ final class CrudGenerator {
         }
 
         if (batch) {
-            // Chunked addBatch/executeBatch: flush every batchSize rows, then the
-            // remainder; read each chunk's generated keys back in insertion order.
+            // 分块 addBatch/executeBatch：每 batchSize 行冲刷一次，剩余行再冲刷一次；
+            // 按插入顺序回读每块的生成键。
             method.addStatement("int batchSize = $L", batchSize);
             method.addStatement("int batchStart = 0");
             method.beginControlFlow("for ($T entity : entities)", info.entityType);
@@ -186,7 +184,7 @@ final class CrudGenerator {
             appendBatchKeysWriteback(method, info, resultSet, "batchStart - batchStart % batchSize");
             method.endControlFlow();
         } else {
-            // No batching: one executeUpdate per row on the shared connection.
+            // 不批处理：在共享连接上每行执行一次 executeUpdate。
             method.beginControlFlow("for ($T entity : entities)", info.entityType);
             bindColumns(method, insertColumns);
             method.addStatement("ps.executeUpdate()");
@@ -207,11 +205,10 @@ final class CrudGenerator {
     }
 
     /**
-     * Appends the {@code PreparedStatement} bind calls for one entity row, in
-     * column order (shared by the single and batch save generators).
+     * 按列顺序追加单个实体行的 {@code PreparedStatement} 绑定调用（单个与批量 save 生成器共用）。
      *
-     * @param method  the method builder
-     * @param columns the insert columns
+     * @param method  方法构建器
+     * @param columns INSERT 列
      */
     private void bindColumns(MethodSpec.Builder method, List<EntityModel.ColumnModel> columns) {
         int index = 1;
@@ -222,16 +219,14 @@ final class CrudGenerator {
     }
 
     /**
-     * Appends the generated-keys write-back for one flushed batch chunk: iterates
-     * the chunk's keys result set and assigns each key to the corresponding entity
-     * of the chunk (keys are returned in insertion order), starting at the
-     * chunk-relative index expression {@code startExpr}. Emits nothing when the
-     * entity has no generated id.
+     * 为一个已冲刷的批次块追加生成键回写：遍历该块的 keys 结果集，把每个键赋给块中对应的
+     * 实体（键按插入顺序返回），起始位置为块内相对索引表达式 {@code startExpr}。
+     * 实体没有生成主键时不生成任何代码。
      *
-     * @param method     the method builder
-     * @param info       the repository info
-     * @param resultSet  the ResultSet class
-     * @param startExpr  the list index of the chunk's first entity
+     * @param method    方法构建器
+     * @param info      仓库信息
+     * @param resultSet ResultSet 类
+     * @param startExpr 块首实体在列表中的索引
      */
     private void appendBatchKeysWriteback(MethodSpec.Builder method, JForgeProcessor.DaoInfo info,
             ClassName resultSet, String startExpr) {
@@ -248,19 +243,17 @@ final class CrudGenerator {
         method.endControlFlow();
     }
 
-    // ---- Batch size resolution ----------------------------------------------
+    // ---- 批大小解析 ----------------------------------------------------------
 
     /**
-     * Resolves the JDBC batch size for a batchable generated method, in order:
-     * a {@code @BatchSize} on a redeclared batch method (e.g. {@code save(List<T>)}
-     * redeclared on the repository with an identical signature), then a
-     * {@code @BatchSize} on the repository interface itself, then
-     * {@code JForgeConfig.batchSize()} (element or package), then the default
-     * ({@code 50}). Batchable methods are the generated CRUD methods inherited
-     * from {@code BaseRepository}; today only {@code save(List<T>)} batches.
+     * 为可批处理的生成方法解析 JDBC 批大小，优先级依次为：重声明的批量方法上的
+     * {@code @BatchSize}（如仓库上以相同签名重声明的 {@code save(List<T>)}）、仓库接口自身的
+     * {@code @BatchSize}、{@code JForgeConfig.batchSize()}（元素级或包级）、默认值
+     * （{@code 50}）。可批处理的方法是继承自 {@code BaseRepository} 的生成 CRUD 方法；
+     * 目前只有 {@code save(List<T>)} 会批处理。
      *
-     * @param info the repository info
-     * @return the resolved batch size ({@code 0} = no batching)
+     * @param info 仓库信息
+     * @return 解析后的批大小（{@code 0} = 不批处理）
      */
     private int batchSizeFor(JForgeProcessor.DaoInfo info) {
         for (Element enclosed : info.element.getEnclosedElements()) {
@@ -280,13 +273,12 @@ final class CrudGenerator {
     }
 
     /**
-     * Returns whether the user-declared method redeclares a batchable generated
-     * CRUD method — a {@code save} with a single {@code List} parameter. Only such
-     * redeclarations can carry a method-level {@code @BatchSize}; a mismatched
-     * signature would not compile against {@code BaseRepository} anyway.
+     * 判断用户声明的方法是否重声明了可批处理的生成 CRUD 方法——即带单个 {@code List} 参数的
+     * {@code save}。只有此类重声明可以携带方法级 {@code @BatchSize}；签名不匹配的声明本就无法
+     * 针对 {@code BaseRepository} 编译通过。
      *
-     * @param method the user-declared method
-     * @return {@code true} when the method is a redeclared {@code save(List)}
+     * @param method 用户声明的方法
+     * @return 该方法是重声明的 {@code save(List)} 时返回 {@code true}
      */
     private static boolean isBatchableRedeclaration(ExecutableElement method) {
         if (!method.getSimpleName().contentEquals("save")) {
@@ -299,10 +291,10 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds {@code delete(T)}: deletes by the entity's id.
+     * 构建 {@code delete(T)}:按实体的 id 删除。
      *
-     * @param info the repository info
-     * @return the delete method specification
+     * @param info 仓库信息
+     * @return delete 方法规格
      */
     private MethodSpec deleteMethod(JForgeProcessor.DaoInfo info) {
         return MethodSpec.methodBuilder("delete")
@@ -315,10 +307,10 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds the batch {@code delete(List<T>)}: collects ids and delegates to deleteByIds.
+     * 构建批量 {@code delete(List<T>)}:收集所有 id 并委托给 deleteByIds。
      *
-     * @param info the repository info
-     * @return the batch delete method specification
+     * @param info 仓库信息
+     * @return 批量 delete 方法规格
      */
     private MethodSpec deleteManyMethod(JForgeProcessor.DaoInfo info) {
         EntityModel.ColumnModel idColumn = info.model.idColumn();
@@ -337,13 +329,13 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds {@code deleteById(ID)}: {@code DELETE ... WHERE id=?} (SQL 取 {@code deleteByIdSql}).
+     * 构建 {@code deleteById(ID)}:{@code DELETE ... WHERE id=?}(SQL 取 {@code deleteByIdSql})。
      *
-     * @param info             the repository info
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param sqlException     the SQLException class
-     * @return the deleteById method specification
+     * @param info              仓库信息
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param sqlException      SQLException 类
+     * @return deleteById 方法规格
      */
     private MethodSpec deleteByIdMethod(JForgeProcessor.DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName sqlException) {
@@ -361,14 +353,14 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds {@code deleteByIds(List<ID>)}: {@code DELETE ... WHERE id IN (?,...)} with a
-     * dynamically built placeholder list (base SQL 取 {@code deleteByIdsBaseSql} 字段)。
+     * 构建 {@code deleteByIds(List<ID>)}:{@code DELETE ... WHERE id IN (?,...)} 带
+     * 动态构建的占位符列表(基础 SQL 取 {@code deleteByIdsBaseSql} 字段)。
      *
-     * @param info             the repository info
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param sqlException     the SQLException class
-     * @return the deleteByIds method specification
+     * @param info              仓库信息
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param sqlException      SQLException 类
+     * @return deleteByIds 方法规格
      */
     private MethodSpec deleteByIdsMethod(JForgeProcessor.DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName sqlException) {
@@ -405,14 +397,14 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds {@code update(T)}: {@code UPDATE t SET c1=?,... WHERE id=?} (SQL 取 {@code updateSql}),
-     * binding all non-id columns then the id.
+     * 构建 {@code update(T)}:{@code UPDATE t SET c1=?,... WHERE id=?}(SQL 取 {@code updateSql}),
+     * 先绑定所有非 id 列,再绑定 id。
      *
-     * @param info             the repository info
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param sqlException     the SQLException class
-     * @return the update method specification
+     * @param info              仓库信息
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param sqlException      SQLException 类
+     * @return update 方法规格
      */
     private MethodSpec updateMethod(JForgeProcessor.DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName sqlException) {
@@ -443,16 +435,16 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds {@code findById(ID)}: {@code SELECT cols FROM t WHERE id=?} (SQL 取 {@code findByIdSql}),
-     * mapping a single row via {@code mapRow} or returning {@code null}.
+     * 构建 {@code findById(ID)}:{@code SELECT cols FROM t WHERE id=?}(SQL 取 {@code findByIdSql}),
+     * 经 {@code mapRow} 映射单行,或返回 {@code null}。
      *
-     * @param info             the repository info
-     * @param entityImpl       the generated entity impl class
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param resultSet        the ResultSet class
-     * @param sqlException     the SQLException class
-     * @return the findById method specification
+     * @param info              仓库信息
+     * @param entityImpl        生成的实体 impl 类
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param resultSet         ResultSet 类
+     * @param sqlException      SQLException 类
+     * @return findById 方法规格
      */
     private MethodSpec findByIdMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
@@ -475,16 +467,16 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds {@code findByIds(List<ID>)}: {@code SELECT cols FROM t WHERE id IN (?,...)}
-     * (base SQL 取 {@code findByIdsBaseSql} 字段).
+     * 构建 {@code findByIds(List<ID>)}:{@code SELECT cols FROM t WHERE id IN (?,...)}
+     * (基础 SQL 取 {@code findByIdsBaseSql} 字段)。
      *
-     * @param info             the repository info
-     * @param entityImpl       the generated entity impl class
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param resultSet        the ResultSet class
-     * @param sqlException     the SQLException class
-     * @return the findByIds method specification
+     * @param info              仓库信息
+     * @param entityImpl        生成的实体 impl 类
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param resultSet         ResultSet 类
+     * @param sqlException      SQLException 类
+     * @return findByIds 方法规格
      */
     private MethodSpec findByIdsMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
@@ -528,15 +520,15 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds {@code findAll()}: {@code SELECT cols FROM t} (SQL 取 {@code findAllSql}).
+     * 构建 {@code findAll()}:{@code SELECT cols FROM t}(SQL 取 {@code findAllSql})。
      *
-     * @param info             the repository info
-     * @param entityImpl       the generated entity impl class
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param resultSet        the ResultSet class
-     * @param sqlException     the SQLException class
-     * @return the findAll method specification
+     * @param info              仓库信息
+     * @param entityImpl        生成的实体 impl 类
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param resultSet         ResultSet 类
+     * @param sqlException      SQLException 类
+     * @return findAll 方法规格
      */
     private MethodSpec findAllMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
@@ -558,14 +550,14 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds {@code count()}: {@code SELECT COUNT(*) FROM t} (SQL 取 {@code countSql}).
+     * 构建 {@code count()}:{@code SELECT COUNT(*) FROM t}(SQL 取 {@code countSql})。
      *
-     * @param info             the repository info
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param resultSet        the ResultSet class
-     * @param sqlException     the SQLException class
-     * @return the count method specification
+     * @param info              仓库信息
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param resultSet         ResultSet 类
+     * @param sqlException      SQLException 类
+     * @return count 方法规格
      */
     private MethodSpec countMethod(JForgeProcessor.DaoInfo info, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
@@ -583,11 +575,11 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds {@code existsById(ID)}: delegates to the private {@code countById} helper.
+     * 构建 {@code existsById(ID)}:委托给私有 {@code countById} helper。
      *
-     * @param info         the repository info
-     * @param sqlException the SQLException class
-     * @return the existsById method specification
+     * @param info         仓库信息
+     * @param sqlException SQLException 类
+     * @return existsById 方法规格
      */
     private MethodSpec existsByIdMethod(JForgeProcessor.DaoInfo info, ClassName sqlException) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("existsById")
@@ -607,15 +599,15 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds the private {@code countById} helper used by {@code existsById}
-     * (SQL 取 {@code countByIdSql} 字段).
+     * 构建供 {@code existsById} 使用的私有 {@code countById} helper
+     * (SQL 取 {@code countByIdSql} 字段)。
      *
-     * @param info             the repository info
-     * @param sqlException     the SQLException class
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param resultSet        the ResultSet class
-     * @return the countById method specification
+     * @param info              仓库信息
+     * @param sqlException      SQLException 类
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param resultSet         ResultSet 类
+     * @return countById 方法规格
      */
     MethodSpec countByIdMethod(JForgeProcessor.DaoInfo info, ClassName sqlException,
             ClassName connection, ClassName preparedStatement, ClassName resultSet) {
@@ -644,14 +636,14 @@ final class CrudGenerator {
     }
 
     /**
-     * Builds the private {@code mapRow} method: maps the current ResultSet row to a
-     * new entity impl by column index (column order always equals field order).
+     * 构建私有 {@code mapRow} 方法:按列索引把当前 ResultSet 行映射为新的实体 impl
+     * (列顺序始终等于字段顺序)。
      *
-     * @param info         the repository info
-     * @param entityImpl   the generated entity impl class
-     * @param sqlException the SQLException class
-     * @param resultSet    the ResultSet class
-     * @return the mapRow method specification
+     * @param info         仓库信息
+     * @param entityImpl   生成的实体 impl 类
+     * @param sqlException SQLException 类
+     * @param resultSet    ResultSet 类
+     * @return mapRow 方法规格
      */
     MethodSpec rowMapperMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl,
             ClassName sqlException, ClassName resultSet) {

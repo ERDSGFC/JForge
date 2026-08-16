@@ -12,19 +12,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Parsed model of a {@code @Table} entity <em>interface</em>: property methods
- * (getters) and builder-style setters (same name, single parameter, returning the
- * interface). Consumed by {@link JForgeProcessor} (via {@link EntityGenerator}
- * for the entity impl and the repository generators for the JDBC code).
+ * {@code @Table} 实体<em>接口</em>的解析模型:属性方法(getter)与 builder 风格 setter
+ * (同名、单参数、返回接口自身)。由 {@link JForgeProcessor} 消费(经 {@link EntityGenerator}
+ * 生成实体 impl,仓库生成器生成 JDBC 代码)。
  */
 public final class EntityModel {
 
     /**
-     * Returns the generated impl class name for an entity interface.
+     * 返回实体接口的生成实现类名。
      *
-     * @param entitySimpleName the simple name of the entity interface (e.g. {@code UserEntity})
-     * @param suffix the configured impl suffix (e.g. {@code "_Impl"})
-     * @return the impl simple name (e.g. {@code UserEntity_Impl})
+     * @param entitySimpleName 实体接口的简单名,如 {@code UserEntity}
+     * @param suffix           配置的实现后缀,如 {@code "_Impl"}
+     * @return 实现的简单名,如 {@code UserEntity_Impl}
      */
     public static String implNameOf(String entitySimpleName, String suffix) {
         return entitySimpleName + suffix;
@@ -41,8 +40,8 @@ public final class EntityModel {
     public static final class ColumnModel {
         final String fieldName;
         final String columnName;
-        final String typeName;   // TypeMirror#toString, e.g. "java.lang.Long", "int"
-        final TypeMirror returnType; // the getter's return type, for setter-type validation
+        final String typeName;   // TypeMirror#toString,如 "java.lang.Long"、"int"
+        final TypeMirror returnType; // getter 的返回类型,用于 setter 类型校验
         final String getterName;
         final String setterName;
         final boolean isId;
@@ -61,16 +60,15 @@ public final class EntityModel {
     }
 
     /**
-     * Parses an entity interface into its mapping model, validating the shape:
-     * every method must be a property getter, a builder setter matching a getter,
-     * or a {@code static}/{@code default} method.
+     * 把实体接口解析为映射模型,并校验其形态:每个方法必须是属性 getter、
+     * 与 getter 匹配的 builder setter、或 {@code static}/{@code default} 方法。
      *
-     * @param entity    the {@code @Table} entity interface
-     * @param types     the type utilities (used to compare setter parameter types with getter return types)
-     * @param errorKind the diagnostic kind used to report mapping errors
-     * @param messager  the annotation-processing messager for compile-time errors
-     * @param config    the ORM configuration helper for the entity's package
-     * @return the parsed model, or {@code null} if the entity is not valid (error reported)
+     * @param entity    {@code @Table} 实体接口
+     * @param types     类型工具(用于比较 setter 参数类型与 getter 返回类型)
+     * @param errorKind 上报映射错误所用的诊断级别
+     * @param messager  注解处理 messager(编译期错误)
+     * @param config    实体所在包的 ORM 配置 helper
+     * @return 解析后的模型;若实体不合法则返回 {@code null}(已报错)
      */
     public static EntityModel parse(TypeElement entity, Types types, Diagnostic.Kind errorKind,
             javax.annotation.processing.Messager messager, JForgeConfigHelper config) {
@@ -85,8 +83,8 @@ public final class EntityModel {
             model.tableName = CommonUtils.camelToSnake(entity.getSimpleName().toString());
         }
 
-        // Pass 1: collect the property getters (setters may be declared before their
-        // getter, so validation of setters waits until all getters are known).
+        // 第一遍:收集属性 getter(setter 可能声明在 getter 之前,
+        // 因此 setter 的校验要等所有 getter 已知后再进行)。
         for (Element enclosed : entity.getEnclosedElements()) {
             ExecutableElement method = asMethod(enclosed);
             if (method == null || isIgnored(method)) {
@@ -97,17 +95,16 @@ public final class EntityModel {
             }
         }
 
-        // Pass 2: validate every builder setter against its getter, and reject any
-        // method that is neither getter, setter nor ignored — a silently skipped
-        // method would otherwise surface as an obscure "does not override" error on
-        // the generated impl.
+        // 第二遍:校验每个 builder setter 与 getter 的匹配,并拒绝任何既非 getter、
+        // 又非 setter、也非忽略项的方法——被静默跳过的方法会在生成的 impl 上表现为
+        // 晦涩的 "does not override" 错误。
         for (Element enclosed : entity.getEnclosedElements()) {
             ExecutableElement method = asMethod(enclosed);
             if (method == null || isIgnored(method)) {
                 continue;
             }
             if (isGetter(method)) {
-                continue; // handled in pass 1
+                continue; // 第一遍已处理
             }
             if (isBuilderSetter(method, entity)) {
                 model.validateSetter(method, messager, errorKind);
@@ -132,25 +129,24 @@ public final class EntityModel {
     }
 
     private static boolean isIgnored(ExecutableElement method) {
-        // static/default methods carry their own implementation, so the generated
-        // impl does not need to (and must not) override them; the interface itself
-        // is the place for helper logic.
+        // static/default 方法自带实现,生成的 impl 无需(也不应)覆写它们;
+        // 接口本身就是辅助逻辑的归属地。
         return method.getModifiers().contains(Modifier.STATIC)
                 || method.getModifiers().contains(Modifier.DEFAULT);
     }
 
-    /** Whether the method is a property getter: no parameters, non-void return. */
+    /** 该方法是否为属性 getter:无参数、返回非 void。 */
     private static boolean isGetter(ExecutableElement method) {
         return method.getParameters().isEmpty() && method.getReturnType().getKind() != TypeKind.VOID;
     }
 
     /**
-     * Whether the method is a builder-style setter, i.e. takes one parameter and
-     * returns the entity interface itself (e.g. {@code UserEntity id(Long id)}).
+     * 该方法是否为 builder 风格 setter,即单参数且返回实体接口自身
+     * (如 {@code UserEntity id(Long id)})。
      *
-     * @param method the candidate method
-     * @param entity the entity interface
-     * @return {@code true} if the method returns the entity interface
+     * @param method 候选方法
+     * @param entity 实体接口
+     * @return 若方法返回实体接口则返回 {@code true}
      */
     private static boolean isBuilderSetter(ExecutableElement method, TypeElement entity) {
         if (method.getParameters().size() != 1) {
@@ -162,19 +158,19 @@ public final class EntityModel {
     }
 
     /**
-     * Records a property getter method as a mapped column.
+     * 把属性 getter 方法记录为一个映射列。
      *
-     * @param method    the getter method ({@code Long id()})
-     * @param messager  the messager for compile-time errors
-     * @param errorKind the diagnostic kind for errors
+     * @param method    getter 方法({@code Long id()})
+     * @param messager  编译期错误的 messager
+     * @param errorKind 错误的诊断级别
      */
     private void addGetter(ExecutableElement method, javax.annotation.processing.Messager messager,
             Diagnostic.Kind errorKind) {
         String fieldName = method.getSimpleName().toString();
         Column column = method.getAnnotation(Column.class);
         String columnName = column != null
-                ? column.name()                                         // explicit @Column
-                : config.columnName(element, fieldName);               // naming strategy
+                ? column.name()                                         // 显式 @Column
+                : config.columnName(element, fieldName);               // 命名策略
         boolean isId = method.getAnnotation(Id.class) != null;
         boolean generated = method.getAnnotation(GeneratedValue.class) != null;
 
@@ -200,14 +196,13 @@ public final class EntityModel {
     }
 
     /**
-     * Validates a builder setter against its getter: the setter must have a matching
-     * getter of the same name, and its parameter type must equal the getter's return
-     * type — otherwise the generated impl would fail to compile with an obscure
-     * "does not override" error, or silently diverge from the interface contract.
+     * 校验 builder setter 与 getter 的匹配:setter 必须有同名的匹配 getter,且其参数类型
+     * 必须等于 getter 的返回类型——否则生成的 impl 会以晦涩的 "does not override" 错误
+     * 编译失败,或静默偏离接口契约。
      *
-     * @param method    the builder setter to validate
-     * @param messager  the messager for compile-time errors
-     * @param errorKind the diagnostic kind for errors
+     * @param method   待校验的 builder setter
+     * @param messager 编译期错误的 messager
+     * @param errorKind 错误的诊断级别
      */
     private void validateSetter(ExecutableElement method,
             javax.annotation.processing.Messager messager, Diagnostic.Kind errorKind) {
@@ -220,7 +215,7 @@ public final class EntityModel {
             }
         }
         if (getter == null) {
-            // The name is not in getterNames either: this is a setter without a getter.
+            // 名字也不在 getterNames 中:这是没有 getter 的 setter。
             messager.printMessage(errorKind,
                     "Builder setter '" + name + "(...)' on " + element.getQualifiedName()
                             + " has no matching getter '" + name + "()'", method);
@@ -251,39 +246,37 @@ public final class EntityModel {
         return idGenerated;
     }
 
-    /** Full qualified name of the entity interface, e.g. io.github.erdsgfc.jforge.lambda.demo.UserEntity. */
+    /** 实体接口的全限定名,如 io.github.erdsgfc.jforge.lambda.demo.UserEntity。 */
     public String entityQualifiedName() {
         return element.getQualifiedName().toString();
     }
 
-    /** Simple name of the entity interface, e.g. UserEntity. */
+    /** 实体接口的简单名,如 UserEntity。 */
     public String entitySimpleName() {
         return element.getSimpleName().toString();
     }
 
-    /** Package of the entity interface. */
+    /** 实体接口所在的包。 */
     public String entityPackage() {
         return CommonUtils.packageOf(entityQualifiedName());
     }
 
-    /** The active impl suffix (from @JForgeConfig or default "_Impl"). */
+    /** 生效的实现后缀(来自 @JForgeConfig 或默认 "_Impl")。 */
     public String implSuffix() {
         return config.implSuffix(element);
     }
 
     /**
-     * Package where the generated impl class is written: {@code @JForgeConfig.generatedPackage}
-     * when configured, otherwise the entity's own package. Both the file output
-     * ({@link EntityGenerator}) and the repository generators' references to the
-     * impl class must use this, so a configured {@code generatedPackage} keeps the
-     * whole chain consistent.
+     * 生成的实现类写入的包:配置了 {@code @JForgeConfig.generatedPackage} 时用配置值,
+     * 否则用实体所在包。文件输出({@link EntityGenerator})与仓库生成器对实现类的引用
+     * 都必须用它,使配置了 {@code generatedPackage} 时整条链路保持一致。
      */
     public String implPackage() {
         String generated = config.generatedPackage(element);
         return generated.isEmpty() ? entityPackage() : generated;
     }
 
-    /** Full qualified name of the generated impl class (in its actual output package). */
+    /** 生成的实现类的全限定名(在其实际输出包中)。 */
     public String implQualifiedName() {
         String pkg = implPackage();
         String name = implNameOf(entitySimpleName(), implSuffix());

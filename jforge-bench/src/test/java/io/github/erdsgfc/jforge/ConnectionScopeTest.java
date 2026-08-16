@@ -21,11 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Integration tests for the connection scope API — {@code executeWithoutTransaction}
- * and its underlying beginConnectionScope/endConnectionScope — which shares one
- * connection across repository calls on the same thread without any transaction
- * semantics. The pool borrow counter proves exactly one connection is used per
- * scope, and the Hikari pool MXBean proves it is returned when the scope ends.
+ * 连接作用域 API 的集成测试——{@code executeWithoutTransaction}
+ * 及其底层的 beginConnectionScope/endConnectionScope——在同一线程的多次仓库调用间
+ * 共享一个连接,且不附带任何事务语义。池借用计数器证明每个作用域恰好使用一个连接,
+ * Hikari 池的 MXBean 证明作用域结束时连接被归还。
  */
 class ConnectionScopeTest {
 
@@ -54,7 +53,7 @@ class ConnectionScopeTest {
         pool.close();
     }
 
-    /** Number of connections currently borrowed from the pool (0 when all returned). */
+    /** 当前从池中借出的连接数(全部归还时为 0)。 */
     private int activeConnections() {
         return pool.getHikariPoolMXBean().getActiveConnections();
     }
@@ -250,9 +249,8 @@ class ConnectionScopeTest {
     }
 
     /**
-     * DataSource decorator counting {@link #getConnection()} borrows, so tests can
-     * prove a scope borrowed exactly one pooled connection. Every other method
-     * delegates to the wrapped Hikari pool.
+     * DataSource 装饰器,统计 {@link #getConnection()} 的借用次数,以便测试
+     * 证明一个作用域恰好借用了一个池连接。其余所有方法委托给被包装的 Hikari 池。
      */
     private static final class CountingDataSource implements DataSource {
         private final DataSource delegate;

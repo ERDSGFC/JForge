@@ -7,11 +7,10 @@ import com.palantir.javapoet.MethodSpec;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Builds the JDBC code fragments (parameter binding, row mapping) shared by the
- * generated repository implementations. All type decisions are made here at
- * compile time — the emitted code calls type-exact setters/getters directly.
- */
+    /**
+     * 构建各生成仓库实现共享的 JDBC 代码片段（参数绑定、行映射）。所有类型决策都在编译期
+     * 完成——生成的代码直接调用类型精确的 setter/getter。
+     */
 public final class SqlCodegen {
 
     private static final ClassName ORM_EXCEPTION = ClassName.get("io.github.erdsgfc.jforge", "JForgeException");
@@ -20,13 +19,12 @@ public final class SqlCodegen {
     }
 
     /**
-     * Builds a type-exact parameter bind statement with a constant index:
-     * {@code ps.setXxx(index, expr);}.
+     * 构建带常量索引的类型精确参数绑定语句：{@code ps.setXxx(index, expr);}。
      *
-     * @param typeName the declared type of the parameter (e.g. {@code "int"}, {@code "java.lang.String"})
-     * @param expr     the value expression (e.g. {@code "id"}, {@code "entity.age()"})
-     * @param index    the 1-based placeholder index (compile-time constant)
-     * @return the bind code block
+     * @param typeName 参数的声明类型（如 {@code "int"}、{@code "java.lang.String"}）
+     * @param expr     值表达式（如 {@code "id"}、{@code "entity.age()"}）
+     * @param index    基于 1 的占位符索引（编译期常量）
+     * @return 绑定代码块
      */
     public static CodeBlock bindParam(String typeName, String expr, int index) {
         return CodeBlock.of("$L.$L($L, $L);",
@@ -34,13 +32,12 @@ public final class SqlCodegen {
     }
 
     /**
-     * Builds a type-exact parameter bind statement with a runtime index expression,
-     * used inside loops over a variable-length parameter list.
+     * 构建带运行时索引表达式的类型精确参数绑定语句，用于遍历变长参数列表的循环内部。
      *
-     * @param typeName  the declared type of the parameter
-     * @param expr      the value expression
-     * @param indexExpr the runtime index expression (e.g. the loop variable {@code "i"})
-     * @return the bind code block
+     * @param typeName  参数的声明类型
+     * @param expr      值表达式
+     * @param indexExpr 运行时索引表达式（如循环变量 {@code "i"}）
+     * @return 绑定代码块
      */
     public static CodeBlock bindParam(String typeName, String expr, String indexExpr) {
         return CodeBlock.of("$L.$L($L, $L);",
@@ -48,19 +45,19 @@ public final class SqlCodegen {
     }
 
     /**
-     * Builds a column-read statement by index and maps it through the entity's setter.
-     * Used by generated CRUD where the SELECT column order always matches the field order.
+     * 按索引构建列读取语句，并经实体 setter 映射。用于生成的 CRUD——其中 SELECT 列顺序
+     * 始终与字段顺序一致。
      *
-     * @param typeName   the field type string
-     * @param entityVar  the entity variable name
-     * @param setterName the builder-setter method name
-     * @param index      the 1-based column index
-     * @return the read code block
+     * @param typeName   字段类型字符串
+     * @param entityVar  实体变量名
+     * @param setterName builder setter 方法名
+     * @param index      基于 1 的列索引
+     * @return 读取代码块
      */
     public static CodeBlock readColumn(String typeName, String entityVar, String setterName, int index) {
         String getter = TypeNameUtils.jdbcGetter(typeName);
         if (getter.equals("getObject")) {
-            // LocalDate/LocalDateTime/enums: getObject(index, Class) — cast to the field type.
+            // LocalDate/LocalDateTime/enums: getObject(index, Class)——强制转换为字段类型。
             return CodeBlock.of("$L.$L(($T) $L.getObject($L, $T.class));",
                     entityVar, setterName, TypeNameUtils.toTypeName(typeName),
                     "rs", index, TypeNameUtils.toTypeName(typeName));
@@ -70,14 +67,14 @@ public final class SqlCodegen {
     }
 
     /**
-     * Builds a column-read statement by name and maps it through the entity's setter.
-     * Used by {@code @Query} methods where the SELECT column order is user-controlled.
+     * 按名称构建列读取语句，并经实体 setter 映射。用于 {@code @Query} 方法——其 SELECT 列顺序
+     * 由用户控制。
      *
-     * @param typeName   the field type string
-     * @param entityVar  the entity variable name
-     * @param setterName the builder-setter method name
-     * @param column     the column name
-     * @return the read code block
+     * @param typeName   字段类型字符串
+     * @param entityVar  实体变量名
+     * @param setterName builder setter 方法名
+     * @param column     列名
+     * @return 读取代码块
      */
     public static CodeBlock readColumnByName(String typeName, String entityVar, String setterName, String column) {
         String getter = TypeNameUtils.jdbcGetter(typeName);
@@ -91,20 +88,20 @@ public final class SqlCodegen {
     }
 
     /**
-     * Joins column names for SELECT / INSERT column lists.
+     * 拼接列名，用于 SELECT / INSERT 列清单。
      *
-     * @param names the column names
-     * @return comma-joined string
+     * @param names 列名
+     * @return 以逗号拼接的字符串
      */
     public static String joinColumns(List<String> names) {
         return String.join(",", names);
     }
 
     /**
-     * Builds a placeholder list, e.g. 3 → {@code "?,?,?"}.
+     * 构建占位符列表，如 3 → {@code "?,?,?"}。
      *
-     * @param count the number of placeholders
-     * @return the placeholder string
+     * @param count 占位符数量
+     * @return 占位符字符串
      */
     public static String placeholders(int count) {
         StringBuilder sb = new StringBuilder();
@@ -118,11 +115,11 @@ public final class SqlCodegen {
     }
 
     /**
-     * Converts {@code :name} placeholders in a SQL string to {@code ?} placeholders.
+     * 把 SQL 字符串中的 {@code :name} 占位符转换为 {@code ?} 占位符。
      *
-     * @param sql              the SQL with named placeholders (e.g. {@code "WHERE age > :age"})
-     * @param placeholderOrder receives the placeholder names in order of appearance
-     * @return the SQL with {@code ?} placeholders
+     * @param sql              带命名占位符的 SQL（如 {@code "WHERE age > :age"}）
+     * @param placeholderOrder 按出现顺序接收占位符名称
+     * @return 含 {@code ?} 占位符的 SQL
      */
     public static String convertPlaceholders(String sql, List<String> placeholderOrder) {
         StringBuilder out = new StringBuilder();
@@ -145,16 +142,16 @@ public final class SqlCodegen {
     }
 
     /**
-     * Starts the tx-aware block in the generated method: acquires the connection and opens the
-     * {@code PreparedStatement} as a try-with-resources resource so it is always closed —
-     * {@code Connection conn = getConnection(); try (PreparedStatement ps = conn.prepareStatement(...)) \{}.
+     * 在生成的方法中开启感知事务的代码块：获取连接，并把 {@code PreparedStatement} 作为
+     * try-with-resources 资源打开，确保始终被关闭——
+     * {@code Connection conn = getConnection(); try (PreparedStatement ps = conn.prepareStatement(...)) \{}。
      *
-     * @param method           the method builder
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param sqlExpr          the SQL expression passed to prepareStatement (a SQL field name, or
-     *                         {@code sql.toString()} for dynamically built IN queries)
-     * @param generatedKeys    whether to use {@code RETURN_GENERATED_KEYS}
+     * @param method            方法构建器
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param sqlExpr           传给 prepareStatement 的 SQL 表达式（SQL 字段名，或动态构建的
+     *                          IN 查询用 {@code sql.toString()}）
+     * @param generatedKeys     是否使用 {@code RETURN_GENERATED_KEYS}
      */
     public static MethodSpec.Builder beginTxBlock(MethodSpec.Builder method, ClassName connection,
             ClassName preparedStatement, String sqlExpr, boolean generatedKeys, boolean logSql) {
@@ -172,16 +169,15 @@ public final class SqlCodegen {
     }
 
     /**
-     * Closes the tx-aware try block with catch + finally (releaseConnection). The catch
-     * throws an {@code JForgeException} whose message embeds the operation, table name and SQL
-     * plus the underlying {@code SQLException} message, so a failure is self-describing
-     * without digging into the cause chain.
+     * 以 catch + finally（releaseConnection）关闭感知事务的 try 块。catch 抛出
+     * {@code JForgeException}，其消息内嵌操作名、表名与 SQL，以及底层 {@code SQLException}
+     * 的消息——失败信息自描述，无需深挖异常链。
      *
-     * @param method     the method builder
-     * @param sqlException the SQLException class
-     * @param operation  the operation name (e.g. {@code "save"}, {@code "findById"})
-     * @param tableName  the table the operation targets
-     * @param sql        the SQL statement that failed (or its fixed prefix for dynamic IN queries)
+     * @param method       方法构建器
+     * @param sqlException SQLException 类
+     * @param operation    操作名（如 {@code "save"}、{@code "findById"}）
+     * @param tableName    操作目标表
+     * @param sql          失败的 SQL 语句（动态 IN 查询时为其固定前缀）
      */
     public static void endTxBlock(MethodSpec.Builder method, ClassName sqlException,
             String operation, String tableName, String sql, boolean logSql) {
@@ -200,11 +196,10 @@ public final class SqlCodegen {
     }
 
     /**
-     * Computes the INSERT columns for an entity: all mapped columns except a database-generated
-     * primary key (which the database assigns on insert).
+     * 计算实体的 INSERT 列：除数据库生成的主键（由数据库在插入时分配）外的所有映射列。
      *
-     * @param model the parsed entity model
-     * @return the columns to bind in an INSERT
+     * @param model 已解析的实体模型
+     * @return INSERT 中需要绑定的列
      */
     public static List<EntityModel.ColumnModel> insertColumns(EntityModel model) {
         List<EntityModel.ColumnModel> columns = new ArrayList<>();
@@ -217,10 +212,10 @@ public final class SqlCodegen {
     }
 
     /**
-     * Extracts the column names of a list of column models.
+     * 提取列模型列表的列名。
      *
-     * @param columns the column models
-     * @return the column-name strings, in order
+     * @param columns 列模型
+     * @return 按顺序排列的列名字符串
      */
     public static List<String> namesOf(List<EntityModel.ColumnModel> columns) {
         List<String> names = new ArrayList<>();

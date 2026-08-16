@@ -5,7 +5,7 @@ import io.github.erdsgfc.jforge.annotation.GeneratedValue;
 import io.github.erdsgfc.jforge.annotation.Id;
 import io.github.erdsgfc.jforge.annotation.Table;
 
-/** Benchmark entity declared as an interface (generated impl: {@code UserEntity_Impl}). */
+/** 以接口形式声明的基准实体(生成实现:{@code UserEntity_Impl})。 */
 @Table(name = "users")
 public interface UserEntity {
 

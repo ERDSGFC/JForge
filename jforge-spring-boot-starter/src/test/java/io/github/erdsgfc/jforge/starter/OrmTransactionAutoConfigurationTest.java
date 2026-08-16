@@ -16,14 +16,13 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Tests the auto-configuration wiring: with a {@link PlatformTransactionManager}
- * bean present, {@link OrmTransactionAutoConfiguration} registers a
- * {@link SpringTransactionManager} and installs it as the global ORM transaction
- * manager; without one, nothing is registered.
+ * 测试自动配置的装配：存在 {@link PlatformTransactionManager} Bean 时，
+ * {@link OrmTransactionAutoConfiguration} 注册 {@link SpringTransactionManager}
+ * 并将其安装为全局 ORM 事务管理器；不存在时则不注册任何东西。
  */
 class OrmTransactionAutoConfigurationTest {
 
-    /** Fresh in-memory H2 data source per runner start. */
+    /** 每次启动 runner 时新建的内存 H2 数据源。 */
     private DataSource h2DataSource() {
         HikariConfig config = new HikariConfig();
         config.setJdbcUrl("jdbc:h2:mem:orm_auto;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
@@ -38,8 +37,8 @@ class OrmTransactionAutoConfigurationTest {
     @Test
     void registersSpringTransactionManagerBean() {
         runner.run(context -> {
-            // The auto-configuration must register exactly one SpringTransactionManager
-            // bean — the manager injected into generated repositories.
+            // 自动配置必须恰好注册一个 SpringTransactionManager
+            // Bean——即注入到生成仓库的管理器。
             assertThat(context).hasSingleBean(SpringTransactionManager.class);
             assertThat(context).hasSingleBean(io.github.erdsgfc.jforge.TransactionManager.class);
         });
@@ -56,8 +55,8 @@ class OrmTransactionAutoConfigurationTest {
 
     @Test
     void autoConfigurationDiscoveredViaImportsFile() {
-        // Proves the META-INF/spring/...AutoConfiguration.imports file is packaged and
-        // loadable, so a real @SpringBootApplication picks up the configuration.
+        // 证明 META-INF/spring/...AutoConfiguration.imports 文件已被打包且可加载，
+        // 使真正的 @SpringBootApplication 能够启用该配置。
         List<String> candidates = ImportCandidates.load(AutoConfiguration.class, getClass().getClassLoader())
                 .getCandidates();
         assertThat(candidates).contains("io.github.erdsgfc.jforge.starter.OrmTransactionAutoConfiguration");

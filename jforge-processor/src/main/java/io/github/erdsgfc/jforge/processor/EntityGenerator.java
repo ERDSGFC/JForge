@@ -29,9 +29,9 @@ final class EntityGenerator {
     private final Set<String> generatedEntities;
 
     /**
-     * @param processingEnv   the processing environment (for the file writer / messager)
-     * @param configHelper    the shared ORM config helper
-     * @param generatedEntities the set of already-generated entity impl qualified names
+     * @param processingEnv     处理环境（用于文件写入器 / messager）
+     * @param configHelper      共享的 ORM 配置助手
+     * @param generatedEntities 已生成实体 impl 的全限定名集合
      */
     EntityGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper,
             Set<String> generatedEntities) {
@@ -43,7 +43,7 @@ final class EntityGenerator {
     /**
      * 为实体模型生成 impl 类。同一实体被多个仓库引用时只生成一次（返回不做任何事）。
      *
-     * @param model the parsed entity model
+     * @param model 已解析的实体模型
      */
     void generate(EntityModel model) {
         if (!generatedEntities.add(model.implQualifiedName())) {
@@ -68,8 +68,8 @@ final class EntityGenerator {
     /**
      * 组装 {@code Xxx_Impl} 类：实体接口的所有属性 → 私有字段 + getter + builder setter。
      *
-     * @param model the parsed entity model
-     * @return the generated entity impl class specification
+     * @param model 已解析的实体模型
+     * @return 生成的实体 impl 类规格
      */
     private static TypeSpec buildImpl(EntityModel model) {
         ClassName entityClass = ClassName.get(model.entityPackage(), model.entitySimpleName());

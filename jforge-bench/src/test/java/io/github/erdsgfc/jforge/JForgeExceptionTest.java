@@ -18,9 +18,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests {@link JForgeException}: its error {@link JForgeException.Code} category, SQL context
- * and cause propagation — both as a standalone value class and as thrown by generated
- * repository code (whose message embeds operation, table name and SQL).
+ * 测试 {@link JForgeException}:错误 {@link JForgeException.Code} 分类、SQL 上下文与
+ * 根因传播——既作为独立的值类,也作为生成仓库代码抛出的异常
+ * (其消息中嵌入了操作名、表名和 SQL)。
  */
 class JForgeExceptionTest {
 

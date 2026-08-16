@@ -6,26 +6,26 @@ import io.github.erdsgfc.jforge.annotation.Id;
 import io.github.erdsgfc.jforge.annotation.Table;
 
 /**
- * Test entity for the starter module: an interface with property methods and
- * builder-style setters, compiled into {@code TestUser_Impl} by the ORM processor.
+ * starter 模块的测试实体：一个包含属性方法与 builder 风格 setter 的接口，
+ * 由 ORM 处理器编译为 {@code TestUser_Impl}。
  */
 @Table(name = "test_users")
 public interface TestUser {
 
-    /** Database-generated primary key (BIGSERIAL). */
+    /** 数据库生成的主键（BIGSERIAL）。 */
     @Id
     @GeneratedValue
     Long id();
 
     TestUser id(Long id);
 
-    /** User display name, mapped to the {@code user_name} column. */
+    /** 用户显示名，映射到 {@code user_name} 列。 */
     @Column(name = "user_name")
     String name();
 
     TestUser name(String name);
 
-    /** User age in years. */
+    /** 用户年龄（岁）。 */
     Integer age();
 
     TestUser age(Integer age);

@@ -5,8 +5,8 @@ import io.github.erdsgfc.jforge.annotation.Dao;
 import io.github.erdsgfc.jforge.core.BaseRepository;
 
 /**
- * Batch-test repository explicitly opting out of batching with
- * {@code @BatchSize(0)}: rows are inserted one by one on a single connection.
+ * 用 {@code @BatchSize(0)} 显式关闭批处理的批处理测试仓库:
+ * 行数据在单个连接上逐条插入。
  */
 @Dao
 @BatchSize(0)

@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Integration tests for the generated repository implementation. */
+/** 生成仓库实现类的集成测试。 */
 class RepositoryCrudTest {
 
     private HikariDataSource ds;

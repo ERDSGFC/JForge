@@ -5,7 +5,7 @@ import io.github.erdsgfc.jforge.annotation.GeneratedValue;
 import io.github.erdsgfc.jforge.annotation.Id;
 import io.github.erdsgfc.jforge.annotation.Table;
 
-/** Test entity for the {@code logSql=true} package. */
+/** 用于 {@code logSql=true} 包的测试实体。 */
 @Table(name = "log_users")
 public interface LogUser {
 

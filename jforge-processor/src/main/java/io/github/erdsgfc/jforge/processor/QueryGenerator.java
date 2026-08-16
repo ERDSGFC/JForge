@@ -47,15 +47,15 @@ final class QueryGenerator {
     }
 
     /**
-     * Adds a generated method for every {@code @Query}-annotated method on the repository
-     * (SQL 取 {@code <方法名>Sql} 字段).
+     * 为仓库上每个标注了 {@code @Query} 的方法生成实现方法
+     * (SQL 取 {@code <方法名>Sql} 字段)。
      *
-     * @param info             the repository info
-     * @param builder          the impl class builder receiving the methods
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param resultSet        the ResultSet class
-     * @param sqlException     the SQLException class
+     * @param info              仓库信息
+     * @param builder           接收方法的 impl 类构建器
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param resultSet         ResultSet 类
+     * @param sqlException      SQLException 类
      */
     void queryMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
@@ -74,18 +74,17 @@ final class QueryGenerator {
     }
 
     /**
-     * Builds one {@code @Query} method implementation: converts named placeholders to
-     * {@code ?}, binds each {@code @Bind} parameter by type, and maps the result
-     * according to the return type (entity, DTO record, scalar, or update count).
+     * 构建一个 {@code @Query} 方法的实现:命名占位符转 {@code ?},按类型绑定每个
+     * {@code @Bind} 参数,并按返回类型映射结果(实体、DTO record、标量或影响行数)。
      *
-     * @param info             the repository info
-     * @param method           the annotated repository method
-     * @param query            the @Query annotation
-     * @param connection       the Connection class
-     * @param preparedStatement the PreparedStatement class
-     * @param resultSet        the ResultSet class
-     * @param sqlException     the SQLException class
-     * @return the query method specification
+     * @param info              仓库信息
+     * @param method            标注了注解的仓库方法
+     * @param query             @Query 注解
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param resultSet         ResultSet 类
+     * @param sqlException      SQLException 类
+     * @return 查询方法规格
      */
     private MethodSpec queryMethod(JForgeProcessor.DaoInfo info, ExecutableElement method, Query query,
             ClassName connection, ClassName preparedStatement, ClassName resultSet,
@@ -95,7 +94,7 @@ final class QueryGenerator {
         List<String> placeholders = new ArrayList<>();
         SqlCodegen.convertPlaceholders(query.value(), placeholders);
 
-        // Map placeholder name → method parameter (by @Bind).
+        // 映射占位符名 → 方法参数(经 @Bind)。
         Map<String, VariableElement> binds = new HashMap<>();
         for (VariableElement parameter : method.getParameters()) {
             Bind bind = parameter.getAnnotation(Bind.class);
@@ -157,12 +156,12 @@ final class QueryGenerator {
     }
 
     /**
-     * Builds the generated-key write-back expression for a {@code @ReturnGeneratedKeys}
-     * method: finds the entity parameter and returns an assignment to its id setter.
+     * 构建 {@code @ReturnGeneratedKeys} 方法的生成主键回写表达式:找到实体参数,
+     * 返回对其 id setter 的赋值。
      *
-     * @param info   the repository info
-     * @param method the annotated method
-     * @return the write-back expression, or a no-op comment when no entity parameter exists
+     * @param info   仓库信息
+     * @param method 标注了注解的方法
+     * @return 回写表达式;无实体参数时返回 no-op 注释
      */
     private String generatedKeysWriteback(JForgeProcessor.DaoInfo info, ExecutableElement method) {
         for (VariableElement parameter : method.getParameters()) {
@@ -181,13 +180,13 @@ final class QueryGenerator {
     }
 
     /**
-     * Appends result-mapping code for a SELECT {@code @Query} based on the return type:
-     * entity interface (by column name), DTO record (by component order), or scalar.
+     * 按返回类型追加 SELECT {@code @Query} 的结果映射代码:
+     * 实体接口(按列名)、DTO record(按组件顺序)或标量。
      *
-     * @param spec       the method builder receiving the mapping code
-     * @param info       the repository info
-     * @param method     the annotated method
-     * @param returnType the method's return type
+     * @param spec       接收映射代码的方法构建器
+     * @param info       仓库信息
+     * @param method     标注了注解的方法
+     * @param returnType 方法的返回类型
      */
     private void appendResultMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info, ExecutableElement method,
             TypeMirror returnType) {
@@ -202,13 +201,13 @@ final class QueryGenerator {
                 : null;
 
         if (element != null && element.getAnnotation(Table.class) != null) {
-            // Entity interface: map by column name (custom SELECT column order is user-controlled).
+            // 实体接口:按列名映射(自定义 SELECT 的列顺序由用户控制)。
             appendEntityMapping(spec, info, elementType, isList);
         } else if (element != null && element.getKind() == ElementKind.RECORD) {
-            // DTO record: component order maps to SELECT column order by index.
+            // DTO record:组件顺序按索引映射到 SELECT 列顺序。
             appendRecordMapping(spec, element, isList);
         } else if (elementType.getKind() != TypeKind.VOID) {
-            // Single value (String/Long/...).
+            // 单值(String/Long/...)。
             if (isList) {
                 spec.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class),
                         TypeName.get(elementType), ClassName.get("java.util", "ArrayList"));
@@ -228,13 +227,13 @@ final class QueryGenerator {
     }
 
     /**
-     * Appends row mapping for an entity-interface result type, reading columns by name
-     * (custom SELECT order is user-controlled in @Query SQL).
+     * 追加实体接口结果类型的行映射,按列名读取
+     * (@Query SQL 中自定义 SELECT 顺序由用户控制)。
      *
-     * @param spec       the method builder receiving the mapping code
-     * @param info       the repository info
-     * @param entityType the entity interface type
-     * @param isList     whether the method returns a list
+     * @param spec       接收映射代码的方法构建器
+     * @param info       仓库信息
+     * @param entityType 实体接口类型
+     * @param isList     方法是否返回列表
      */
     private void appendEntityMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info, TypeMirror entityType,
             boolean isList) {
@@ -272,12 +271,11 @@ final class QueryGenerator {
     }
 
     /**
-     * Appends row mapping for a DTO record result type: record component order maps to
-     * SELECT column order by index.
+     * 追加 DTO record 结果类型的行映射:record 组件顺序按索引映射到 SELECT 列顺序。
      *
-     * @param spec   the method builder receiving the mapping code
-     * @param record the DTO record element
-     * @param isList whether the method returns a list
+     * @param spec   接收映射代码的方法构建器
+     * @param record DTO record 元素
+     * @param isList 方法是否返回列表
      */
     private void appendRecordMapping(MethodSpec.Builder spec, TypeElement record, boolean isList) {
         ClassName recordClass = ClassName.get(record);
@@ -300,10 +298,10 @@ final class QueryGenerator {
     }
 
     /**
-     * Builds the constructor argument list for a record from the current row.
+     * 从当前行构建 record 的构造参数列表。
      *
-     * @param components the record components
-     * @return comma-joined {@code rs.getXxx(i)} expressions
+     * @param components record 组件
+     * @return 逗号连接的 {@code rs.getXxx(i)} 表达式
      */
     private String recordArgs(List<? extends Element> components) {
         StringBuilder sb = new StringBuilder();
