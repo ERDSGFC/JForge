@@ -168,7 +168,7 @@ final class QueryGenerator {
             spec.addStatement("return ps.executeUpdate()");
         } else {
             spec.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
-            appendResultMapping(spec, info, method, builder, embedded, returnType);
+            appendResultMapping(spec, info, method, builder, embedded, returnType, query.value());
             spec.endControlFlow();
         }
 
@@ -219,10 +219,11 @@ final class QueryGenerator {
      * @param builder    接收方法的 impl 类构建器
      * @param embedded   已嵌入/待嵌入当前仓库的实体 impl 表（键 = 实体接口全限定名）
      * @param returnType 方法的返回类型
+     * @param sql        {@code @Query} 的 SQL（实体映射解析 SELECT 列顺序用）
      */
     private void appendResultMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info,
             ExecutableElement method, TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded,
-            TypeMirror returnType) {
+            TypeMirror returnType, String sql) {
         boolean isList = returnType.getKind() == TypeKind.DECLARED
                 && ((DeclaredType) returnType).asElement().getSimpleName().contentEquals("List");
         TypeMirror elementType = isList
@@ -234,8 +235,8 @@ final class QueryGenerator {
                 : null;
 
         if (element != null && element.getAnnotation(Table.class) != null) {
-            // 实体接口:按列名映射(自定义 SELECT 的列顺序由用户控制)。
-            appendEntityMapping(spec, info, builder, embedded, elementType, isList);
+            // 实体接口:解析 SELECT 列顺序按下标映射(失败回退按列名)。
+            appendEntityMapping(spec, info, builder, embedded, elementType, isList, sql, method);
         } else if (element != null && element.getKind() == ElementKind.RECORD) {
             // DTO record:组件顺序按索引映射到 SELECT 列顺序。
             appendRecordMapping(spec, element, isList);
@@ -260,8 +261,10 @@ final class QueryGenerator {
     }
 
     /**
-     * 追加实体接口结果类型的行映射,按列名读取
-     * (@Query SQL 中自定义 SELECT 顺序由用户控制)。
+     * 追加实体接口结果类型的行映射:优先按下标读取——编译期解析 {@code @Query} 的
+     * SELECT 列顺序,为每个实体列定位其在 SELECT 中的位置(与 CRUD mapRow 一致,
+     * 且 SELECT 缺实体列时编译报错而非静默错位);SQL 无法解析(通配符/函数/复杂
+     * 表达式)时回退按列名读取。
      *
      * @param spec       接收映射代码的方法构建器
      * @param info       仓库信息
@@ -269,10 +272,12 @@ final class QueryGenerator {
      * @param embedded   已嵌入/待嵌入当前仓库的实体 impl 表（键 = 实体接口全限定名）
      * @param entityType 实体接口类型
      * @param isList     方法是否返回列表
+     * @param sql        {@code @Query} 的 SQL（解析 SELECT 列顺序用）
+     * @param method     标注了 {@code @Query} 的仓库方法（缺列报错绑定位置）
      */
     private void appendEntityMapping(MethodSpec.Builder spec, JForgeProcessor.DaoInfo info,
             TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded, TypeMirror entityType,
-            boolean isList) {
+            boolean isList, String sql, ExecutableElement method) {
         TypeElement entityElement = (TypeElement) ((DeclaredType) entityType).asElement();
         // 命中 embedded 表（宿主实体由 RepositoryGenerator 预置）直接复用，避免重复解析；
         // 非宿主实体（@Query 返回其他 @Table 实体）现场解析并作为嵌套类嵌入当前仓库，
@@ -299,10 +304,7 @@ final class QueryGenerator {
                     TypeName.get(entityType), ClassName.get("java.util", "ArrayList"));
             spec.beginControlFlow("while (rs.next())");
             spec.addStatement("$T e = new $T()", impl, impl);
-            for (EntityModel.ColumnModel column : model.columns()) {
-                spec.addCode(SqlCodegen.readColumnByName(column.typeName, "e", column.setterName, column.columnName));
-                spec.addCode("\n");
-            }
+            appendEntityColumnReads(spec, model, sql, method);
             spec.addStatement("result.add(e)");
             spec.endControlFlow();
             spec.addStatement("return result");
@@ -311,11 +313,32 @@ final class QueryGenerator {
             spec.addStatement("return null");
             spec.endControlFlow();
             spec.addStatement("$T e = new $T()", impl, impl);
-            for (EntityModel.ColumnModel column : model.columns()) {
-                spec.addCode(SqlCodegen.readColumnByName(column.typeName, "e", column.setterName, column.columnName));
-                spec.addCode("\n");
-            }
+            appendEntityColumnReads(spec, model, sql, method);
             spec.addStatement("return e");
+        }
+    }
+
+    /**
+     * 追加实体所有列的读取代码:优先按解析出的 SELECT 列顺序按下标读取
+     * (与 CRUD mapRow 一致;SELECT 缺实体列时编译报错),解析失败回退按列名。
+     */
+    private void appendEntityColumnReads(MethodSpec.Builder spec, EntityModel model, String sql,
+            ExecutableElement method) {
+        List<String> selectColumns = parseSelectColumns(sql);
+        for (EntityModel.ColumnModel column : model.columns()) {
+            if (selectColumns != null) {
+                int pos = indexOfIgnoreCase(selectColumns, column.columnName);
+                if (pos < 0) {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "@Query SELECT is missing column '" + column.columnName + "' required by entity "
+                                    + model.entityQualifiedName() + ": " + sql, method);
+                    return;
+                }
+                spec.addCode(SqlCodegen.readColumn(column.typeName, "e", column.setterName, pos + 1));
+            } else {
+                spec.addCode(SqlCodegen.readColumnByName(column.typeName, "e", column.setterName, column.columnName));
+            }
+            spec.addCode("\n");
         }
     }
 
@@ -362,5 +385,138 @@ final class QueryGenerator {
             sb.append("rs.").append(TypeNameUtils.jdbcGetter(typeName)).append("(").append(i + 1).append(")");
         }
         return sb.toString();
+    }
+
+    // ---- SELECT 列顺序解析(实体映射按下标读取) -------------------------------
+
+    /**
+     * 解析 SELECT 查询的顶层列名列表,用于把 {@code @Query} 实体映射从按名称改为
+     * 按下标读取(与 CRUD mapRow 一致,且能在编译期校验 SELECT 缺列)。
+     *
+     * <p>支持:逗号分隔的列名、{@code AS} 别名、表前缀(如 {@code u.name})、
+     * 引号列名;遇到通配符({@code *})、函数、括号等无法可靠解析的表达式返回
+     * {@code null}——调用方回退到按列名映射(安全降级,不误报)。</p>
+     *
+     * @param sql {@code @Query} 的 SQL
+     * @return SELECT 列名列表(按书写顺序),解析失败返回 {@code null}
+     */
+    private static List<String> parseSelectColumns(String sql) {
+        int select = indexOfTopLevelKeyword(sql, "SELECT", 0);
+        if (select < 0) {
+            return null;
+        }
+        int from = indexOfTopLevelKeyword(sql, "FROM", select + 6);
+        if (from < 0) {
+            return null;
+        }
+        String list = sql.substring(select + 6, from).replaceFirst("(?i)\\s+DISTINCT\\s+", " ");
+        List<String> columns = new ArrayList<>();
+        for (String item : splitTopLevel(list)) {
+            String name = selectColumnName(item);
+            if (name == null) {
+                return null; // 通配符或无法解析 → 回退按名称
+            }
+            columns.add(name);
+        }
+        return columns.isEmpty() ? null : columns;
+    }
+
+    /** 顶层(括号深度 0)逗号分割;函数参数内的逗号不分割。 */
+    private static List<String> splitTopLevel(String list) {
+        List<String> parts = new ArrayList<>();
+        int depth = 0;
+        StringBuilder current = new StringBuilder();
+        for (int i = 0; i < list.length(); i++) {
+            char c = list.charAt(i);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+            } else if (c == ',' && depth == 0) {
+                parts.add(current.toString());
+                current.setLength(0);
+                continue;
+            }
+            current.append(c);
+        }
+        if (current.length() > 0) {
+            parts.add(current.toString());
+        }
+        return parts;
+    }
+
+    /**
+     * 提取单个 SELECT 项的列名:去 AS 别名与表前缀({@code u.name AS n} → {@code name};
+     * 按下标读取时别名不影响位置)、去引号;含通配符或函数/表达式返回 {@code null}。
+     */
+    private static String selectColumnName(String item) {
+        String s = item.trim();
+        if (s.isEmpty() || s.indexOf('*') >= 0 || s.indexOf('(') >= 0) {
+            return null;
+        }
+        int as = indexOfTopLevelKeyword(s, "AS", 0);
+        if (as >= 0) {
+            s = s.substring(0, as);
+        }
+        int dot = s.lastIndexOf('.');
+        if (dot >= 0) {
+            s = s.substring(dot + 1);
+        }
+        s = s.trim();
+        if (s.length() >= 2 && (s.charAt(0) == '"' || s.charAt(0) == '`')
+                && s.charAt(s.length() - 1) == s.charAt(0)) {
+            s = s.substring(1, s.length() - 1);
+        }
+        return s.isEmpty() ? null : s;
+    }
+
+    /** 从 {@code from} 起查找下一个顶层(括号深度 0、非引号内)关键字,大小写不敏感。 */
+    private static int indexOfTopLevelKeyword(String s, String keyword, int from) {
+        String lower = s.toLowerCase();
+        String kw = keyword.toLowerCase();
+        int depth = 0;
+        boolean inQuote = false;
+        char quoteChar = 0;
+        for (int i = from; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inQuote) {
+                if (c == quoteChar) {
+                    inQuote = false;
+                }
+                continue;
+            }
+            if (c == '"' || c == '`' || c == '\'') {
+                inQuote = true;
+                quoteChar = c;
+                continue;
+            }
+            if (c == '(') {
+                depth++;
+                continue;
+            }
+            if (c == ')') {
+                depth--;
+                continue;
+            }
+            if (depth == 0 && lower.startsWith(kw, i)
+                    && (i == 0 || !isIdentifierChar(s.charAt(i - 1)))
+                    && (i + kw.length() >= s.length() || !isIdentifierChar(s.charAt(i + kw.length())))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean isIdentifierChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_' || c == '$';
+    }
+
+    private static int indexOfIgnoreCase(List<String> columns, String name) {
+        for (int i = 0; i < columns.size(); i++) {
+            if (columns.get(i).equalsIgnoreCase(name)) {
+                return i;
+            }
+        }
+        return -1;
     }
 }
