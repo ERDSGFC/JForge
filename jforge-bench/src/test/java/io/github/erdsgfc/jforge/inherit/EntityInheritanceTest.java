@@ -45,7 +45,6 @@ class EntityInheritanceTest {
     /** 父接口的 @Id @GeneratedValue 生效：save 回写生成主键。 */
     @Test
     void saveWritesBackParentInterfaceGeneratedId() {
-        // 父接口 setter 返回 BaseEntity（链式在父 setter 处中断），分步调用。
         UserEntity user = repo.createEntity();
         user.name("qin");
         user.age(25);
@@ -53,6 +52,19 @@ class EntityInheritanceTest {
         UserEntity saved = repo.save(user);
 
         assertNotNull(saved.id(), "parent interface @Id should drive generated-key write-back");
+        assertEquals("qin", saved.name());
+        assertEquals(25, saved.age());
+    }
+
+    /** 泛型父接口（CRTP）：setter 返回类型替换为子接口，链式调用跨接口不中断。 */
+    @Test
+    void chainedBuilderAcrossGenericParentInterface() {
+        // name() 声明在父接口（返回 T），替换后为 UserEntity——可直接继续 .age(...)。
+        UserEntity user = repo.createEntity().name("qin").age(25);
+
+        UserEntity saved = repo.save(user);
+
+        assertNotNull(saved.id());
         assertEquals("qin", saved.name());
         assertEquals(25, saved.age());
     }

@@ -35,8 +35,26 @@
 实体是**接口**:属性 getter + builder setter(同名、单参数、返回实体接口)。
 
 实体接口可以**继承父接口**——父接口声明的属性同样参与映射(`@Id/@Column/@GeneratedValue`
-标注在父接口上照常生效),列顺序 = 继承层次顺序(父接口属性在前)。父接口的 builder setter
-返回父接口类型,链式调用在父 setter 处中断,建议分步调用。
+标注在父接口上照常生效),列顺序 = 继承层次顺序(子接口自身属性在前,父接口属性在后)。
+父接口支持**泛型自限定模式**(CRTP),类型参数**必须且只能有一个、且必须是子接口自身**:
+
+```java
+interface BaseEntity<T extends BaseEntity<T>> {
+    @Id @GeneratedValue Long id();
+    T id(Long id);
+    String name();
+    T name(String name);
+}
+
+@Table(name = "users")
+interface UserEntity extends BaseEntity<UserEntity> {
+    Integer age();
+    UserEntity age(Integer age);
+}
+```
+
+泛型实参替换后,父接口的 builder setter 返回子接口类型(`T name(String)` → `UserEntity name(String)`),
+**链式调用跨接口不中断**。不满足约束(多类型参数或实参非自身)时编译报错。
 
 ```java
 @Table(name = "users")

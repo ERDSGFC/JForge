@@ -192,7 +192,16 @@ final class QueryGenerator {
                 if (element.getKind() == ElementKind.INTERFACE
                         && element.getAnnotation(Table.class) != null) {
                     EntityModel.ColumnModel idColumn = info.model.idColumn();
-                    return parameter.getSimpleName() + "." + idColumn.setterName + "(keys.get"
+                    // 回写接收者:接口有 setter 直接调用;只读 id(无 setter)强转到宿主仓库的
+                    // 嵌套实体 impl 调用 private 填充 setter(nestmates 允许宿主类访问)。
+                    // getSimpleName() 返回 Name,条件表达式的另一分支是 String——
+                    // 必须 toString() 才能让两分支类型一致。
+                    String paramName = parameter.getSimpleName().toString();
+                    String receiver = idColumn.hasSetter
+                            ? paramName
+                            : "((" + EntityModel.implNameOf(info.model.entitySimpleName(),
+                                    info.model.implSuffix()) + ") " + paramName + ")";
+                    return receiver + "." + idColumn.setterName + "(keys.get"
                             + TypeNameUtils.jdbcReturnSuffix(idColumn.typeName) + "(1))";
                 }
             }

@@ -51,14 +51,20 @@ final class EntityGenerator {
             TypeName setterReturn = column.setterReturnType != null
                     ? TypeName.get(column.setterReturnType)
                     : entityClass;
-            builder.addMethod(MethodSpec.methodBuilder(column.setterName)
-                    .addAnnotation(Override.class)
-                    .addModifiers(Modifier.PUBLIC)
+            MethodSpec.Builder setter = MethodSpec.methodBuilder(column.setterName)
                     .returns(setterReturn)
                     .addParameter(type, "value")
                     .addStatement("this.$N = value", column.fieldName)
-                    .addStatement("return this")
-                    .build());
+                    .addStatement("return this");
+            if (column.hasSetter) {
+                // 接口声明了 setter:@Override + public(接口契约的一部分)。
+                setter.addAnnotation(Override.class).addModifiers(Modifier.PUBLIC);
+            } else {
+                // 只读属性(接口只有 getter):生成 private 填充 setter 供行映射内部调用
+                // (外部类可访问嵌套类私有成员),不带 @Override——接口上没有该方法。
+                setter.addModifiers(Modifier.PRIVATE);
+            }
+            builder.addMethod(setter.build());
         }
         return builder.build();
     }

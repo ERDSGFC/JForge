@@ -36,7 +36,7 @@ mvn -Prelease deploy
 
 ## 架构：实体接口 + @Dao 仓库 + 编译期生成
 
-用户定义 `@Table` 实体**接口**（getter + builder setter，**可继承父接口**——父接口属性同样映射为列，列顺序 = 继承层次顺序）与 `@Dao` 仓库**接口**（继承 `BaseRepository<T, ID>`），注解处理器在编译期生成**直写 JDBC 的仓库实现类**（`XxxRepository_Impl`，继承 `AbstractRepository`，只含实体特定代码：SQL 常量、行映射、CRUD、`@Query`；实体的 `Xxx_Impl` 作为其 **private static final 嵌套类**随仓库文件生成，用户只能经 `repo.createEntity()` 获取实体实例）——运行时零反射、零元数据查找、零动态分发，AOT（GraalVM Native Image）友好。仓库经统一门面 `JForge`（持有 `private final` `DataSource`/`TransactionManager`、缓存全部仓库）创建：`new JForge(ds).repository(UserRepository.class)`；**管理器由门面构造器注入生成实现（实例传递，无全局单例）**，创建分发由固定包 `io.github.erdsgfc.jforge.generated.Repositories` 承担（框架 jar 自带同名空壳占位，用户 target/classes 的真实实现按类加载优先级覆盖）。**与手写 JDBC 等价的生成代码就是性能上限**。
+用户定义 `@Table` 实体**接口**（getter + builder setter，**可继承父接口**——父接口属性同样映射为列，列顺序 = 继承层次顺序：子接口自身属性在前；父接口支持泛型自限定 CRTP 模式 `BaseEntity<T extends BaseEntity<T>>`，类型实参必须只有一个且为子接口自身，`types.asMemberOf` 替换后 setter 返回子接口类型、链式调用不中断）与 `@Dao` 仓库**接口**（继承 `BaseRepository<T, ID>`），注解处理器在编译期生成**直写 JDBC 的仓库实现类**（`XxxRepository_Impl`，继承 `AbstractRepository`，只含实体特定代码：SQL 常量、行映射、CRUD、`@Query`；实体的 `Xxx_Impl` 作为其 **private static final 嵌套类**随仓库文件生成，用户只能经 `repo.createEntity()` 获取实体实例）——运行时零反射、零元数据查找、零动态分发，AOT（GraalVM Native Image）友好。仓库经统一门面 `JForge`（持有 `private final` `DataSource`/`TransactionManager`、缓存全部仓库）创建：`new JForge(ds).repository(UserRepository.class)`；**管理器由门面构造器注入生成实现（实例传递，无全局单例）**，创建分发由固定包 `io.github.erdsgfc.jforge.generated.Repositories` 承担（框架 jar 自带同名空壳占位，用户 target/classes 的真实实现按类加载优先级覆盖）。**与手写 JDBC 等价的生成代码就是性能上限**。
 
 ## 模块
 
@@ -87,5 +87,6 @@ mvn -Prelease deploy
 
 - 依赖版本统一在根 POM 的 `<properties>` 集中管理（`jmh.version`/`h2.version`/`spring-boot.version` 等），子模块不写版本号；Spring Boot 3.5.6 BOM 也在根 `dependencyManagement` 里 import
 - 插件版本统一在根 POM 的 `<pluginManagement>` 管理（compiler/shade/source/javadoc/gpg）；Maven Central 发布用 `mvn -Prelease deploy`（`<licenses>/<developers>/<scm>/<distributionManagement>` 已配置，SCM 地址需按实际仓库核对）
+- **改过注解处理器后**：`mvn install -pl jforge-annotation,jforge-processor -am` 后必须对消费模块 `mvn clean test`——Maven 3.9+ 增量编译在输入源码无变化时跳过 javac，`target/generated-sources` 会停留在旧 processor 生成的版本（表现为"改动没生效"，实测踩过）
 - `maven-compiler-plugin` 显式声明注解处理器（JDK 23+ 默认关闭自动注解处理）
 - 测试用内存 H2（`BIGSERIAL` 自增，PostgreSQL 模式）

@@ -51,8 +51,8 @@ final class CrudGenerator {
             ClassName connection, ClassName preparedStatement, ClassName resultSet,
             ClassName sqlException) {
         List<MethodSpec> methods = new ArrayList<>();
-        methods.add(saveMethod(info, connection, preparedStatement, sqlException));
-        methods.add(saveAllMethod(info, connection, preparedStatement, resultSet, sqlException));
+        methods.add(saveMethod(info, entityImpl, connection, preparedStatement, sqlException));
+        methods.add(saveAllMethod(info, entityImpl, connection, preparedStatement, resultSet, sqlException));
         methods.add(deleteMethod(info));
         methods.add(deleteManyMethod(info));
         methods.add(deleteByIdMethod(info, connection, preparedStatement, sqlException));
@@ -94,7 +94,7 @@ final class CrudGenerator {
      * @param sqlException     SQLException 类
      * @return save 方法规格
      */
-    private MethodSpec saveMethod(JForgeProcessor.DaoInfo info, ClassName connection,
+    private MethodSpec saveMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName connection,
             ClassName preparedStatement, ClassName sqlException) {
         EntityModel model = info.model;
         List<EntityModel.ColumnModel> insertColumns = SqlCodegen.insertColumns(model);
@@ -110,11 +110,13 @@ final class CrudGenerator {
             method.addCode("\n");
         }
         method.addStatement("ps.executeUpdate()");
+        // 生成键回写:接口有 setter 直接调用;只读 id(无 setter)强转到嵌套类调用
+        // private 填充 setter(nestmates 允许宿主类访问嵌套类私有成员)。
         if (model.idGenerated()) {
             method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", ClassName.get("java.sql", "ResultSet"));
             method.beginControlFlow("if (keys.next())");
-            method.addStatement("entity.$L(keys.get$L(1))", model.idColumn().setterName,
-                    TypeNameUtils.jdbcReturnSuffix(model.idColumn().typeName));
+            method.addStatement("$L.$L(keys.get$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
+                    model.idColumn().setterName, TypeNameUtils.jdbcReturnSuffix(model.idColumn().typeName));
             method.endControlFlow();
             method.endControlFlow();
         }
@@ -141,7 +143,7 @@ final class CrudGenerator {
      * @param sqlException      SQLException 类
      * @return 批量 save 方法规格
      */
-    private MethodSpec saveAllMethod(JForgeProcessor.DaoInfo info, ClassName connection,
+    private MethodSpec saveAllMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         EntityModel model = info.model;
         List<EntityModel.ColumnModel> insertColumns = SqlCodegen.insertColumns(model);
@@ -176,12 +178,12 @@ final class CrudGenerator {
             method.addStatement("batchStart++");
             method.beginControlFlow("if (batchStart % batchSize == 0)");
             method.addStatement("ps.executeBatch()");
-            appendBatchKeysWriteback(method, info, resultSet, "batchStart - batchSize");
+            appendBatchKeysWriteback(method, info, entityImpl, resultSet, "batchStart - batchSize");
             method.endControlFlow();
             method.endControlFlow();
             method.beginControlFlow("if (batchStart % batchSize != 0)");
             method.addStatement("ps.executeBatch()");
-            appendBatchKeysWriteback(method, info, resultSet, "batchStart - batchStart % batchSize");
+            appendBatchKeysWriteback(method, info, entityImpl, resultSet, "batchStart - batchStart % batchSize");
             method.endControlFlow();
         } else {
             // 不批处理：在共享连接上每行执行一次 executeUpdate。
@@ -191,8 +193,8 @@ final class CrudGenerator {
             if (idGenerated) {
                 method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", resultSet);
                 method.beginControlFlow("if (keys.next())");
-                method.addStatement("entity.$L(keys.get$L(1))", model.idColumn().setterName,
-                        TypeNameUtils.jdbcReturnSuffix(model.idColumn().typeName));
+                method.addStatement("$L.$L(keys.get$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
+                        model.idColumn().setterName, TypeNameUtils.jdbcReturnSuffix(model.idColumn().typeName));
                 method.endControlFlow();
                 method.endControlFlow();
             }
@@ -225,22 +227,39 @@ final class CrudGenerator {
      *
      * @param method    方法构建器
      * @param info      仓库信息
+     * @param entityImpl 生成的实体 impl 嵌套类（只读 id 强转回写用）
      * @param resultSet ResultSet 类
      * @param startExpr 块首实体在列表中的索引
      */
     private void appendBatchKeysWriteback(MethodSpec.Builder method, JForgeProcessor.DaoInfo info,
-            ClassName resultSet, String startExpr) {
+            ClassName entityImpl, ClassName resultSet, String startExpr) {
         if (!info.model.idGenerated()) {
             return;
         }
         method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", resultSet);
         method.addStatement("int i = $L", startExpr);
         method.beginControlFlow("while (keys.next())");
-        method.addStatement("entities.get(i).$L(keys.get$L(1))", info.model.idColumn().setterName,
+        method.addStatement("$L.$L(keys.get$L(1))", idWritebackReceiver(info.model, entityImpl, "entities.get(i)"),
+                info.model.idColumn().setterName,
                 TypeNameUtils.jdbcReturnSuffix(info.model.idColumn().typeName));
         method.addStatement("i++");
         method.endControlFlow();
         method.endControlFlow();
+    }
+
+    /**
+     * 生成键回写语句的接收者表达式:接口声明了 id setter 时直接调用接口方法;
+     * 只读 id(接口无 setter)时强转到嵌套类类型调用 private 填充 setter——
+     * 运行时实体必然是嵌套类实例(经 {@code createEntity()}/行映射产生),
+     * nestmates 允许宿主类访问嵌套类的私有成员。
+     *
+     * @param model     实体模型
+     * @param entityImpl 实体 impl 嵌套类名
+     * @param expr      实体引用表达式(如 {@code "entity"} 或 {@code "entities.get(i)"})
+     * @return 回写接收者表达式
+     */
+    private static String idWritebackReceiver(EntityModel model, ClassName entityImpl, String expr) {
+        return model.idColumn().hasSetter ? expr : "((" + entityImpl.simpleName() + ") " + expr + ")";
     }
 
     // ---- 批大小解析 ----------------------------------------------------------
