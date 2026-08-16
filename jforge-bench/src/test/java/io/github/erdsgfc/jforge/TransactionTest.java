@@ -40,6 +40,14 @@ class TransactionTest {
                     "id BIGSERIAL PRIMARY KEY," +
                     "user_name VARCHAR(100)," +
                     "age INT)");
+            // benchmark 包的 UserRepository（不同仓库实例共享事务测试复用）映射 timed_users。
+            st.execute("DROP TABLE IF EXISTS timed_users");
+            st.execute("CREATE TABLE timed_users (" +
+                    "id BIGSERIAL PRIMARY KEY," +
+                    "user_name VARCHAR(100)," +
+                    "age INT," +
+                    "created_at TIMESTAMP," +
+                    "updated_at TIMESTAMP)");
         }
         jforge = new JForge(ds);
         repo = jforge.repository(UserRepository.class);
@@ -122,10 +130,12 @@ class TransactionTest {
 
         repo.beginTransaction();
         benchRepo.save(benchRepo.createEntity().name("from-bench").age(6));
-        assertEquals(1, repo.count(), "benchmark repo must join the active transaction");
+        // benchRepo 映射 timed_users（与根包 repo 的 users 不同表），
+        // 但同一门面 = 同一连接：同一事务内的写入对其可见、回滚后消失。
+        assertEquals(1, benchRepo.count(), "benchmark repo must join the active transaction");
         repo.rollback();
 
-        assertEquals(0, repo.count());
+        assertEquals(0, benchRepo.count());
     }
 
     @Test
@@ -139,7 +149,9 @@ class TransactionTest {
         isolatedRepo.save(isolatedRepo.createEntity().name("isolated").age(7));
         repo.rollback();
 
-        assertEquals(1, repo.count(), "different facade = different manager = no shared transaction");
+        // isolatedRepo 映射 timed_users：其写入经独立门面提交，repo 的回滚不影响它。
+        assertEquals(1, isolatedRepo.count(),
+                "different facade = different manager = no shared transaction");
     }
 
     @Test

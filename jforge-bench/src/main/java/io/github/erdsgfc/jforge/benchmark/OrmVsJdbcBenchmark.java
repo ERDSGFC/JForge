@@ -21,6 +21,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -33,18 +34,19 @@ import java.util.concurrent.TimeUnit;
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 @State(Scope.Thread)
-@Warmup(iterations = 2, time = 2, timeUnit = TimeUnit.SECONDS)
-@Measurement(iterations = 3, time = 2, timeUnit = TimeUnit.SECONDS)
-@Fork(1)
+@Warmup(iterations = 3, time = 2, timeUnit = TimeUnit.SECONDS)
+@Measurement(iterations = 5, time = 2, timeUnit = TimeUnit.SECONDS)
+@Fork(2)
 public class OrmVsJdbcBenchmark {
 
     private static final String URL = "jdbc:h2:mem:orm_bench;DB_CLOSE_DELAY=-1;MODE=PostgreSQL";
 
     private HikariDataSource dataSource;
     private UserRepository repo;
+    private TimedUserRepository timedRepo;
     private long seededId;
 
-    /** 创建共享的 HikariCP 连接池(带语句缓存)并预置一行数据。 */
+    /** 创建共享的 HikariCP 连接池(带语句缓存)并预置数据。两套实体映射同一张 timed_users 表。 */
     @Setup(Level.Trial)
     public void setUp() throws SQLException {
         HikariConfig config = new HikariConfig();
@@ -56,17 +58,21 @@ public class OrmVsJdbcBenchmark {
         dataSource = new HikariDataSource(config);
 
         try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
-            st.execute("DROP TABLE IF EXISTS users");
-            st.execute("CREATE TABLE users (id BIGSERIAL PRIMARY KEY, user_name VARCHAR(100), age INT)");
-            st.execute("INSERT INTO users (user_name, age) VALUES ('seed', 1)");
+            st.execute("DROP TABLE IF EXISTS timed_users");
+            st.execute("CREATE TABLE timed_users (" +
+                    "id BIGSERIAL PRIMARY KEY, user_name VARCHAR(100), age INT," +
+                    "created_at TIMESTAMP, updated_at TIMESTAMP)");
+            st.execute("INSERT INTO timed_users (user_name, age, created_at, updated_at) " +
+                    "VALUES ('seed', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)");
         }
         try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement("SELECT id FROM users WHERE user_name = 'seed'");
+             PreparedStatement ps = conn.prepareStatement("SELECT id FROM timed_users WHERE user_name = 'seed'");
              ResultSet rs = ps.executeQuery()) {
             rs.next();
             seededId = rs.getLong(1);
         }
         repo = new JForge(dataSource).repository(UserRepository.class);
+        timedRepo = new JForge(dataSource).repository(TimedUserRepository.class);
     }
 
     /** 关闭共享连接池。 */
@@ -77,10 +83,20 @@ public class OrmVsJdbcBenchmark {
 
     // ==================== ORM(生成的仓库) ====================
 
-    /** 生成的插入,带生成主键回写。 */
+    /** 生成的插入,带生成主键回写;时间字段由用户手动维护。 */
     @Benchmark
     public UserEntity ormInsert() {
-        return repo.save(repo.createEntity().name("heihei").age(25));
+        LocalDateTime now = LocalDateTime.now();
+        return repo.save(repo.createEntity().name("heihei").age(25).createdAt(now).updatedAt(now));
+    }
+
+    /** ORM update:手动刷新时间字段(与 {@link #jdbcUpdate} 对称)。 */
+    @Benchmark
+    public boolean ormUpdate() {
+        LocalDateTime now = LocalDateTime.now();
+        UserEntity user = repo.createEntity().id(seededId).name("heihei").age(25)
+                .createdAt(now).updatedAt(now);
+        return repo.update(user);
     }
 
     /** 按主键查询的生成代码。 */
@@ -97,14 +113,18 @@ public class OrmVsJdbcBenchmark {
 
     // ==================== 裸 JDBC ====================
 
-    /** 裸 JDBC 插入,读回生成的主键。 */
+    /** 裸 JDBC 插入,读回生成的主键;时间字段手动绑定。 */
     @Benchmark
     public UserEntity jdbcInsert() throws SQLException {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(
-                     "INSERT INTO users (user_name, age) VALUES (?, ?)", Statement.RETURN_GENERATED_KEYS)) {
+                     "INSERT INTO timed_users (user_name, age, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                     Statement.RETURN_GENERATED_KEYS)) {
+            LocalDateTime now = LocalDateTime.now();
             ps.setString(1, "heihei");
             ps.setInt(2, 25);
+            ps.setObject(3, now);
+            ps.setObject(4, now);
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 keys.next();
@@ -117,11 +137,27 @@ public class OrmVsJdbcBenchmark {
         }
     }
 
+    /** 裸 JDBC update:手动刷新时间字段(与 {@link #ormUpdate} 对称)。 */
+    @Benchmark
+    public boolean jdbcUpdate() throws SQLException {
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "UPDATE timed_users SET user_name=?, age=?, created_at=?, updated_at=? WHERE id=?")) {
+            LocalDateTime now = LocalDateTime.now();
+            ps.setString(1, "heihei");
+            ps.setInt(2, 25);
+            ps.setObject(3, now);
+            ps.setObject(4, now);
+            ps.setLong(5, seededId);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
     /** 裸 JDBC 按主键查询(按列索引读取)。 */
     @Benchmark
     public UserEntity jdbcFindById() throws SQLException {
         try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement("SELECT id, user_name, age FROM users WHERE id = ?")) {
+             PreparedStatement ps = conn.prepareStatement("SELECT id, user_name, age, created_at, updated_at FROM timed_users WHERE id = ?")) {
             ps.setLong(1, seededId);
             try (ResultSet rs = ps.executeQuery()) {
                 rs.next();
@@ -129,6 +165,8 @@ public class OrmVsJdbcBenchmark {
                 user.id(rs.getLong(1));
                 user.name(rs.getString(2));
                 user.age(rs.getInt(3));
+                user.createdAt(rs.getObject(4, LocalDateTime.class));
+                user.updatedAt(rs.getObject(5, LocalDateTime.class));
                 return user;
             }
         }
@@ -138,7 +176,7 @@ public class OrmVsJdbcBenchmark {
     @Benchmark
     public List<UserEntity> jdbcFindAll() throws SQLException {
         try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement("SELECT id, user_name, age FROM users");
+             PreparedStatement ps = conn.prepareStatement("SELECT id, user_name, age, created_at, updated_at FROM timed_users");
              ResultSet rs = ps.executeQuery()) {
             List<UserEntity> list = new ArrayList<>();
             while (rs.next()) {
@@ -146,9 +184,26 @@ public class OrmVsJdbcBenchmark {
                 user.id(rs.getLong(1));
                 user.name(rs.getString(2));
                 user.age(rs.getInt(3));
+                user.createdAt(rs.getObject(4, LocalDateTime.class));
+                user.updatedAt(rs.getObject(5, LocalDateTime.class));
                 list.add(user);
             }
             return list;
         }
+    }
+
+    // ============ 时间字段：ORM 自动维护 vs 裸 JDBC 手动维护 ============
+
+    /** ORM 插入：created_at/updated_at 由 default 方法自动取值绑定。 */
+    @Benchmark
+    public TimedUserEntity ormTimedInsert() {
+        return timedRepo.save(timedRepo.createEntity().name("heihei").age(25));
+    }
+
+    /** ORM update：updated_at 由 default 方法自动刷新（created_at 为 INSERT_ONLY 不触碰）。 */
+    @Benchmark
+    public boolean ormTimedUpdate() {
+        TimedUserEntity user = timedRepo.createEntity().id(seededId).name("heihei").age(25);
+        return timedRepo.update(user);
     }
 }
