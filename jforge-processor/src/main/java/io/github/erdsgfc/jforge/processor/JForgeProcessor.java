@@ -167,6 +167,14 @@ public class JForgeProcessor extends AbstractProcessor {
                     + model.idColumn().returnType + " on " + entityElement.getQualifiedName());
             return null;
         }
+        // ID 类型参数同样必须是具体类型:虽然 idMirror 从不被 cast(isSameType 对类型变量
+        // 安全比较返回 false),但显式判断能让泛型 ID 的错误消息准确,而不是误导性的
+        // "ID 类型不匹配"。
+        if (idMirror.getKind() != TypeKind.DECLARED) {
+            error(dao, "ID type parameter must be a concrete type (generic @Dao interfaces are not supported): "
+                    + idMirror);
+            return null;
+        }
 
         info.model = model;
         info.entityType = ClassName.get(model.entityPackage(), model.entitySimpleName());
