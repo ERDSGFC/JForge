@@ -137,7 +137,8 @@ public final class SimpleTransactionManager implements TransactionManager {
                 state.set(s);
             }
             s.tx = new TxState(dataSource, conn);
-            LOG.debug("Transaction begun");
+            // 参数化占位符:仅 DEBUG 启用时才格式化,热路径零成本。
+            LOG.debug("Transaction begun on {}", dataSource);
         } catch (SQLException e) {
             // setAutoCommit 失败时，已取得的连接不能泄漏：先关闭再重抛，
             // 否则连接池会永久少一个连接。
@@ -166,7 +167,7 @@ public final class SimpleTransactionManager implements TransactionManager {
         }
         try {
             tx.connection.commit();
-            LOG.debug("Transaction committed");
+            LOG.debug("Transaction committed on {}", tx.dataSource);
         } catch (SQLException e) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "Commit failed", e);
         } finally {
@@ -183,7 +184,7 @@ public final class SimpleTransactionManager implements TransactionManager {
         }
         try {
             tx.connection.rollback();
-            LOG.debug("Transaction rolled back");
+            LOG.debug("Transaction rolled back on {}", tx.dataSource);
         } catch (SQLException e) {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "Rollback failed", e);
         } finally {
@@ -225,6 +226,7 @@ public final class SimpleTransactionManager implements TransactionManager {
                 state.set(s);
             }
             s.scope = new ScopeState(dataSource, conn, 1);
+            LOG.debug("Connection scope begun on {}", dataSource);
             return conn;
         } catch (SQLException e) {
             throw new JForgeException(JForgeException.Code.CONNECTION, "Cannot obtain connection", e);
@@ -248,6 +250,7 @@ public final class SimpleTransactionManager implements TransactionManager {
         if (s.tx == null) {
             state.remove(); // 两个槽位都为空：丢弃槽位，使线程不会保留 State
         }
+        LOG.debug("Connection scope ended on {}", dataSource);
         try {
             scoped.connection.close();
         } catch (SQLException ignored) {
@@ -263,6 +266,7 @@ public final class SimpleTransactionManager implements TransactionManager {
             throw new JForgeException(JForgeException.Code.TRANSACTION, "No active transaction to mark rollback-only");
         }
         tx.rollbackOnly = true;
+        LOG.debug("Transaction marked rollback-only on {}", tx.dataSource);
     }
 
     @Override
