@@ -51,7 +51,7 @@ final class CrudGenerator {
             ClassName connection, ClassName preparedStatement, ClassName resultSet,
             ClassName sqlException) {
         List<MethodSpec> methods = new ArrayList<>();
-        methods.add(saveMethod(info, entityImpl, connection, preparedStatement, sqlException));
+        methods.add(saveMethod(info, entityImpl, connection, preparedStatement, resultSet, sqlException));
         methods.add(saveAllMethod(info, entityImpl, connection, preparedStatement, resultSet, sqlException));
         methods.add(deleteMethod(info));
         methods.add(deleteManyMethod(info));
@@ -95,33 +95,50 @@ final class CrudGenerator {
      * @return save 方法规格
      */
     private MethodSpec saveMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName connection,
-            ClassName preparedStatement, ClassName sqlException) {
+            ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         EntityModel model = info.model;
         List<EntityModel.ColumnModel> insertColumns = SqlCodegen.insertColumns(model);
+        // PG/H2 方言:saveSql 含 RETURNING,executeQuery 单语句拿生成键(无需 executeUpdate
+        // 后再 getGeneratedKeys);MySQL 方言走 JDBC 标准路径。
+        boolean returning = model.idGenerated()
+                && configHelper.dialectSupport(info.element).supportsReturningKeys();
         MethodSpec.Builder method = MethodSpec.methodBuilder("save")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(info.entityType)
                 .addParameter(info.entityType, "entity");
-        SqlCodegen.beginTxBlock(method, connection, preparedStatement, "saveSql", model.idGenerated(), configHelper.logSql(info.element));
+        SqlCodegen.beginTxBlock(method, connection, preparedStatement, "saveSql",
+                model.idGenerated() && !returning, configHelper.logSql(info.element));
         int index = 1;
         for (EntityModel.ColumnModel column : insertColumns) {
             method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"), index++));
             method.addCode("\n");
         }
-        method.addStatement("ps.executeUpdate()");
+        if (!returning) {
+            method.addStatement("ps.executeUpdate()");
+        }
         // 生成键回写:接口有 setter 直接调用;只读 id(无 setter)强转到嵌套类调用
         // private 填充 setter(nestmates 允许宿主类访问嵌套类私有成员)。
         if (model.idGenerated()) {
-            method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", ClassName.get("java.sql", "ResultSet"));
-            method.beginControlFlow("if (keys.next())");
-            method.addStatement("$L.$L(keys.get$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
-                    model.idColumn().setterName, TypeNameUtils.jdbcReturnSuffix(model.idColumn().typeName));
-            method.endControlFlow();
-            method.endControlFlow();
+            if (returning) {
+                method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
+                method.beginControlFlow("if (rs.next())");
+                method.addStatement("$L.$L(rs.get$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
+                        model.idColumn().setterName, TypeNameUtils.jdbcReturnSuffix(model.idColumn().typeName));
+                method.endControlFlow();
+                method.endControlFlow();
+            } else {
+                method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", ClassName.get("java.sql", "ResultSet"));
+                method.beginControlFlow("if (keys.next())");
+                method.addStatement("$L.$L(keys.get$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
+                        model.idColumn().setterName, TypeNameUtils.jdbcReturnSuffix(model.idColumn().typeName));
+                method.endControlFlow();
+                method.endControlFlow();
+            }
         }
         method.addStatement("return entity");
-        SqlCodegen.endTxBlock(method, sqlException, "save", info.model.tableName(), SqlFieldGenerator.saveSql(info), configHelper.logSql(info.element));
+        SqlCodegen.endTxBlock(method, sqlException, "save", info.model.tableName(),
+                SqlFieldGenerator.saveSql(info, configHelper), configHelper.logSql(info.element));
         return method.build();
     }
 
@@ -160,11 +177,13 @@ final class CrudGenerator {
                 .addStatement("return entities")
                 .endControlFlow()
                 .addStatement("$T conn = getConnection()", connection);
+        // 批量走 saveAllSql(永不含 RETURNING)——批量生成键回写统一走 JDBC 标准
+        // getGeneratedKeys,带 RETURNING 的批量结果读取跨驱动差异大。
         if (idGenerated) {
-            method.beginControlFlow("try ($T ps = conn.prepareStatement(saveSql, $T.RETURN_GENERATED_KEYS))",
+            method.beginControlFlow("try ($T ps = conn.prepareStatement(saveAllSql, $T.RETURN_GENERATED_KEYS))",
                     preparedStatement, ClassName.get("java.sql", "Statement"));
         } else {
-            method.beginControlFlow("try ($T ps = conn.prepareStatement(saveSql))", preparedStatement);
+            method.beginControlFlow("try ($T ps = conn.prepareStatement(saveAllSql))", preparedStatement);
         }
 
         if (batch) {
@@ -202,7 +221,8 @@ final class CrudGenerator {
         }
 
         method.addStatement("return entities");
-        SqlCodegen.endTxBlock(method, sqlException, "save", info.model.tableName(), SqlFieldGenerator.saveSql(info), configHelper.logSql(info.element));
+        SqlCodegen.endTxBlock(method, sqlException, "save", info.model.tableName(),
+                SqlFieldGenerator.saveAllSql(info), configHelper.logSql(info.element));
         return method.build();
     }
 

@@ -126,7 +126,7 @@ final class RepositoryGenerator {
         }
 
         // 固定 SQL 常量字段（命名引用，避免方法体内散落字符串字面量）。
-        for (FieldSpec field : SqlFieldGenerator.sqlFields(info)) {
+        for (FieldSpec field : SqlFieldGenerator.sqlFields(info, configHelper)) {
             builder.addField(field);
         }
 

@@ -1,8 +1,9 @@
 package io.github.erdsgfc.jforge.processor;
 
 import io.github.erdsgfc.jforge.annotation.Dialect;
-import io.github.erdsgfc.jforge.annotation.NamingStrategy;
+import io.github.erdsgfc.jforge.annotation.DialectSupport;
 import io.github.erdsgfc.jforge.annotation.JForgeConfig;
+import io.github.erdsgfc.jforge.annotation.NamingStrategy;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.*;
@@ -47,6 +48,30 @@ public final class JForgeConfigHelper {
     public Dialect dialect(Element element) {
         JForgeConfig config = configFor(element);
         return config != null ? config.dialect() : Dialect.POSTGRESQL;
+    }
+
+    /**
+     * 解析生效的方言支持:配置了 {@code @JForgeConfig.dialectClass}（全限定名）时按名
+     * 加载并实例化用户实现(编译期使用);缺省按 {@code dialect} 枚举映射内建实现。
+     * 方言类必须是已编译的 classpath 类——同批源码的类在注解处理期间无 class 文件。
+     */
+    public DialectSupport dialectSupport(Element element) {
+        JForgeConfig config = configFor(element);
+        String dialectClass = config != null ? config.dialectClass() : "";
+        if (!dialectClass.isEmpty()) {
+            try {
+                Class<?> clazz = Class.forName(dialectClass);
+                return (DialectSupport) clazz.getDeclaredConstructor().newInstance();
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(
+                        "Cannot load @JForgeConfig.dialectClass '" + dialectClass
+                                + "': the class must implement " + DialectSupport.class.getName()
+                                + ", have a public no-arg constructor, and be precompiled on the "
+                                + "compile classpath (not compiled in the same source set)", e);
+            }
+        }
+        return (config != null ? config.dialect() : Dialect.POSTGRESQL) == Dialect.MYSQL
+                ? new MySqlDialect() : new PostgreSqlDialect();
     }
 
     /** 读取配置的命名策略(默认 {@link NamingStrategy#NONE})。 */

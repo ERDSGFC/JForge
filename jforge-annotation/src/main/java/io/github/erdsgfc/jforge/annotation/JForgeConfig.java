@@ -29,6 +29,17 @@ public @interface JForgeConfig {
     /** 生成语句所用的 SQL 方言（默认 {@link Dialect#POSTGRESQL}）。 */
     Dialect dialect() default Dialect.POSTGRESQL;
 
+    /**
+     * 自定义方言实现类的全限定名（实现 {@link DialectSupport}）——框架只内置
+     * {@link Dialect#POSTGRESQL} 与 {@link Dialect#MYSQL}，其他数据库由用户实现
+     * 该接口并在编译 classpath 提供（需预编译，不能与主源码同批编译）。
+     * 空字符串（默认值）时按 {@link #dialect()} 使用内建实现。
+     *
+     * <p>用字符串而非 {@code Class} 属性：javac 注解处理器读取 Class 类型属性时
+     * 即使取默认值也会尝试加载类并抛 {@code MirroredTypeException}。</p>
+     */
+    String dialectClass() default "";
+
     /** 追加到生成的实现类简单名后的后缀（默认 {@code "_Impl"}）。 */
     String implSuffix() default "_Impl";
 

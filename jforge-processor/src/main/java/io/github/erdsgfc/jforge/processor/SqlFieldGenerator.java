@@ -29,9 +29,10 @@ final class SqlFieldGenerator {
      * @param info the parsed repository info
      * @return the SQL constant field specifications
      */
-    static List<FieldSpec> sqlFields(JForgeProcessor.DaoInfo info) {
+    static List<FieldSpec> sqlFields(JForgeProcessor.DaoInfo info, JForgeConfigHelper configHelper) {
         List<FieldSpec> fields = new ArrayList<>();
-        fields.add(sqlField("saveSql", saveSql(info)));
+        fields.add(sqlField("saveSql", saveSql(info, configHelper)));
+        fields.add(sqlField("saveAllSql", saveAllSql(info)));
         fields.add(sqlField("deleteByIdSql", deleteByIdSql(info)));
         fields.add(sqlField("deleteByIdsBaseSql", deleteByIdsBaseSql(info)));
         fields.add(sqlField("updateSql", updateSql(info)));
@@ -60,7 +61,27 @@ final class SqlFieldGenerator {
                 .build();
     }
 
-    static String saveSql(JForgeProcessor.DaoInfo info) {
+    static String saveSql(JForgeProcessor.DaoInfo info, JForgeConfigHelper configHelper) {
+        String sql = insertSql(info);
+        // PG/H2 方言:生成主键走 INSERT ... RETURNING(单语句拿 id,优于 getGeneratedKeys);
+        // MySQL 方言走 JDBC 标准路径。
+        if (info.model.idGenerated()
+                && configHelper.dialectSupport(info.element).supportsReturningKeys()) {
+            sql += " RETURNING " + info.model.idColumn().columnName;
+        }
+        return sql;
+    }
+
+    /**
+     * 批量 save 的 SQL:与 {@link #saveSql} 相同但永不含 {@code RETURNING}——批量生成键
+     * 回写依赖驱动的 {@code getGeneratedKeys},带 RETURNING 的批量结果读取在各驱动间
+     * 差异大,统一走 JDBC 标准。
+     */
+    static String saveAllSql(JForgeProcessor.DaoInfo info) {
+        return insertSql(info);
+    }
+
+    private static String insertSql(JForgeProcessor.DaoInfo info) {
         EntityModel model = info.model;
         List<EntityModel.ColumnModel> insertColumns = SqlCodegen.insertColumns(model);
         return "INSERT INTO " + model.tableName() + " ("

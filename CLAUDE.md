@@ -76,6 +76,7 @@ mvn -Prelease deploy
 - **`LambdaBenchmark.java`** — jforge-lambda 的 11 个 `@Benchmark` 方法（7 种创建方式 + 4 个 instance 字段对照组）；方法学：禁止手写循环、句柄用 `static final`、MethodHandle 用 `invokeExact`（详见 `BENCHMARK_RESULTS.md` 的"方法学教训"）
 - **`benchmark_run9_data.csv`** — Run 9 的 350 个原始测量点
 - **`RELEASE.md`** — Maven Central 发布流程（GPG/凭证、Central Portal 与 OSSRH 两条路线、验证与排错）
+- **`DIALECT.md`** — 数据库方言架构：编译期决策原则、各数据库差异全景（标识符/自增/生成键/分页/UPSERT/布尔/日期/锁/NULL 排序/类型映射）、`DialectSupport` 能力表设计与演进路线
 
 ## 代码规范
 
