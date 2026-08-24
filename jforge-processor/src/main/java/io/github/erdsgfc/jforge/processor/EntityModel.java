@@ -211,7 +211,6 @@ public final class EntityModel {
     private static void collectSuperMethods(DeclaredType declared, TypeElement entity, Types types,
             javax.annotation.processing.Messager messager, Diagnostic.Kind errorKind,
             List<MethodInfo> out) {
-        entity.getSuperclass();
         for (TypeMirror iface : types.directSupertypes(declared)) {
             if (iface.getKind() != TypeKind.DECLARED) {
                 continue;
