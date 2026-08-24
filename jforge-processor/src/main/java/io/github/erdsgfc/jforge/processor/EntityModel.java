@@ -365,7 +365,7 @@ public final class EntityModel {
                             + " has no matching getter '" + name + "()'", element);
             return;
         }
-        TypeMirror paramType = method.signature.getParameterTypes().get(0);
+        TypeMirror paramType = method.signature.getParameterTypes().getFirst();
         if (!types.isSameType(paramType, getter.returnType)) {
             messager.printMessage(errorKind,
                     "Builder setter '" + name + "' parameter type " + paramType + " does not match "
