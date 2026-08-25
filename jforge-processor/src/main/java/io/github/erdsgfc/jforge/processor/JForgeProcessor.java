@@ -21,6 +21,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import static io.github.erdsgfc.jforge.processor.ClassEnum.*;
+
 /**
  * JForge 的注解处理器入口：只处理 {@code @Dao} 仓库接口。
  *
@@ -41,9 +43,6 @@ import java.util.Set;
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_25)
 public class JForgeProcessor extends AbstractProcessor {
-
-    private static final String BASE_REPOSITORY = "io.github.erdsgfc.jforge.core.BaseRepository";
-    private static final String GENERATED_PACKAGE = "io.github.erdsgfc.jforge.generated";
 
     /** 已生成仓库 impl 的全限定名：显式去重，不依赖 javac"每轮输入只含本轮文件"的隐式行为。 */
     private final Set<String> generatedRepositories = new HashSet<>();
@@ -133,7 +132,7 @@ public class JForgeProcessor extends AbstractProcessor {
             if (iface.getKind() == TypeKind.DECLARED) {
                 DeclaredType declared = (DeclaredType) iface;
                 TypeElement ifaceElement = (TypeElement) declared.asElement();
-                if (ifaceElement.getQualifiedName().contentEquals(BASE_REPOSITORY)
+                if (ifaceElement.getQualifiedName().contentEquals(BASE_REPOSITORY.getFullClassName())
                         && declared.getTypeArguments().size() == 2) {
                     entityMirror = declared.getTypeArguments().get(0);
                     idMirror = declared.getTypeArguments().get(1);
@@ -199,8 +198,8 @@ public class JForgeProcessor extends AbstractProcessor {
                 .addTypeVariable(t)
                 .returns(t)
                 .addParameter(ParameterizedTypeName.get(ClassName.get(Class.class), t), "type")
-                .addParameter(ClassName.get("javax.sql", "DataSource"), "dataSource")
-                .addParameter(ClassName.get("io.github.erdsgfc.jforge", "TransactionManager"), "transactionManager")
+                .addParameter(JDBC_DATASOURCE.getJavaPoetClassName(), "dataSource")
+                .addParameter(TRANSACTION_MANAGER.getJavaPoetClassName(), "transactionManager")
                 // 分发的 (T) cast 是确定安全的（type 与返回的 impl 一一对应），抑制 unchecked 警告。
                 .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
                         .addMember("value", "$S", "unchecked")
@@ -221,12 +220,12 @@ public class JForgeProcessor extends AbstractProcessor {
                 .addStatement("throw new $T($S + type.getName())", IllegalArgumentException.class,
                         "No generated repository for type: ")
                 .endControlFlow();
-        TypeSpec.Builder factories = TypeSpec.classBuilder("Repositories")
+        TypeSpec.Builder factories = TypeSpec.classBuilder(BASE_REPOSITORY_FACTORY.getClassName())
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
                 .addMethod(create.build());
         try {
-            JavaFile.builder(GENERATED_PACKAGE, factories.build())
+            JavaFile.builder(BASE_REPOSITORY_FACTORY.getPackagePath(), factories.build())
                     .addFileComment("Generated at compile time by JForgeProcessor. Do not edit.")
                     .skipJavaLangImports(true)
                     .build()
