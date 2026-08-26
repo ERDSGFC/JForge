@@ -218,10 +218,10 @@ final class SelectGenerator {
         spec.addStatement("$T conn = getConnection()", connection);
         // 拼接阶段：无 WHERE 1=1——where 变量维护 " WHERE "/" AND " 前缀，
         // 运行时第一个执行的条件拼 WHERE、其后拼 AND（动态条件全为 null 时无 WHERE）。
-        spec.addStatement("$T sql = new $T($S)", ClassName.get("java.lang", "StringBuilder"),
-                ClassName.get("java.lang", "StringBuilder"), baseSql);
+        spec.addStatement("$T sql = new $T($S)", ClassName.get(StringBuilder.class),
+                ClassName.get(StringBuilder.class), baseSql);
         if (!conditions.isEmpty()) {
-            spec.addStatement("$T where = $S", ClassName.get("java.lang", "String"), " WHERE ");
+            spec.addStatement("$T where = $S", ClassName.get(String.class), " WHERE ");
         }
         for (Condition condition : conditions) {
             appendCondition(spec, condition, true);

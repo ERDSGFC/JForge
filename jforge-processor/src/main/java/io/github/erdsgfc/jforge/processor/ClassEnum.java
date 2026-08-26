@@ -7,7 +7,18 @@ public enum ClassEnum {
     BASE_REPOSITORY("io.github.erdsgfc.jforge.core", "BaseRepository"),
     BASE_REPOSITORY_FACTORY("io.github.erdsgfc.jforge.generated", "Repositories"),
     TRANSACTION_MANAGER("io.github.erdsgfc.jforge", "TransactionManager"),
-    JDBC_DATASOURCE("javax.sql", "DataSource"),
+    ABSTRACT_REPOSITORY("io.github.erdsgfc.jforge.core", "AbstractRepository"),
+    ORM_EXCEPTION("io.github.erdsgfc.jforge", "JForgeException"),
+    JDBC_DATA_SOURCE("javax.sql", "DataSource"),
+    JDBC_RESULT_SET("java.sql", "ResultSet"),
+    JDBC_STATEMENT("java.sql", "Statement"),
+    JDBC_PREPARED_STATEMENT("java.sql", "PreparedStatement"),
+    JDBC_CONNECTION("java.sql", "Connection"),
+    JDBC_SQLEXCEPTION("java.sql", "SQLException"),
+    SPRING_REPOSITORY("org.springframework.stereotype", "Repository"),
+    SPRING_AUTOWIRED("org.springframework.beans.factory.annotation", "Autowired"),
+    SLF4J_LOGGER("org.slf4j", "Logger"),
+    SLF4J_LOGGER_FACTORY("org.slf4j", "LoggerFactory"),
     ;
 
     ClassEnum(String packagePath, String className) {

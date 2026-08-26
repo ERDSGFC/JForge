@@ -299,9 +299,9 @@ final class QueryGenerator {
         String selectPart = parsed != null ? parsed.selectPart : query.value().trim();
         boolean logSql = configHelper.logSql(info.element);
         spec.addStatement("$T conn = getConnection()", connection);
-        spec.addStatement("$T sql = new $T($S)", ClassName.get("java.lang", "StringBuilder"),
-                ClassName.get("java.lang", "StringBuilder"), selectPart);
-        spec.addStatement("$T where = $S", ClassName.get("java.lang", "String"), " WHERE ");
+        spec.addStatement("$T sql = new $T($S)", ClassName.get(StringBuilder.class),
+                ClassName.get(StringBuilder.class), selectPart);
+        spec.addStatement("$T where = $S", ClassName.get(String.class), " WHERE ");
         // 拼接阶段:每片段 append(where) + 文本,where 置为下一片段连接符
         // (首个执行片段得 " WHERE ",其后得用户写的 AND/OR;动态片段跳过时连接符随之消失)。
         for (int i = 0; i < fragments.size(); i++) {
@@ -411,7 +411,7 @@ final class QueryGenerator {
             // 单值(String/Long/...)。
             if (isList) {
                 spec.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class),
-                        TypeName.get(elementType), ClassName.get("java.util", "ArrayList"));
+                        TypeName.get(elementType), ClassName.get(ArrayList.class));
                 spec.beginControlFlow("while (rs.next())");
                 spec.addStatement("result.add(rs.$L(1))", TypeNameUtils.jdbcGetter(elementType.toString()));
                 spec.endControlFlow();
@@ -468,7 +468,7 @@ final class QueryGenerator {
         EntityModel model = ctx.model;
         if (isList) {
             spec.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class),
-                    TypeName.get(entityType), ClassName.get("java.util", "ArrayList"));
+                    TypeName.get(entityType), ClassName.get(ArrayList.class));
             spec.beginControlFlow("while (rs.next())");
             spec.addStatement("$T e = new $T()", impl, impl);
             appendEntityColumnReads(spec, model, sql, method);
@@ -521,7 +521,7 @@ final class QueryGenerator {
         List<? extends Element> components = record.getRecordComponents();
         if (isList) {
             spec.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class),
-                    recordClass, ClassName.get("java.util", "ArrayList"));
+                    recordClass, ClassName.get(ArrayList.class));
             spec.beginControlFlow("while (rs.next())");
             spec.addStatement("$T dto = new $T($L)", recordClass, recordClass,
                     recordArgs(components));

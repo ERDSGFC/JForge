@@ -198,7 +198,7 @@ public class JForgeProcessor extends AbstractProcessor {
                 .addTypeVariable(t)
                 .returns(t)
                 .addParameter(ParameterizedTypeName.get(ClassName.get(Class.class), t), "type")
-                .addParameter(JDBC_DATASOURCE.getJavaPoetClassName(), "dataSource")
+                .addParameter(JDBC_DATA_SOURCE.getJavaPoetClassName(), "dataSource")
                 .addParameter(TRANSACTION_MANAGER.getJavaPoetClassName(), "transactionManager")
                 // 分发的 (T) cast 是确定安全的（type 与返回的 impl 一一对应），抑制 unchecked 警告。
                 .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
