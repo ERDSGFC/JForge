@@ -86,7 +86,7 @@ final class SqlFieldGenerator {
             // default 列进 SET——update 时自动调用 default 刷新(如 updatedAt)。
             if (!column.isId && column.updatable
                     && (column.hasSetter || column.defaultGetter)) {
-                if (sets.length() > 0) {
+                if (!sets.isEmpty()) {
                     sets.append(",");
                 }
                 sets.append(column.columnName).append("=?");
