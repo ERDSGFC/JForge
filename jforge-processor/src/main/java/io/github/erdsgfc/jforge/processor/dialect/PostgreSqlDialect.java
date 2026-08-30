@@ -1,9 +1,9 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.dialect;
 
 import io.github.erdsgfc.jforge.annotation.DialectSupport;
 
 /** PostgreSQL / H2（MODE=PostgreSQL）的内建方言实现（编译期使用，不进框架 jar）。 */
-final class PostgreSqlDialect implements DialectSupport {
+public final class PostgreSqlDialect implements DialectSupport {
 
     @Override
     public boolean supportsReturningKeys() {

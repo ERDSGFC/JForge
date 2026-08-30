@@ -4,6 +4,9 @@ import io.github.erdsgfc.jforge.annotation.Dialect;
 import io.github.erdsgfc.jforge.annotation.DialectSupport;
 import io.github.erdsgfc.jforge.annotation.JForgeConfig;
 import io.github.erdsgfc.jforge.annotation.NamingStrategy;
+import io.github.erdsgfc.jforge.processor.dialect.MySqlDialect;
+import io.github.erdsgfc.jforge.processor.dialect.PostgreSqlDialect;
+import io.github.erdsgfc.jforge.processor.dialect.SqliteDialect;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.*;

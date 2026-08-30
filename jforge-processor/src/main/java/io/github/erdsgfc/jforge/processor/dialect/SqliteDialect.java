@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.dialect;
 
 import io.github.erdsgfc.jforge.annotation.DialectSupport;
 
@@ -9,7 +9,7 @@ import io.github.erdsgfc.jforge.annotation.DialectSupport;
  * {@code INSERT ... RETURNING}——官方推荐的生成键方式，优于 {@code getGeneratedKeys}
  * （后者在 SQLite 驱动上等价于 {@code last_insert_rowid()}）。</p>
  */
-final class SqliteDialect implements DialectSupport {
+public final class SqliteDialect implements DialectSupport {
 
     @Override
     public boolean supportsReturningKeys() {

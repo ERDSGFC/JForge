@@ -1,9 +1,9 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.dialect;
 
 import io.github.erdsgfc.jforge.annotation.DialectSupport;
 
 /** MySQL / MariaDB 的内建方言实现（编译期使用，不进框架 jar）。 */
-final class MySqlDialect implements DialectSupport {
+public final class MySqlDialect implements DialectSupport {
 
     @Override
     public boolean supportsReturningKeys() {
