@@ -211,7 +211,6 @@ public final class EntityModel {
     private static void collectSuperMethods(DeclaredType declared, TypeElement entity, Types types,
             javax.annotation.processing.Messager messager, Diagnostic.Kind errorKind,
             List<MethodInfo> out) {
-        entity.getSuperclass();
         for (TypeMirror iface : types.directSupertypes(declared)) {
             if (iface.getKind() != TypeKind.DECLARED) {
                 continue;
@@ -366,7 +365,7 @@ public final class EntityModel {
                             + " has no matching getter '" + name + "()'", element);
             return;
         }
-        TypeMirror paramType = method.signature.getParameterTypes().get(0);
+        TypeMirror paramType = method.signature.getParameterTypes().getFirst();
         if (!types.isSameType(paramType, getter.returnType)) {
             messager.printMessage(errorKind,
                     "Builder setter '" + name + "' parameter type " + paramType + " does not match "

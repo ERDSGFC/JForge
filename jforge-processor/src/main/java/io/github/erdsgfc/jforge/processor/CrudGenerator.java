@@ -16,6 +16,8 @@ import javax.lang.model.type.TypeKind;
 import java.util.ArrayList;
 import java.util.List;
 
+import static io.github.erdsgfc.jforge.processor.ClassEnum.*;
+
 /**
  * 生成仓库 impl 类的 CRUD 方法（继承自 {@code BaseRepository} 的 13 个方法）以及行映射 helper
  * （{@code mapRow}/{@code countById}）与 JDBC 批处理辅助。
@@ -25,7 +27,6 @@ import java.util.List;
  */
 final class CrudGenerator {
 
-    private static final ClassName ORM_EXCEPTION = ClassName.get("io.github.erdsgfc.jforge", "JForgeException");
 
     private final JForgeConfigHelper configHelper;
 
@@ -128,7 +129,7 @@ final class CrudGenerator {
                 method.endControlFlow();
                 method.endControlFlow();
             } else {
-                method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", ClassName.get("java.sql", "ResultSet"));
+                method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", JDBC_RESULT_SET.getJavaPoetClassName();
                 method.beginControlFlow("if (keys.next())");
                 method.addStatement("$L.$L(keys.get$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
                         model.idColumn().setterName, TypeNameUtils.jdbcReturnSuffix(model.idColumn().typeName));
@@ -181,7 +182,7 @@ final class CrudGenerator {
         // getGeneratedKeys,带 RETURNING 的批量结果读取跨驱动差异大。
         if (idGenerated) {
             method.beginControlFlow("try ($T ps = conn.prepareStatement(saveAllSql, $T.RETURN_GENERATED_KEYS))",
-                    preparedStatement, ClassName.get("java.sql", "Statement"));
+                    preparedStatement, JDBC_STATEMENT.getJavaPoetClassName());
         } else {
             method.beginControlFlow("try ($T ps = conn.prepareStatement(saveAllSql))", preparedStatement);
         }
@@ -375,7 +376,7 @@ final class CrudGenerator {
                 .returns(TypeName.INT)
                 .addParameter(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType), "entities")
                 .addStatement("$T<$T> ids = new $T<>()",
-                        ClassName.get(List.class), info.idType, ClassName.get("java.util", "ArrayList"))
+                        ClassName.get(List.class), info.idType, ClassName.get(ArrayList.class))
                 .beginControlFlow("for ($T entity : entities)", info.entityType)
                 .addStatement("ids.add(entity.$L())", idColumn.getterName)
                 .endControlFlow()
@@ -429,8 +430,8 @@ final class CrudGenerator {
         method.endControlFlow();
         // 预分配精确容量：baseSql.length() + ids.size()*2（每个 id 的 "?," + 末尾 ")"），避免扩容拷贝。
         method.addStatement("$T sql = new $T($N.length() + ids.size() * 2)",
-                ClassName.get("java.lang", "StringBuilder"),
-                ClassName.get("java.lang", "StringBuilder"), "deleteByIdsBaseSql");
+                ClassName.get(StringBuilder.class),
+                ClassName.get(StringBuilder.class), "deleteByIdsBaseSql");
         method.addStatement("sql.append($N)", "deleteByIdsBaseSql");
         method.beginControlFlow("for (int i = 0; i < ids.size(); i++)");
         method.beginControlFlow("if (i > 0)");
@@ -546,8 +547,8 @@ final class CrudGenerator {
         method.endControlFlow();
         // 预分配精确容量：baseSql.length() + ids.size()*2（每个 id 的 "?," + 末尾 ")"），避免扩容拷贝。
         method.addStatement("$T sql = new $T($N.length() + ids.size() * 2)",
-                ClassName.get("java.lang", "StringBuilder"),
-                ClassName.get("java.lang", "StringBuilder"), "findByIdsBaseSql");
+                ClassName.get(StringBuilder.class),
+                ClassName.get(StringBuilder.class), "findByIdsBaseSql");
         method.addStatement("sql.append($N)", "findByIdsBaseSql");
         method.beginControlFlow("for (int i = 0; i < ids.size(); i++)");
         method.beginControlFlow("if (i > 0)");
@@ -564,7 +565,7 @@ final class CrudGenerator {
         method.addStatement("i++");
         method.endControlFlow();
         method.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class), info.entityType,
-                ClassName.get("java.util", "ArrayList"));
+                ClassName.get(ArrayList.class));
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
         method.beginControlFlow("while (rs.next())");
         method.addStatement("result.add(mapRow(rs))");
@@ -593,7 +594,7 @@ final class CrudGenerator {
                 .returns(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType));
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "findAllSql", false, configHelper.logSql(info.element));
         method.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class), info.entityType,
-                ClassName.get("java.util", "ArrayList"));
+                ClassName.get(ArrayList.class));
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
         method.beginControlFlow("while (rs.next())");
         method.addStatement("result.add(mapRow(rs))");
@@ -646,7 +647,7 @@ final class CrudGenerator {
         method.addStatement("return countById(id) > 0");
         method.nextControlFlow("catch ($T e)", sqlException);
         method.addStatement("throw new $T($T.Code.SQL, $S + e.getMessage(), $S, e)",
-                ORM_EXCEPTION, ORM_EXCEPTION,
+                ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(),
                 "existsById on table '" + info.model.tableName() + "' [" + SqlFieldGenerator.countByIdSql(info) + "]: ",
                 SqlFieldGenerator.countByIdSql(info));
         method.endControlFlow();
@@ -681,7 +682,7 @@ final class CrudGenerator {
         method.endControlFlow();
         method.nextControlFlow("catch ($T e)", sqlException);
         method.addStatement("throw new $T($T.Code.SQL, $S + e.getMessage(), $S, e)",
-                ORM_EXCEPTION, ORM_EXCEPTION,
+                ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(),
                 "countById on table '" + info.model.tableName() + "' [" + SqlFieldGenerator.countByIdSql(info) + "]: ",
                 SqlFieldGenerator.countByIdSql(info));
         method.nextControlFlow("finally");

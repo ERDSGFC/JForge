@@ -15,6 +15,8 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
+import static io.github.erdsgfc.jforge.processor.ClassEnum.*;
+
 /**
  * 生成 {@code @Dao} 仓库的实现类 {@code XxxRepository_Impl}（继承 {@code AbstractRepository}，
  * 直写 JDBC 的 CRUD + {@code @Query}）。
@@ -26,8 +28,6 @@ import java.util.Map;
  */
 final class RepositoryGenerator {
 
-    private static final ClassName TX_MANAGER = ClassName.get("io.github.erdsgfc.jforge", "TransactionManager");
-    private static final ClassName ABSTRACT_REPOSITORY = ClassName.get("io.github.erdsgfc.jforge.core", "AbstractRepository");
 
     private final ProcessingEnvironment processingEnv;
     private final JForgeConfigHelper configHelper;
@@ -70,15 +70,14 @@ final class RepositoryGenerator {
      */
     private TypeSpec buildImpl(JForgeProcessor.DaoInfo info) {
         ClassName daoClass = ClassName.get(info.daoPackage, info.daoSimpleName);
-        ClassName dataSource = ClassName.get("javax.sql", "DataSource");
         // 实体 impl 作为本仓库 impl 的嵌套类：全限定名为 daoPackage.ImplName.EntityImplName，
         // 仓库内部以简单名引用（mapRow/createEntity 的 new Xxx_Impl() 无需 import）。
         ClassName entityImpl = ClassName.get(info.daoPackage, info.implName,
                 EntityModel.implNameOf(info.model.entitySimpleName(), info.model.implSuffix()));
-        ClassName connection = ClassName.get("java.sql", "Connection");
-        ClassName preparedStatement = ClassName.get("java.sql", "PreparedStatement");
-        ClassName resultSet = ClassName.get("java.sql", "ResultSet");
-        ClassName sqlException = ClassName.get("java.sql", "SQLException");
+        ClassName connection = JDBC_CONNECTION.getJavaPoetClassName();
+        ClassName preparedStatement = JDBC_PREPARED_STATEMENT.getJavaPoetClassName();
+        ClassName resultSet = JDBC_RESULT_SET.getJavaPoetClassName();
+        ClassName sqlException = JDBC_SQLEXCEPTION.getJavaPoetClassName();
 
         // 适配 Spring Boot：配置 springBeans=true 时，生成的 impl 标 @Repository + @Autowired 构造器，
         // 并去掉 final（final 类无法被 Spring CGLIB 代理），由组件扫描自动注入容器。
@@ -88,10 +87,9 @@ final class RepositoryGenerator {
                         ? new Modifier[] {Modifier.PUBLIC}
                         : new Modifier[] {Modifier.PUBLIC, Modifier.FINAL})
                 .addSuperinterface(daoClass)
-                .superclass(ABSTRACT_REPOSITORY);
+                .superclass(ABSTRACT_REPOSITORY.getJavaPoetClassName());
         if (springBeans) {
-            builder.addAnnotation(AnnotationSpec.builder(
-                    ClassName.get("org.springframework.stereotype", "Repository")).build());
+            builder.addAnnotation(AnnotationSpec.builder(SPRING_REPOSITORY.getJavaPoetClassName()).build());
         }
         // 宿主实体 impl 作为 private static final 嵌套类嵌入仓库 impl（私有嵌套类无法共享，
         // 多个仓库引用同一实体时各嵌一份副本）；embedded 表预置宿主实体，供 @Query 结果
@@ -104,12 +102,12 @@ final class RepositoryGenerator {
         //（父类持有 protected final 字段 + 连接/事务方法），impl 只留实体特定代码。
         MethodSpec.Builder constructor = MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
-                .addParameter(dataSource, "dataSource")
-                .addParameter(TX_MANAGER, "transactionManager")
+                .addParameter(JDBC_DATA_SOURCE.getJavaPoetClassName(), "dataSource")
+                .addParameter(TRANSACTION_MANAGER.getJavaPoetClassName(), "transactionManager")
                 .addStatement("super(dataSource, transactionManager)");
         if (springBeans) {
             constructor.addAnnotation(AnnotationSpec.builder(
-                    ClassName.get("org.springframework.beans.factory.annotation", "Autowired")).build());
+                    SPRING_AUTOWIRED.getJavaPoetClassName()).build());
         }
         builder.addMethod(constructor.build());
 
@@ -117,10 +115,10 @@ final class RepositoryGenerator {
         // 默认 false 不生成任何日志代码（保持与手写 JDBC 等效的零开销）。
         if (configHelper.logSql(info.element)) {
             builder.addField(FieldSpec.builder(
-                    ClassName.get("org.slf4j", "Logger"), "log",
+                    SLF4J_LOGGER.getJavaPoetClassName(), "log",
                     Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                     .initializer("$T.getLogger($T.class)",
-                            ClassName.get("org.slf4j", "LoggerFactory"),
+                            SLF4J_LOGGER_FACTORY.getJavaPoetClassName(),
                             ClassName.get(info.daoPackage, info.implName))
                     .build());
         }

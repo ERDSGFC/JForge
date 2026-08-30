@@ -7,13 +7,14 @@ import com.palantir.javapoet.MethodSpec;
 import java.util.ArrayList;
 import java.util.List;
 
-    /**
+import static io.github.erdsgfc.jforge.processor.ClassEnum.JDBC_STATEMENT;
+import static io.github.erdsgfc.jforge.processor.ClassEnum.ORM_EXCEPTION;
+
+/**
      * 构建各生成仓库实现共享的 JDBC 代码片段（参数绑定、行映射）。所有类型决策都在编译期
      * 完成——生成的代码直接调用类型精确的 setter/getter。
      */
 public final class SqlCodegen {
-
-    private static final ClassName ORM_EXCEPTION = ClassName.get("io.github.erdsgfc.jforge", "JForgeException");
 
     private SqlCodegen() {
     }
@@ -163,7 +164,7 @@ public final class SqlCodegen {
         }
         if (generatedKeys) {
             return method.beginControlFlow("try ($T ps = conn.prepareStatement($L, $T.RETURN_GENERATED_KEYS))",
-                    preparedStatement, sqlExpr, ClassName.get("java.sql", "Statement"));
+                    preparedStatement, sqlExpr, JDBC_STATEMENT.getJavaPoetClassName());
         }
         return method.beginControlFlow("try ($T ps = conn.prepareStatement($L))", preparedStatement, sqlExpr);
     }
@@ -189,7 +190,7 @@ public final class SqlCodegen {
             method.endControlFlow();
         }
         method.addStatement("throw new $T($T.Code.SQL, $S + e.getMessage(), $S, e)",
-                ORM_EXCEPTION, ORM_EXCEPTION, message, sql)
+                ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(), message, sql)
                 .nextControlFlow("finally")
                 .addStatement("releaseConnection(conn)")
                 .endControlFlow();
