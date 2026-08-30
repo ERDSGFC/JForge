@@ -47,9 +47,10 @@ final class CriteriaGenerator {
         final String guard;         // 前置判断表达式（null 检查/Optional != null）；null = 恒真
         final boolean optional;     // Optional 语义（空 → IS NULL）
         final List<Unit> nested;    // 嵌套组单元（非 null = 括号分组）
+        final String rawSql;        // 原生 SQL 片段（非 null 替代 column/op；含 ? 绑定字段值）
 
         Unit(String conn, String column, String op, String readExpr, String valueExpr,
-                String bindType, String guard, boolean optional, List<Unit> nested) {
+                String bindType, String guard, boolean optional, List<Unit> nested, String rawSql) {
             this.conn = conn;
             this.column = column;
             this.op = op;
@@ -59,6 +60,7 @@ final class CriteriaGenerator {
             this.guard = guard;
             this.optional = optional;
             this.nested = nested;
+            this.rawSql = rawSql;
         }
     }
 
@@ -143,6 +145,20 @@ final class CriteriaGenerator {
         TypeMirror fieldType = field.asType();
         Condition condition = field.getAnnotation(Condition.class);
 
+        // 原生 SQL 条件：rawSql 非空直接使用（跳过列映射），含 ? 绑定字段值。
+        String rawSql = condition != null ? condition.rawSql() : "";
+        if (!rawSql.isEmpty()) {
+            if (isOptional(fieldType)) {
+                error(method, "@Condition rawSql on Optional field is not supported: "
+                        + field.getSimpleName());
+                return null;
+            }
+            return new Unit(conn, null, null, readExpr,
+                    rawSql.contains("?") ? readExpr : null,
+                    rawSql.contains("?") ? TypeNameUtils.plainTypeName(fieldType) : null,
+                    readExpr + " != null", false, null, rawSql);
+        }
+
         // Optional 族：空 → IS NULL，有值 → 条件（列名取 @Condition.value 或字段名）。
         if (isOptional(fieldType)) {
             String column = findColumn(info, method, condition, field.getSimpleName().toString());
@@ -152,7 +168,7 @@ final class CriteriaGenerator {
             String op = condition != null ? condition.op().sql() : "=";
             return new Unit(conn, column, op, readExpr,
                     readExpr + optionalValueMethod(fieldType), optionalValueType(fieldType),
-                    readExpr + " != null", true, null);
+                    readExpr + " != null", true, null, null);
         }
         // 嵌套组：自定义类字段 → 括号递归。
         if (isNestedType(fieldType)) {
@@ -162,7 +178,7 @@ final class CriteriaGenerator {
                 return null;
             }
             return new Unit(conn, null, null, readExpr, null, null,
-                    readExpr + " != null", false, nested);
+                    readExpr + " != null", false, nested, null);
         }
         // 值条件：列名 = @Condition.value 或字段名；null 跳过。
         String column = findColumn(info, method, condition, field.getSimpleName().toString());
@@ -172,7 +188,7 @@ final class CriteriaGenerator {
         String op = condition != null ? condition.op().sql() : "=";
         String guard = readExpr + " != null";
         return new Unit(conn, column, op, readExpr, null, TypeNameUtils.plainTypeName(fieldType),
-                guard, false, null);
+                guard, false, null, null);
     }
 
     private String findColumn(JForgeProcessor.DaoInfo info, ExecutableElement method,
@@ -259,6 +275,14 @@ final class CriteriaGenerator {
     // ---- 生成 ----------------------------------------------------------------
 
     private void emitUnitAppend(MethodSpec.Builder spec, Unit unit, String whereVar, String after) {
+        if (unit.rawSql != null) {
+            // 原生 SQL 条件（guard = 字段值非 null 时拼）。
+            beginGuard(spec, unit.guard);
+            spec.addStatement("$L.append($L).append($S)", "sql", whereVar, " " + unit.rawSql);
+            spec.addStatement("$L = $S", whereVar, after);
+            endGuard(spec, unit.guard);
+            return;
+        }
         if (unit.nested != null) {
             // 括号分组：外部连接符 + "(" + 组内独立前缀变量 + 组内单元 + ")"。
             beginGuard(spec, unit.guard);
@@ -287,6 +311,16 @@ final class CriteriaGenerator {
     }
 
     private void emitUnitBind(MethodSpec.Builder spec, Unit unit, String indexVar) {
+        if (unit.rawSql != null) {
+            // 含 ? 才绑定字段值；纯常量条件不绑定。
+            if (unit.rawSql.contains("?")) {
+                beginGuard(spec, unit.guard);
+                spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.readExpr, indexVar));
+                spec.addCode("\n");
+                endGuard(spec, unit.guard);
+            }
+            return;
+        }
         if (unit.nested != null) {
             beginGuard(spec, unit.guard);
             emitBind(spec, unit.nested, indexVar);

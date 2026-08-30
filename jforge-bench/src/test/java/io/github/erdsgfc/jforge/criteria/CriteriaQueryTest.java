@@ -34,11 +34,12 @@ class CriteriaQueryTest {
                     "user_name VARCHAR(100)," +
                     "age INT," +
                     "city VARCHAR(100)," +
-                    "street VARCHAR(100))");
-            st.execute("INSERT INTO criteria_users (user_name, age, city, street) VALUES " +
-                    "('qin', 25, 'beijing', 'wangfujing')," +
-                    "('lu', 10, 'shanghai', 'nanjing')," +
-                    "('wang', 30, 'beijing', 'zhongguancun')");
+                    "street VARCHAR(100)," +
+                    "score INT)");
+            st.execute("INSERT INTO criteria_users (user_name, age, city, street, score) VALUES " +
+                    "('qin', 25, 'beijing', 'wangfujing', 100)," +
+                    "('lu', 10, 'shanghai', 'nanjing', 200)," +
+                    "('wang', 30, 'beijing', 'zhongguancun', 300)");
         }
         repo = new JForge(ds).repository(CriteriaRepository.class);
     }
@@ -227,5 +228,45 @@ class CriteriaQueryTest {
 
         assertEquals(2, deleted, "two rows in beijing should be deleted");
         assertEquals(1, repo.findAll().size());
+    }
+
+    // ---- rawSql 原生 SQL ----
+
+    /** @Select rawSql 常量条件：WHERE age > 20（参数不绑定）。 */
+    @Test
+    void selectRawSqlConstant() {
+        List<CriteriaUser> users = repo.findOlderThanRaw(0);
+
+        assertEquals(2, users.size());
+        assertTrue(users.stream().allMatch(u -> u.age() > 20));
+    }
+
+    /** @Update rawSql SET 表达式：score = score + ?。 */
+    @Test
+    void updateRawSqlSetExpression() {
+        int updated = repo.incrementScore(5, 1L);
+
+        assertEquals(1, updated);
+        assertEquals(105, repo.findById(1L).score(), "score should be incremented by 5");
+    }
+
+    /** @Delete rawSql 条件。 */
+    @Test
+    void deleteRawSqlCondition() {
+        int deleted = repo.deleteOldRaw(0);
+
+        assertEquals(1, deleted, "one row with age > 25 should be deleted");
+        assertEquals(2, repo.findAll().size());
+    }
+
+    /** 条件对象字段 rawSql：非 null 时拼常量条件。 */
+    @Test
+    void criteriaRawSqlField() {
+        UserCriteria criteria = new UserCriteria();
+        criteria.adult = 1;
+
+        List<CriteriaUser> users = repo.findComplex(criteria);
+
+        assertEquals(2, users.size(), "age > 18 matches qin and wang");
     }
 }

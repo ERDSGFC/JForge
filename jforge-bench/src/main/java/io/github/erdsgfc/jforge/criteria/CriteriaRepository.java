@@ -52,4 +52,16 @@ public interface CriteriaRepository extends BaseRepository<CriteriaUser, Long> {
     /** 声明式删除：WHERE 用条件对象（@Where 嵌套分组）。 */
     @Delete
     int deleteByCriteria(@Where UserCriteria criteria);
+
+    /** rawSql 常量条件：WHERE age > 20（参数不绑定，仅用于跳过控制）。 */
+    @Select
+    List<CriteriaUser> findOlderThanRaw(@Condition(rawSql = "age > 20") Integer ignored);
+
+    /** rawSql SET 表达式：score = score + ?（绑定参数）。 */
+    @Update
+    int incrementScore(@UpdateSet(rawSql = "score = score + ?") Integer increment, @Condition Long id);
+
+    /** rawSql 删除条件：WHERE age > 25。 */
+    @Delete
+    int deleteOldRaw(@Condition(rawSql = "age > 25") Integer ignored);
 }

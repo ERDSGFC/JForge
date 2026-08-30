@@ -36,4 +36,9 @@ public interface CriteriaUser {
     String street();
 
     CriteriaUser street(String street);
+
+    /** 分数（rawSql SET 表达式测试用）。 */
+    Integer score();
+
+    CriteriaUser score(Integer score);
 }

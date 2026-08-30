@@ -36,9 +36,10 @@ final class DeleteGenerator {
         final boolean dynamic;
         final boolean optional;
         final String valueExpr;
+        final String rawSql;       // 原生 SQL 条件（非 null 替代 column/op；含 ? 绑定参数）
 
         WhereCondition(String columnName, String op, String paramName, String typeName,
-                boolean dynamic, boolean optional, String valueExpr) {
+                boolean dynamic, boolean optional, String valueExpr, String rawSql) {
             this.columnName = columnName;
             this.op = op;
             this.paramName = paramName;
@@ -46,6 +47,7 @@ final class DeleteGenerator {
             this.dynamic = dynamic;
             this.optional = optional;
             this.valueExpr = valueExpr;
+            this.rawSql = rawSql;
         }
     }
 
@@ -132,8 +134,9 @@ final class DeleteGenerator {
                     if (i > 0) {
                         sql.append(" AND ");
                     }
-                    sql.append(conditions.get(i).columnName).append(' ')
-                            .append(conditions.get(i).op).append(" ?");
+                    WhereCondition condition = conditions.get(i);
+                    sql.append(condition.rawSql != null ? condition.rawSql
+                            : condition.columnName + " " + condition.op + " ?");
                 }
             }
             builder.addField(FieldSpec.builder(String.class, methodName + "Sql",
@@ -141,6 +144,10 @@ final class DeleteGenerator {
             SqlCodegen.beginTxBlock(spec, connection, preparedStatement, methodName + "Sql", false, logSql);
             int index = 1;
             for (WhereCondition condition : conditions) {
+                // rawSql 无 ? 的纯常量条件不绑定参数。
+                if (condition.rawSql != null && !condition.rawSql.contains("?")) {
+                    continue;
+                }
                 spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName, index++));
                 spec.addCode("\n");
             }
@@ -193,6 +200,20 @@ final class DeleteGenerator {
                 break;
             }
         }
+        // 原生 SQL 条件：rawSql 非空直接使用（跳过列映射），含 ? 绑定参数。
+        String rawSql = condition != null ? condition.rawSql() : "";
+        if (!rawSql.isEmpty()) {
+            boolean optional = CriteriaGenerator.isOptional(parameter.asType());
+            boolean dynamic = optional
+                    || parameter.asType().getAnnotation(org.jspecify.annotations.Nullable.class) != null;
+            String bindType = optional
+                    ? CriteriaGenerator.optionalValueType(parameter.asType())
+                    : TypeNameUtils.plainTypeName(parameter.asType());
+            String valueExpr = optional
+                    ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
+                    : null;
+            return new WhereCondition(null, op, paramName, bindType, dynamic, optional, valueExpr, rawSql);
+        }
         if (column == null) {
             processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "@Condition parameter field '" + fieldName + "' does not match any field of entity "
@@ -208,14 +229,23 @@ final class DeleteGenerator {
         String valueExpr = optional
                 ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
                 : null;
-        return new WhereCondition(column, op, paramName, bindType, dynamic, optional, valueExpr);
+        return new WhereCondition(column, op, paramName, bindType, dynamic, optional, valueExpr, null);
     }
 
     private void emitConditionAppend(MethodSpec.Builder spec, WhereCondition condition) {
         if (condition.dynamic) {
             spec.beginControlFlow("if ($N != null)", condition.paramName);
         }
-        if (condition.optional) {
+        if (condition.rawSql != null) {
+            // 原生 SQL 条件：Optional 有值才拼（空跳过，rawSql 不生成 IS NULL）。
+            if (condition.optional) {
+                spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
+            }
+            spec.addStatement("sql.append(where).append($S)", " " + condition.rawSql);
+            if (condition.optional) {
+                spec.endControlFlow();
+            }
+        } else if (condition.optional) {
             spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
             spec.addStatement("sql.append(where).append($S)",
                     " " + condition.columnName + " " + condition.op + " ?");
@@ -237,7 +267,9 @@ final class DeleteGenerator {
         if (condition.dynamic) {
             spec.beginControlFlow("if ($N != null)", condition.paramName);
         }
-        if (condition.optional) {
+        if (condition.rawSql != null && !condition.rawSql.contains("?")) {
+            // 纯常量条件（无 ?）不绑定参数。
+        } else if (condition.optional) {
             spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
             spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.valueExpr, "i++"));
             spec.addCode("\n");

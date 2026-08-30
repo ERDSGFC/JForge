@@ -265,6 +265,30 @@ int deleteByCriteria(@Where UserCriteria criteria);   // DELETE FROM users WHERE
 - **返回**:影响行数(`int`/`long`/`boolean`);全静态 → SQL 常量,含动态 → 运行时拼接
 - 方法间互斥(`@Select`/`@Query`/`@Update`/`@Delete` 同方法只能标一个);方法名避开 `BaseRepository` 继承的 CRUD 方法名(save/update/delete/findById…)
 
+### rawSql 原生 SQL 片段
+
+`@Condition`/`@UpdateSet` 的 `rawSql` 属性直接使用原生 SQL 片段(替代"字段 + 操作符"拼装),覆盖 `@Select`/`@Update`/`@Delete` 的参数条件与 `@Where` 条件对象字段:
+
+```java
+/** 常量条件:WHERE age > 20(参数不绑定,仅用于 @Nullable/Optional 的跳过控制) */
+@Select
+List<UserEntity> findOlderThanRaw(@Condition(rawSql = "age > 20") Integer ignored);
+
+/** SET 表达式:score = score + ?(片段中的 ? 绑定参数) */
+@Update
+int incrementScore(@UpdateSet(rawSql = "score = score + ?") Integer increment, @Condition Long id);
+
+/** 条件对象字段:非 null 时拼 age > 18 */
+public class UserCriteria {
+    @Condition(rawSql = "age > 18")
+    public Integer adult;
+}
+```
+
+- **`?` 占位符**:rawSql 含 `?` → 绑定该参数/字段值;无 `?` → 纯常量片段(参数不绑定,仅作动态跳过开关)
+- **动态语义保留**:`@Nullable` 参数 null 时跳过;`Optional` 有值时拼 rawSql(空时跳过——rawSql 不生成 `IS NULL`);条件对象字段 null 时跳过
+- 条件对象字段的 `@Condition(rawSql)` 不支持 `Optional` 类型(编译报错);全静态时进 SQL 常量、含动态走运行时拼接
+
 ## 4. 配置
 
 `@JForgeConfig` 可放在**包**(`package-info.java`)或**接口**(实体/仓库接口)上,两层解析:

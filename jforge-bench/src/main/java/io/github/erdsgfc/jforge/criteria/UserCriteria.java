@@ -28,6 +28,10 @@ public class UserCriteria {
     /** AND (city = ? AND street = ?)（null 跳过整个括号）。 */
     public AddressCriteria address;
 
+    /** 原生 SQL 条件：非 null 时拼 age > 18（常量，无绑定）。 */
+    @Condition(rawSql = "age > 18")
+    public Integer adult;
+
     public String getName() {
         return name;
     }
@@ -42,5 +46,9 @@ public class UserCriteria {
 
     public AddressCriteria getAddress() {
         return address;
+    }
+
+    public Integer getAdult() {
+        return adult;
     }
 }
