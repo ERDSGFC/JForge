@@ -2,6 +2,7 @@ package io.github.erdsgfc.jforge.criteria;
 
 import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.annotation.Dao;
+import io.github.erdsgfc.jforge.annotation.Delete;
 import io.github.erdsgfc.jforge.annotation.Select;
 import io.github.erdsgfc.jforge.annotation.UpdateSet;
 import io.github.erdsgfc.jforge.annotation.Update;
@@ -39,4 +40,16 @@ public interface CriteriaRepository extends BaseRepository<CriteriaUser, Long> {
     /** 声明式更新：WHERE 用条件对象（@Where）。 */
     @Update
     int updateByCriteria(@UpdateSet String name, @Where UserCriteria criteria);
+
+    /** 声明式删除：WHERE 条件（全静态 → SQL 常量）。 */
+    @Delete
+    int deleteByIdCondition(@Condition Long id);
+
+    /** 声明式删除：Optional WHERE 参数（isEmpty → IS NULL）。 */
+    @Delete
+    int deleteByNickname(@Condition(value = "name") Optional<String> nickname);
+
+    /** 声明式删除：WHERE 用条件对象（@Where 嵌套分组）。 */
+    @Delete
+    int deleteByCriteria(@Where UserCriteria criteria);
 }

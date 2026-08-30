@@ -217,6 +217,54 @@ List<UserNameDto> findNameDtoById(Long id);                        // record 投
 - **生成形态自动选择**:方法不含任何 `@Nullable` 参数时,编译期拼出完整 SQL 常量 + 静态索引绑定(与手写 JDBC 等价);含动态参数才生成运行时拼接(where 前缀变量 + 条件 if 块)
 - 与 `@Query` 互斥(同一方法只能标一个)
 
+### 条件对象（`@Where` 复杂 WHERE）
+
+`@Where` 参数是**条件对象**——处理器递归展开其字段为 WHERE 条件,支持分组括号与 `OR` 连接:
+
+```java
+public class UserCriteria {
+    String name;                                     // user_name = ?（null 跳过）
+    @Or @Condition(op = Op.GT) Integer age;          // OR age > ?
+    @Condition(value = "name") Optional<String> nickname;  // IS NULL（空）/ = ?（有值）
+    AddressCriteria address;                         // AND (city = ? AND street = ?)
+}
+
+@Select
+List<UserEntity> findComplex(@Where UserCriteria criteria);
+// → WHERE user_name = ? OR age > ? AND (city = ? AND street = ?)（按运行时字段值动态拼装）
+```
+
+- **值类型字段**（基本/包装/`String`/日期/枚举…）→ 单条件 `列 op ?`;字段名经命名策略映射列,`@Condition` 可指定字段与操作符;字段值为 `null` 时跳过
+- **自定义类字段**（非 JDK 值类型）→ **括号分组** `( ... )` 递归展开,为 `null` 时整个括号跳过
+- **连接符**:字段上的 `@And`/`@Or` 定义与上一条件的连接(缺省 `AND`)
+- **`Optional` 三族**（`Optional`/`OptionalInt`/`OptionalLong`）:值为空 → `列 IS NULL`(显式空值查询);有值 → `列 op ?`;`Optional` 本身为 `null` → 跳过
+- 条件对象字段的读取方法:getter 惯例(`getName()`)、record accessor(`name()`)或 `isXxx()`;列映射失败编译报错
+
+### 声明式更新与删除（`@Update`/`@Delete`）
+
+与 `@Select` 对称的不写 SQL 写操作——`@UpdateSet` 定义 SET 列,WHERE 条件复用同一套机制:
+
+```java
+@Update
+int updateNameAndAge(@UpdateSet String name, @UpdateSet @Nullable Integer age, @Condition Long id);
+// → UPDATE users SET user_name = ? , age = ?（age 为 null 时跳过该 SET）WHERE id = ?
+
+@Update
+int updateNickname(@UpdateSet(value = "name") Optional<String> nickname, @Condition Long id);
+// → Optional 空时 SET user_name = NULL（显式置空）
+
+@Update
+int updateByCriteria(@UpdateSet String name, @Where UserCriteria criteria);   // 条件对象 WHERE
+
+@Delete
+int deleteByCriteria(@Where UserCriteria criteria);   // DELETE FROM users WHERE ...
+```
+
+- **`@UpdateSet`**(参数):SET 列——`@Nullable` 值为 `null` 时跳过该 SET(保持原值);`Optional` 空 → `SET 列 = NULL`、有值 → `SET 列 = ?`
+- **WHERE**:`@Condition` 参数 / `@Where` 条件对象——动态语义(`@Nullable` 跳过、`Optional` IS NULL、括号分组)与 `@Select` 完全一致
+- **返回**:影响行数(`int`/`long`/`boolean`);全静态 → SQL 常量,含动态 → 运行时拼接
+- 方法间互斥(`@Select`/`@Query`/`@Update`/`@Delete` 同方法只能标一个);方法名避开 `BaseRepository` 继承的 CRUD 方法名(save/update/delete/findById…)
+
 ## 4. 配置
 
 `@JForgeConfig` 可放在**包**(`package-info.java`)或**接口**(实体/仓库接口)上,两层解析:

@@ -35,6 +35,7 @@ final class RepositoryGenerator {
     private final QueryGenerator queryGenerator;
     private final SelectGenerator selectGenerator;
     private final UpdateGenerator updateGenerator;
+    private final DeleteGenerator deleteGenerator;
 
     RepositoryGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper) {
         this.processingEnv = processingEnv;
@@ -43,6 +44,7 @@ final class RepositoryGenerator {
         this.queryGenerator = new QueryGenerator(processingEnv, configHelper);
         this.selectGenerator = new SelectGenerator(processingEnv, configHelper, queryGenerator);
         this.updateGenerator = new UpdateGenerator(processingEnv, configHelper);
+        this.deleteGenerator = new DeleteGenerator(processingEnv, configHelper);
     }
 
     /**
@@ -142,6 +144,7 @@ final class RepositoryGenerator {
         selectGenerator.selectMethods(info, builder, embedded, connection, preparedStatement, resultSet,
                 sqlException);
         updateGenerator.updateMethods(info, builder, connection, preparedStatement, sqlException);
+        deleteGenerator.deleteMethods(info, builder, connection, preparedStatement, sqlException);
 
         return builder.build();
     }

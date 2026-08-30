@@ -192,4 +192,40 @@ class CriteriaQueryTest {
         assertEquals(2, updated, "two rows in beijing should be updated");
         assertTrue(repo.findByNickname(Optional.of("all-beijing")).size() >= 2);
     }
+
+    // ---- @Delete 声明式删除 ----
+
+    /** 基本删除：WHERE 条件（全静态 → SQL 常量）。 */
+    @Test
+    void deleteByCondition() {
+        int deleted = repo.deleteByIdCondition(1L);
+
+        assertEquals(1, deleted);
+        assertEquals(2, repo.findAll().size());
+    }
+
+    /** Optional WHERE：isEmpty → IS NULL（删除空名行）。 */
+    @Test
+    void deleteByOptionalIsNull() throws SQLException {
+        try (Connection conn = ds.getConnection(); Statement st = conn.createStatement()) {
+            st.execute("INSERT INTO criteria_users (user_name, age, city, street) VALUES (NULL, 40, 'beijing', 'x')");
+        }
+        int deleted = repo.deleteByNickname(Optional.empty());
+
+        assertEquals(1, deleted);
+        assertEquals(3, repo.findAll().size());
+    }
+
+    /** 条件对象 WHERE：嵌套分组删除。 */
+    @Test
+    void deleteByCriteriaWhere() {
+        UserCriteria criteria = new UserCriteria();
+        criteria.address = new AddressCriteria();
+        criteria.address.city = "beijing";
+
+        int deleted = repo.deleteByCriteria(criteria);
+
+        assertEquals(2, deleted, "two rows in beijing should be deleted");
+        assertEquals(1, repo.findAll().size());
+    }
 }
