@@ -11,7 +11,8 @@ JForge 目前只支持两个方言（`Dialect` 枚举，jforge-annotation）：
 ```java
 public enum Dialect {
     POSTGRESQL,   // PostgreSQL / H2（MODE=PostgreSQL）
-    MYSQL         // MySQL / MariaDB
+    MYSQL,        // MySQL / MariaDB
+    SQLITE        // SQLite（3.35+）
 }
 ```
 
@@ -255,9 +256,13 @@ final class PostgreSqlDialect implements DialectSupport {
 }
 // MySqlDialect：supportsReturningKeys=false、BIGINT AUTO_INCREMENT、`、LIMIT ? OFFSET ?、
 // ON DUPLICATE KEY、1
+// SqliteDialect：supportsReturningKeys=true（3.35+，官方推荐 RETURNING）、
+// INTEGER PRIMARY KEY AUTOINCREMENT、"、LIMIT ? OFFSET ?、ON CONFLICT、1
 ```
 
-> **`supportsReturningKeys` 当前为 false 的原因**：`INSERT ... RETURNING` 是真 PG 的优化路径，但 H2 2.3（测试库，同样走 `POSTGRESQL` 方言）**实测不支持该语法**（三种形式均语法错误）——方言无法区分两者，统一走 JDBC 标准 `getGeneratedKeys`。待引入独立 H2 方言或运行时驱动探测后再启用（接口与生成分支已就位，改返回值即生效）。
+> **PostgreSqlDialect 的 `supportsReturningKeys` 当前为 false 的原因**：`INSERT ... RETURNING` 是真 PG 的优化路径，但 H2 2.3（测试库，同样走 `POSTGRESQL` 方言）**实测不支持该语法**（三种形式均语法错误）——方言无法区分两者，统一走 JDBC 标准 `getGeneratedKeys`。待引入独立 H2 方言或运行时驱动探测后再启用（接口与生成分支已就位，改返回值即生效）。
+>
+> **SqliteDialect 的 `supportsReturningKeys` 为 true**：SQLite 3.35+（2021）支持 `INSERT ... RETURNING`，xerial JDBC 驱动内置引擎均为新版本——RETURNING 是官方推荐的生成键方式（`getGeneratedKeys` 在 SQLite 上等价于 `last_insert_rowid()`）。旧版本引擎需降级。
 
 ### 5.4 生成形态示例（save 生成键回写——方言就位后的两种形态）
 

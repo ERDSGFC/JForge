@@ -7,5 +7,8 @@ public enum Dialect {
     POSTGRESQL,
 
     /** MySQL / MariaDB。 */
-    MYSQL;
+    MYSQL,
+
+    /** SQLite（3.35+，生成键支持 RETURNING）。 */
+    SQLITE;
 }

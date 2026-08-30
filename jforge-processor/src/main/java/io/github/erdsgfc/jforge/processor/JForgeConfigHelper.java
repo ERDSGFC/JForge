@@ -70,8 +70,11 @@ public final class JForgeConfigHelper {
                                 + "compile classpath (not compiled in the same source set)", e);
             }
         }
-        return (config != null ? config.dialect() : Dialect.POSTGRESQL) == Dialect.MYSQL
-                ? new MySqlDialect() : new PostgreSqlDialect();
+        return switch (config != null ? config.dialect() : Dialect.POSTGRESQL) {
+            case MYSQL -> new MySqlDialect();
+            case SQLITE -> new SqliteDialect();
+            case POSTGRESQL -> new PostgreSqlDialect();
+        };
     }
 
     /** 读取配置的命名策略(默认 {@link NamingStrategy#NONE})。 */
