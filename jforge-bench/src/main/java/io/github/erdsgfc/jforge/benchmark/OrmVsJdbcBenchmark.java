@@ -44,9 +44,11 @@ public class OrmVsJdbcBenchmark {
     private HikariDataSource dataSource;
     private UserRepository repo;
     private TimedUserRepository timedRepo;
+    private ManualIdUserRepository manualRepo;
     private long seededId;
+    private long manualSeq;
 
-    /** 创建共享的 HikariCP 连接池(带语句缓存)并预置数据。两套实体映射同一张 timed_users 表。 */
+    /** 创建共享的 HikariCP 连接池(带语句缓存)并预置数据。 */
     @Setup(Level.Trial)
     public void setUp() throws SQLException {
         HikariConfig config = new HikariConfig();
@@ -64,6 +66,10 @@ public class OrmVsJdbcBenchmark {
                     "created_at TIMESTAMP, updated_at TIMESTAMP)");
             st.execute("INSERT INTO timed_users (user_name, age, created_at, updated_at) " +
                     "VALUES ('seed', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)");
+            // 手动主键表:save 无生成键回写路径(与 timed_users 的生成键回写做减法)。
+            st.execute("DROP TABLE IF EXISTS manual_id_users");
+            st.execute("CREATE TABLE manual_id_users (" +
+                    "id BIGINT PRIMARY KEY, user_name VARCHAR(100), age INT)");
         }
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement("SELECT id FROM timed_users WHERE user_name = 'seed'");
@@ -73,6 +79,7 @@ public class OrmVsJdbcBenchmark {
         }
         repo = new JForge(dataSource).repository(UserRepository.class);
         timedRepo = new JForge(dataSource).repository(TimedUserRepository.class);
+        manualRepo = new JForge(dataSource).repository(ManualIdUserRepository.class);
     }
 
     /** 关闭共享连接池。 */
@@ -161,10 +168,14 @@ public class OrmVsJdbcBenchmark {
             ps.setLong(1, seededId);
             try (ResultSet rs = ps.executeQuery()) {
                 rs.next();
+                // 与 ORM mapRow 精确对称:包装类列(id/age)经 wasNull 回退 null,
+                // String 列非空直读、时间列 getObject 天然 null——两边做等价的工作。
                 UserEntity user = repo.createEntity();
-                user.id(rs.getLong(1));
+                long vid = rs.getLong(1);
+                user.id(rs.wasNull() ? null : vid);
                 user.name(rs.getString(2));
-                user.age(rs.getInt(3));
+                int vage = rs.getInt(3);
+                user.age(rs.wasNull() ? null : vage);
                 user.createdAt(rs.getObject(4, LocalDateTime.class));
                 user.updatedAt(rs.getObject(5, LocalDateTime.class));
                 return user;
@@ -181,9 +192,11 @@ public class OrmVsJdbcBenchmark {
             List<UserEntity> list = new ArrayList<>();
             while (rs.next()) {
                 UserEntity user = repo.createEntity();
-                user.id(rs.getLong(1));
+                long vid = rs.getLong(1);
+                user.id(rs.wasNull() ? null : vid);
                 user.name(rs.getString(2));
-                user.age(rs.getInt(3));
+                int vage = rs.getInt(3);
+                user.age(rs.wasNull() ? null : vage);
                 user.createdAt(rs.getObject(4, LocalDateTime.class));
                 user.updatedAt(rs.getObject(5, LocalDateTime.class));
                 list.add(user);
@@ -205,5 +218,31 @@ public class OrmVsJdbcBenchmark {
     public boolean ormTimedUpdate() {
         TimedUserEntity user = timedRepo.createEntity().id(seededId).name("heihei").age(25);
         return timedRepo.update(user);
+    }
+
+    // ============ 生成键回写路径拆解（手动 id 无回写 vs 生成 id 带回写）============
+
+    /** ORM 插入：手动 id——无 RETURN_GENERATED_KEYS、无生成键回写（与 ormInsert 做减法）。 */
+    @Benchmark
+    public ManualIdUser ormInsertManualId() {
+        return manualRepo.save(manualRepo.createEntity().id(++manualSeq).name("heihei").age(25));
+    }
+
+    /** 裸 JDBC 插入：手动 id——无 RETURN_GENERATED_KEYS、无 keys 读取（与 jdbcInsert 做减法）。 */
+    @Benchmark
+    public ManualIdUser jdbcInsertManualId() throws SQLException {
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "INSERT INTO manual_id_users (id, user_name, age) VALUES (?, ?, ?)")) {
+            ManualIdUser user = manualRepo.createEntity();
+            user.id(++manualSeq);
+            user.name("heihei");
+            user.age(25);
+            ps.setLong(1, user.id());
+            ps.setString(2, user.name());
+            ps.setInt(3, user.age());
+            ps.executeUpdate();
+            return user;
+        }
     }
 }

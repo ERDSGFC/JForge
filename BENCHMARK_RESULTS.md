@@ -128,7 +128,7 @@
 
 ## ORM vs 裸 JDBC 基准（OrmVsJdbcBenchmark）
 
-> **测量对象**：jforge ORM 生成代码 vs 手写裸 JDBC，H2 内存库 + HikariCP（`cachePrepStmts` 开启），3 字段 `User`（id/user_name/age；Run ORM-3 起为 5 字段含时间列）。**单位**：ops/s。**配置**：注解默认 2 forks × 3×2s 预热 + 5×2s 测量（每方法 10 样本，误差 ±1-4%；历史 1 fork×3×2s 噪声过大，见 Run ORM-3）。
+> **测量对象**：jforge ORM 生成代码 vs 手写裸 JDBC，H2 内存库 + HikariCP（`cachePrepStmts` 开启），`User`（id/user_name/age；Run ORM-3 起为 5 字段含时间列；Run ORM-4 起 12 个 benchmark，含手动主键拆解组）。**单位**：ops/s。**配置**：注解默认 2 forks × 3×2s 预热 + 5×2s 测量（每方法 10 样本，误差 ±1-7%；历史 1 fork×3×2s 噪声过大，见 Run ORM-3）。
 > **架构基线**：管理器经 `JForge` 实例注入生成实现（`private final` 字段，无全局查找）；行映射为 setter 风格；`SimpleTransactionManager` 为**单 ThreadLocal 槽位**（tx/scope 两可空字段，热路径 1 次 `ThreadLocal.get()`）。
 
 ### Run ORM-1: 单槽位实现后的基线（10×2s）
@@ -177,3 +177,36 @@
 1. **ORM vs 裸 JDBC 仍等效**：Insert 手动 +1.2%、Update 手动 −2.3%、自动组 −1.2%/−0.7%、FindById +0.9%、FindAll −5.4%（±3-4% 误差内，且该方向跨轮不稳定，判为噪声）——框架开销仍在目标区间（−0.1% ~ +3.5%）附近。
 2. **时间字段自动维护开销不可测**（自动 vs 手动：Insert −2.4%、Update +1.7%，方向相反、都在 ±1-3% 误差带内）——default 值绑定的强转 + 桥接调用被 JIT 内联（桥接是私有小方法、调用点单态，内联后执行的就是 `LocalDateTime.now()` 本身）。1 fork×3 iter 时"自动 insert 慢 8.7%"的观测被证明是测量噪声。
 3. **方法学延续**：噪声随样本量显著收敛——同一基准 1 fork×3 iter 误差 ±20-50%（曾误导出 −8.7% 结论），2 fork×10 样本后 ±1-4%。
+
+### Run ORM-4: 生成键回写路径拆解 + 对称 wasNull（12 个 benchmark）
+
+> **代码改动**：① 裸 JDBC 对照组（`jdbcFindById`/`jdbcFindAll`）补齐 `rs.wasNull()` 处理，与 ORM `mapRow` 的列空性语义精确对称（包装类列 id/age 经 wasNull 回退 null；String 列非空直读、时间列 getObject 天然 null）——两边做等价工作，消除此前 JDBC 侧"少做 wasNull"的不公平优势；② 新增手动主键组（`ManualIdUser`，id 无 `@GeneratedValue`）：`ormInsertManualId`/`jdbcInsertManualId` 走无生成键回写路径，与带回写的 `ormInsert`/`jdbcInsert` 做减法，拆解生成键回写路径开销。
+
+| Benchmark | Score (ops/s) | Error |
+|---|---:|---:|
+| jdbcFindAll | 1,452,183 | ±50,905 |
+| jdbcFindById | 1,341,820 | ±55,895 |
+| jdbcInsert | 485,184 | ±30,700 |
+| jdbcInsertManualId | 620,703 | ±20,585 |
+| jdbcUpdate | 614,162 | ±7,945 |
+| ormFindAll | 1,445,040 | ±12,469 |
+| ormFindById | 1,409,783 | ±53,534 |
+| ormInsert | 501,971 | ±11,380 |
+| ormInsertManualId | 601,879 | ±23,114 |
+| ormTimedInsert | 481,334 | ±23,029 |
+| ormTimedUpdate | 613,811 | ±18,322 |
+| ormUpdate | 603,834 | ±6,701 |
+
+**生成键回写路径拆解**（减法：无回写 − 带回写）：
+
+| | ORM | 裸 JDBC |
+|---|---:|---:|
+| 带回写（生成 id） | 501,971 | 485,184 |
+| 无回写（手动 id） | 601,879 | 620,703 |
+| **回写路径开销** | **−16.6%** | **−21.8%** |
+
+**结论**：
+1. **生成键回写路径 ORM 与手写 JDBC 等价（甚至略优）**——ORM 回写开销 −16.6% < JDBC −21.8%（差值在误差带内）；带回写对比 `ormInsert` vs `jdbcInsert` = **+3.5%**。此前 Insert 组的负差异（Run ORM-3 的 −2.5%/−4.8%）**不是回写路径的锅**，且本轮 `ormInsert` +3.5% 证明其确属跨轮噪声。
+2. **回写本身是插入的大头成本（~17-22%）**——`RETURN_GENERATED_KEYS` + `getGeneratedKeys` + 结果集读取占插入操作约 1/5，是 JDBC 固有成本两边同付。这为方言架构的 `supportsReturningKeys`（PG `INSERT ... RETURNING` 单语句拿 id）提供数据支撑：启用后插入路径可砍掉这 ~17-22% 中回写侧的部分。
+3. **无回写基线**：`ormInsertManualId` vs `jdbcInsertManualId` = −3.0%（±3.7% 误差内）——纯插入 ORM 与手写等价。
+4. **对称 wasNull 后读路径**：FindById +1.6%、FindAll −0.9%——ORM 与手写 JDBC 几乎持平（对称前 FindAll 曾 −5.4%，其中包含 JDBC 侧少做 wasNull 的不公平优势）。
