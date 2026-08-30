@@ -141,4 +141,55 @@ class CriteriaQueryTest {
         assertEquals(1, named.size());
         assertEquals("qin", named.get(0).name());
     }
+
+    // ---- @Update / @UpdateSet 声明式更新 ----
+
+    /** 基本更新：SET 列 + WHERE 条件（全静态 → SQL 常量）。 */
+    @Test
+    void updateSetAndWhere() {
+        int updated = repo.updateName("renamed", 1L);
+
+        assertEquals(1, updated);
+        CriteriaUser user = repo.findById(1L);
+        assertEquals("renamed", user.name());
+    }
+
+    /** @Nullable SET 参数为 null → 跳过该 SET（只更新非 null 列）。 */
+    @Test
+    void updateSkipsNullSet() {
+        repo.updateNameAndAge("renamed", null, 1L);
+        CriteriaUser user = repo.findById(1L);
+        assertEquals("renamed", user.name());
+        assertEquals(25, user.age(), "null SET parameter must be skipped, keeping the original value");
+
+        repo.updateNameAndAge("renamed2", 30, 1L);
+        CriteriaUser user2 = repo.findById(1L);
+        assertEquals("renamed2", user2.name());
+        assertEquals(30, user2.age());
+    }
+
+    /** Optional SET 空 → SET 列 = NULL。 */
+    @Test
+    void updateOptionalEmptySetsNull() {
+        repo.updateNickname(Optional.empty(), 1L);
+        CriteriaUser user = repo.findById(1L);
+        assertEquals(null, user.name(), "empty Optional must SET the column to NULL");
+
+        repo.updateNickname(Optional.of("qin"), 1L);
+        CriteriaUser user2 = repo.findById(1L);
+        assertEquals("qin", user2.name());
+    }
+
+    /** WHERE 用条件对象（@Where）：嵌套分组在 UPDATE 中同样生效。 */
+    @Test
+    void updateWithCriteriaWhere() {
+        UserCriteria criteria = new UserCriteria();
+        criteria.address = new AddressCriteria();
+        criteria.address.city = "beijing";
+
+        int updated = repo.updateByCriteria("all-beijing", criteria);
+
+        assertEquals(2, updated, "two rows in beijing should be updated");
+        assertTrue(repo.findByNickname(Optional.of("all-beijing")).size() >= 2);
+    }
 }

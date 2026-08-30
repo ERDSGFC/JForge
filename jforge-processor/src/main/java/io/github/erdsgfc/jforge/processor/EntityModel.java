@@ -1,6 +1,10 @@
 package io.github.erdsgfc.jforge.processor;
 
-import io.github.erdsgfc.jforge.annotation.*;
+import io.github.erdsgfc.jforge.annotation.Column;
+import io.github.erdsgfc.jforge.annotation.GeneratedValue;
+import io.github.erdsgfc.jforge.annotation.Id;
+import io.github.erdsgfc.jforge.annotation.Table;
+import io.github.erdsgfc.jforge.annotation.WritePolicy;
 
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;

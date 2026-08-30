@@ -34,6 +34,7 @@ final class RepositoryGenerator {
     private final CrudGenerator crudGenerator;
     private final QueryGenerator queryGenerator;
     private final SelectGenerator selectGenerator;
+    private final UpdateGenerator updateGenerator;
 
     RepositoryGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper) {
         this.processingEnv = processingEnv;
@@ -41,6 +42,7 @@ final class RepositoryGenerator {
         this.crudGenerator = new CrudGenerator(configHelper);
         this.queryGenerator = new QueryGenerator(processingEnv, configHelper);
         this.selectGenerator = new SelectGenerator(processingEnv, configHelper, queryGenerator);
+        this.updateGenerator = new UpdateGenerator(processingEnv, configHelper);
     }
 
     /**
@@ -139,6 +141,7 @@ final class RepositoryGenerator {
                 sqlException);
         selectGenerator.selectMethods(info, builder, embedded, connection, preparedStatement, resultSet,
                 sqlException);
+        updateGenerator.updateMethods(info, builder, connection, preparedStatement, sqlException);
 
         return builder.build();
     }
