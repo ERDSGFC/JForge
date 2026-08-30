@@ -32,4 +32,19 @@ public @interface UpdateSet {
      * 实体字段名（getter 名）。空字符串（默认值）表示"与参数名相同"。
      */
     String value() default "";
+
+    /**
+     * 直接使用原生 SQL 片段作为 {@code SET} 表达式（替代 {@code 列 = ?} 的拼装，
+     * 如 {@code "score = score + ?"}）。片段中的 {@code ?} 占位符绑定该参数的值；
+     * 无 {@code ?} 则为纯常量（参数不绑定）。{@code @Nullable}/{@code Optional}
+     * 动态语义保留（null/空时跳过该 SET）。
+     *
+     * <pre>{@code
+     * @Update
+     * int incrementScore(@UpdateSet(rawSql = "score = score + ?") Integer increment,
+     *         @Condition Long id);
+     * // → UPDATE users SET score = score + ? WHERE id = ?
+     * }</pre>
+     */
+    String rawSql() default "";
 }

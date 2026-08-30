@@ -110,9 +110,10 @@ final class SelectGenerator {
         final boolean dynamic;     // @Nullable → 运行时为 null 时跳过
         final boolean optional;    // Optional 参数：isPresent → 条件；isEmpty → IS NULL
         final String valueExpr;    // Optional 的绑定值表达式（param.get()/getAsInt()…）
+        final String rawSql;       // 原生 SQL 片段（非 null = 替代 column/op 拼装；含 ? 绑定参数）
 
         WhereCondition(String columnName, String op, String paramName, String typeName, boolean dynamic,
-                boolean optional, String valueExpr) {
+                boolean optional, String valueExpr, String rawSql) {
             this.columnName = columnName;
             this.op = op;
             this.paramName = paramName;
@@ -120,6 +121,7 @@ final class SelectGenerator {
             this.dynamic = dynamic;
             this.optional = optional;
             this.valueExpr = valueExpr;
+            this.rawSql = rawSql;
         }
     }
 
@@ -219,8 +221,12 @@ final class SelectGenerator {
                     if (i > 0) {
                         where.append(" AND ");
                     }
-                    where.append(conditions.get(i).columnName).append(' ').append(conditions.get(i).op)
-                            .append(" ?");
+                    WhereCondition condition = conditions.get(i);
+                    if (condition.rawSql != null) {
+                        where.append(condition.rawSql);
+                    } else {
+                        where.append(condition.columnName).append(' ').append(condition.op).append(" ?");
+                    }
                 }
                 fullSql = baseSql + where;
             }
@@ -229,6 +235,10 @@ final class SelectGenerator {
             SqlCodegen.beginTxBlock(spec, connection, preparedStatement, methodName + "Sql", false, logSql);
             int index = 1;
             for (WhereCondition condition : conditions) {
+                // rawSql 无 ? 的纯常量条件不绑定参数。
+                if (condition.rawSql != null && !condition.rawSql.contains("?")) {
+                    continue;
+                }
                 spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName, index++));
                 spec.addCode("\n");
             }
@@ -286,7 +296,16 @@ final class SelectGenerator {
             spec.beginControlFlow("if ($N != null)", condition.paramName);
         }
         if (bind) {
-            if (condition.optional) {
+            if (condition.rawSql != null) {
+                // 原生 SQL 片段：Optional 有值才拼（空跳过，rawSql 不生成 IS NULL）。
+                if (condition.optional) {
+                    spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
+                }
+                spec.addStatement("sql.append(where).append($S)", " " + condition.rawSql);
+                if (condition.optional) {
+                    spec.endControlFlow();
+                }
+            } else if (condition.optional) {
                 // Optional 参数：有值 → 条件；空 → IS NULL（两者都拼接，连接符仅其后置一次）。
                 spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
                 spec.addStatement("sql.append(where).append($S)",
@@ -301,6 +320,19 @@ final class SelectGenerator {
                         " " + condition.columnName + " " + condition.op + " ?");
             }
             spec.addStatement("where = $S", " AND ");
+        } else if (condition.rawSql != null) {
+            // rawSql 含 ? 才绑定（无 ? 为纯常量条件）。
+            if (condition.rawSql.contains("?")) {
+                if (condition.optional) {
+                    spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
+                }
+                spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.valueExpr != null
+                        ? condition.valueExpr : condition.paramName, "i++"));
+                spec.addCode("\n");
+                if (condition.optional) {
+                    spec.endControlFlow();
+                }
+            }
         } else if (condition.optional) {
             // 有值分支绑定（IS NULL 无占位符）。
             spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
@@ -337,6 +369,20 @@ final class SelectGenerator {
         boolean dynamic = optional
                 || parameter.asType().getAnnotation(org.jspecify.annotations.Nullable.class) != null;
 
+        // 原生 SQL 条件：rawSql 非空时直接作为条件片段（跳过列映射与操作符拼装），
+        // 含 ? 时绑定参数、无 ? 时纯常量（参数仅用于动态跳过控制）。
+        String rawSql = where != null ? where.rawSql() : "";
+        if (!rawSql.isEmpty()) {
+            String bindType = optional
+                    ? CriteriaGenerator.optionalValueType(parameter.asType())
+                    : TypeNameUtils.plainTypeName(parameter.asType());
+            String valueExpr = optional
+                    ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
+                    : null;
+            return new WhereCondition(null, null, paramName, bindType, dynamic, optional, valueExpr,
+                    rawSql);
+        }
+
         String columnName;
         TypeMirror returnType = method.getReturnType();
         boolean isList = returnType.getKind() == TypeKind.DECLARED
@@ -364,7 +410,7 @@ final class SelectGenerator {
         String valueExpr = optional
                 ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
                 : null;
-        return new WhereCondition(columnName, op, paramName, bindType, dynamic, optional, valueExpr);
+        return new WhereCondition(columnName, op, paramName, bindType, dynamic, optional, valueExpr, null);
     }
 
     /** 在宿主实体字段集合中查找字段并返回其列名；找不到则报错。 */

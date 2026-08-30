@@ -28,4 +28,18 @@ public @interface Condition {
 
     /** 条件操作符（默认等于）。 */
     Op op() default Op.EQ;
+
+    /**
+     * 直接使用原生 SQL 片段作为条件（替代 {@link #value()}/{@link #op()} 的
+     * "字段 + 操作符"拼装）。片段中的 {@code ?} 占位符绑定该参数的值；无 {@code ?}
+     * 则为纯常量条件（参数不绑定，仅用于 {@code @Nullable}/{@code Optional} 的
+     * 跳过控制）。
+     *
+     * <pre>{@code
+     * @Select
+     * List<UserEntity> findActive(@Condition(rawSql = "status = 'active'") String ignored);
+     * // → WHERE status = 'active'
+     * }</pre>
+     */
+    String rawSql() default "";
 }

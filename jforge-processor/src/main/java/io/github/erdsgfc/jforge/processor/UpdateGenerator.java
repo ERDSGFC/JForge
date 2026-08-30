@@ -40,15 +40,17 @@ final class UpdateGenerator {
         final boolean dynamic;     // @Nullable → null 跳过
         final boolean optional;    // Optional：空 → SET NULL
         final String valueExpr;    // Optional 绑定值表达式
+        final String rawSql;       // 原生 SET 表达式（非 null 替代 列 = ?；含 ? 绑定参数）
 
         SetUnit(String column, String paramName, String bindType, boolean dynamic,
-                boolean optional, String valueExpr) {
+                boolean optional, String valueExpr, String rawSql) {
             this.column = column;
             this.paramName = paramName;
             this.bindType = bindType;
             this.dynamic = dynamic;
             this.optional = optional;
             this.valueExpr = valueExpr;
+            this.rawSql = rawSql;
         }
     }
 
@@ -143,7 +145,8 @@ final class UpdateGenerator {
                 if (i > 0) {
                     sql.append(", ");
                 }
-                sql.append(sets.get(i).column).append(" = ?");
+                SetUnit unit = sets.get(i);
+                sql.append(unit.rawSql != null ? unit.rawSql : unit.column + " = ?");
             }
             if (!conditions.isEmpty()) {
                 sql.append(" WHERE ");
@@ -151,8 +154,9 @@ final class UpdateGenerator {
                     if (i > 0) {
                         sql.append(" AND ");
                     }
-                    sql.append(conditions.get(i).columnName).append(' ')
-                            .append(conditions.get(i).op).append(" ?");
+                    WhereCondition condition = conditions.get(i);
+                    sql.append(condition.rawSql != null ? condition.rawSql
+                            : condition.columnName + " " + condition.op + " ?");
                 }
             }
             builder.addField(FieldSpec.builder(String.class, methodName + "Sql",
@@ -160,10 +164,17 @@ final class UpdateGenerator {
             SqlCodegen.beginTxBlock(spec, connection, preparedStatement, methodName + "Sql", false, logSql);
             int index = 1;
             for (SetUnit unit : sets) {
+                // rawSql 无 ? 的纯常量 SET 不绑定参数。
+                if (unit.rawSql != null && !unit.rawSql.contains("?")) {
+                    continue;
+                }
                 spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.paramName, index++));
                 spec.addCode("\n");
             }
             for (WhereCondition condition : conditions) {
+                if (condition.rawSql != null && !condition.rawSql.contains("?")) {
+                    continue;
+                }
                 spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName, index++));
                 spec.addCode("\n");
             }
@@ -214,8 +225,25 @@ final class UpdateGenerator {
     private SetUnit resolveSet(JForgeProcessor.DaoInfo info, ExecutableElement method,
             VariableElement parameter) {
         UpdateSet set = parameter.getAnnotation(UpdateSet.class);
+        String paramName = parameter.getSimpleName().toString();
+        boolean optional = CriteriaGenerator.isOptional(parameter.asType());
+        boolean dynamic = optional
+                || parameter.asType().getAnnotation(org.jspecify.annotations.Nullable.class) != null;
+        String bindType = optional
+                ? CriteriaGenerator.optionalValueType(parameter.asType())
+                : TypeNameUtils.plainTypeName(parameter.asType());
+        String valueExpr = optional
+                ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
+                : null;
+
+        // 原生 SQL SET 表达式：rawSql 非空直接使用（跳过列映射），含 ? 绑定参数。
+        String rawSql = set != null ? set.rawSql() : "";
+        if (!rawSql.isEmpty()) {
+            return new SetUnit(null, paramName, bindType, dynamic, optional, valueExpr, rawSql);
+        }
+
         String fieldName = set != null && !set.value().isEmpty()
-                ? set.value() : parameter.getSimpleName().toString();
+                ? set.value() : paramName;
         String column = null;
         for (EntityModel.ColumnModel model : info.model.columns()) {
             if (model.fieldName.equals(fieldName)) {
@@ -229,17 +257,7 @@ final class UpdateGenerator {
                             + info.model.entityQualifiedName(), method);
             return null;
         }
-        String paramName = parameter.getSimpleName().toString();
-        boolean optional = CriteriaGenerator.isOptional(parameter.asType());
-        boolean dynamic = optional
-                || parameter.asType().getAnnotation(org.jspecify.annotations.Nullable.class) != null;
-        String bindType = optional
-                ? CriteriaGenerator.optionalValueType(parameter.asType())
-                : TypeNameUtils.plainTypeName(parameter.asType());
-        String valueExpr = optional
-                ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
-                : null;
-        return new SetUnit(column, paramName, bindType, dynamic, optional, valueExpr);
+        return new SetUnit(column, paramName, bindType, dynamic, optional, valueExpr, null);
     }
 
     private void emitSetAppend(MethodSpec.Builder spec, SetUnit unit, String setConnVar,
@@ -247,7 +265,16 @@ final class UpdateGenerator {
         if (unit.dynamic) {
             spec.beginControlFlow("if ($N != null)", unit.paramName);
         }
-        if (unit.optional) {
+        if (unit.rawSql != null) {
+            // 原生 SET 表达式：Optional 有值才拼（空跳过，rawSql 不生成 = NULL）。
+            if (unit.optional) {
+                spec.beginControlFlow("if ($N.isPresent())", unit.paramName);
+            }
+            spec.addStatement("$L.append($L).append($S)", "sql", setConnVar, " " + unit.rawSql);
+            if (unit.optional) {
+                spec.endControlFlow();
+            }
+        } else if (unit.optional) {
             spec.beginControlFlow("if ($N.isPresent())", unit.paramName);
             spec.addStatement("$L.append($L).append($S)", "sql", setConnVar, " " + unit.column + " = ?");
             spec.nextControlFlow("else");
@@ -266,7 +293,9 @@ final class UpdateGenerator {
         if (unit.dynamic) {
             spec.beginControlFlow("if ($N != null)", unit.paramName);
         }
-        if (unit.optional) {
+        if (unit.rawSql != null && !unit.rawSql.contains("?")) {
+            // 纯常量 SET 表达式（无 ?）不绑定参数。
+        } else if (unit.optional) {
             spec.beginControlFlow("if ($N.isPresent())", unit.paramName);
             spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.valueExpr, "i++"));
             spec.addCode("\n");
@@ -291,9 +320,10 @@ final class UpdateGenerator {
         final boolean dynamic;
         final boolean optional;
         final String valueExpr;
+        final String rawSql;       // 原生 SQL 条件（非 null 替代 column/op；含 ? 绑定参数）
 
         WhereCondition(String columnName, String op, String paramName, String typeName,
-                boolean dynamic, boolean optional, String valueExpr) {
+                boolean dynamic, boolean optional, String valueExpr, String rawSql) {
             this.columnName = columnName;
             this.op = op;
             this.paramName = paramName;
@@ -301,6 +331,7 @@ final class UpdateGenerator {
             this.dynamic = dynamic;
             this.optional = optional;
             this.valueExpr = valueExpr;
+            this.rawSql = rawSql;
         }
     }
 
@@ -324,6 +355,20 @@ final class UpdateGenerator {
                             + info.model.entityQualifiedName(), method);
             return null;
         }
+        // 原生 SQL 条件：rawSql 非空直接使用（跳过列映射），含 ? 绑定参数。
+        String rawSql = condition != null ? condition.rawSql() : "";
+        if (!rawSql.isEmpty()) {
+            boolean optional = CriteriaGenerator.isOptional(parameter.asType());
+            boolean dynamic = optional
+                    || parameter.asType().getAnnotation(org.jspecify.annotations.Nullable.class) != null;
+            String bindType = optional
+                    ? CriteriaGenerator.optionalValueType(parameter.asType())
+                    : TypeNameUtils.plainTypeName(parameter.asType());
+            String valueExpr = optional
+                    ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
+                    : null;
+            return new WhereCondition(null, op, paramName, bindType, dynamic, optional, valueExpr, rawSql);
+        }
         boolean optional = CriteriaGenerator.isOptional(parameter.asType());
         boolean dynamic = optional
                 || parameter.asType().getAnnotation(org.jspecify.annotations.Nullable.class) != null;
@@ -333,14 +378,22 @@ final class UpdateGenerator {
         String valueExpr = optional
                 ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
                 : null;
-        return new WhereCondition(column, op, paramName, bindType, dynamic, optional, valueExpr);
+        return new WhereCondition(column, op, paramName, bindType, dynamic, optional, valueExpr, null);
     }
 
     private void emitConditionAppend(MethodSpec.Builder spec, WhereCondition condition) {
         if (condition.dynamic) {
             spec.beginControlFlow("if ($N != null)", condition.paramName);
         }
-        if (condition.optional) {
+        if (condition.rawSql != null) {
+            if (condition.optional) {
+                spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
+            }
+            spec.addStatement("sql.append(where).append($S)", " " + condition.rawSql);
+            if (condition.optional) {
+                spec.endControlFlow();
+            }
+        } else if (condition.optional) {
             spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
             spec.addStatement("sql.append(where).append($S)",
                     " " + condition.columnName + " " + condition.op + " ?");
@@ -362,7 +415,9 @@ final class UpdateGenerator {
         if (condition.dynamic) {
             spec.beginControlFlow("if ($N != null)", condition.paramName);
         }
-        if (condition.optional) {
+        if (condition.rawSql != null && !condition.rawSql.contains("?")) {
+            // 纯常量条件（无 ?）不绑定参数。
+        } else if (condition.optional) {
             spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
             spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.valueExpr, "i++"));
             spec.addCode("\n");
