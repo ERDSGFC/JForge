@@ -101,6 +101,12 @@ public final class JForgeConfigHelper {
         return config != null && config.logSql();
     }
 
+    /** 未标注空性的其他类型列的默认空性(默认 {@code false} = 非空)。 */
+    public boolean columnsNullable(Element element) {
+        JForgeConfig config = configFor(element);
+        return config != null && config.columnsNullable();
+    }
+
     /**
      * 读取配置的 JDBC 批处理大小。默认({@code 50})与 {@code JForgeConfig.batchSize()} 一致;
      * {@code 0} 表示不批处理(在一个连接上逐条插入)。

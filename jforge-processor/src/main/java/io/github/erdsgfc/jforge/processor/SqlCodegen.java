@@ -55,13 +55,23 @@ public final class SqlCodegen {
      * @param index      基于 1 的列索引
      * @return 读取代码块
      */
-    public static CodeBlock readColumn(String typeName, String entityVar, String setterName, int index) {
+    public static CodeBlock readColumn(String typeName, String entityVar, String setterName, int index,
+            boolean nullable) {
         String getter = TypeNameUtils.jdbcGetter(typeName);
         if (getter.equals("getObject")) {
-            // LocalDate/LocalDateTime/enums: getObject(index, Class)——强制转换为字段类型。
+            // LocalDate/LocalDateTime/enums: getObject(index, Class) 对 NULL 列天然返回 null,
+            // 可空与否形态一致——无需 wasNull 分支。
             return CodeBlock.of("$L.$L(($T) $L.getObject($L, $T.class));",
                     entityVar, setterName, TypeNameUtils.toTypeName(typeName),
                     "rs", index, TypeNameUtils.toTypeName(typeName));
+        }
+        if (nullable) {
+            // 可空列:基本类型局部变量承接读取值(零装箱),经 rs.wasNull() 三元回退 null——
+            // 否则 NULL 列对 getInt/getString 等会读得 0/空串而非 null。
+            String var = "v" + setterName;
+            String varType = TypeNameUtils.jdbcVarType(typeName);
+            return CodeBlock.of("$T $L = rs.$L($L);\n$L.$L(rs.wasNull() ? null : $L);",
+                    TypeNameUtils.toTypeName(varType), var, getter, index, entityVar, setterName, var);
         }
         return CodeBlock.of("$L.$L($L.$L($L));",
                 entityVar, setterName, "rs", getter, index);
@@ -77,12 +87,20 @@ public final class SqlCodegen {
      * @param column     列名
      * @return 读取代码块
      */
-    public static CodeBlock readColumnByName(String typeName, String entityVar, String setterName, String column) {
+    public static CodeBlock readColumnByName(String typeName, String entityVar, String setterName, String column,
+            boolean nullable) {
         String getter = TypeNameUtils.jdbcGetter(typeName);
         if (getter.equals("getObject")) {
+            // getObject 对 NULL 列天然返回 null——可空与否形态一致,无需 wasNull 分支。
             return CodeBlock.of("$L.$L(($T) $L.getObject($S, $T.class));",
                     entityVar, setterName, TypeNameUtils.toTypeName(typeName),
                     "rs", column, TypeNameUtils.toTypeName(typeName));
+        }
+        if (nullable) {
+            String var = "v" + setterName;
+            String varType = TypeNameUtils.jdbcVarType(typeName);
+            return CodeBlock.of("$T $L = rs.$L($S);\n$L.$L(rs.wasNull() ? null : $L);",
+                    TypeNameUtils.toTypeName(varType), var, getter, column, entityVar, setterName, var);
         }
         return CodeBlock.of("$L.$L($L.$L($S));",
                 entityVar, setterName, "rs", getter, column);

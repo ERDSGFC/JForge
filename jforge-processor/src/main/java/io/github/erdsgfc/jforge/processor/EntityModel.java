@@ -75,12 +75,18 @@ public final class EntityModel {
         final boolean insertable;
         /** 列是否参与 UPDATE SET(update)——由 {@code @Column.write()} 策略派生。 */
         final boolean updatable;
+        /** 列是否可空:基本类型恒非空;包装类恒可空;其他类型看 getter 返回类型的
+         *  JSpecify {@code @Nullable} 标注或全局配置默认。可空列的行映射生成
+         *  {@code ResultSet.wasNull()} 判断(null 读回为 null 而非 0/空串)。 */
+        final boolean nullable;
 
         ColumnModel(String fieldName, String columnName, TypeMirror returnType, boolean isId, boolean generated,
-                boolean defaultGetter, boolean insertable, boolean updatable) {
+                boolean defaultGetter, boolean insertable, boolean updatable, boolean nullable) {
             this.fieldName = fieldName;
             this.columnName = columnName;
-            this.typeName = returnType.toString();
+            // plainTypeName:剥离 TYPE_USE 注解(@Nullable 等)——否则 toString 会输出
+            // "java.lang.@org.jspecify.annotations.Nullable String",破坏 JDBC 映射与 javapoet 解析。
+            this.typeName = TypeNameUtils.plainTypeName(returnType);
             this.returnType = returnType;
             this.getterName = fieldName;
             this.setterName = fieldName;
@@ -89,6 +95,7 @@ public final class EntityModel {
             this.defaultGetter = defaultGetter;
             this.insertable = insertable;
             this.updatable = updatable;
+            this.nullable = nullable;
         }
     }
 
@@ -336,12 +343,48 @@ public final class EntityModel {
                 method.signature.getReturnType(), isId, generated,
                 element.getModifiers().contains(Modifier.DEFAULT),
                 write != WritePolicy.UPDATE_ONLY && write != WritePolicy.NONE,
-                write != WritePolicy.INSERT_ONLY && write != WritePolicy.NONE);
+                write != WritePolicy.INSERT_ONLY && write != WritePolicy.NONE,
+                isNullable(method));
         if (isId) {
             idColumn = columnModel;
             idGenerated = generated;
         }
         columns.add(columnModel);
+    }
+
+    /**
+     * 判定列是否可空:基本类型恒非空;包装类(java.lang 的 8 个)恒可空;
+     * 其他类型看 getter 返回类型的 JSpecify {@code @Nullable} 标注,未标注取
+     * 全局配置 {@code @JForgeConfig.columnsNullable} 默认。
+     */
+    private boolean isNullable(MethodInfo method) {
+        TypeMirror returnType = method.signature.getReturnType();
+        if (returnType.getKind().isPrimitive()) {
+            return false;
+        }
+        if (isBoxed(returnType)) {
+            return true;
+        }
+        return isNullableAnnotated(returnType) || config.columnsNullable(element);
+    }
+
+    /** 是否为 java.lang 包装类(Integer/Long/Boolean/Double/Float/Short/Byte/Character)。 */
+    private static boolean isBoxed(TypeMirror type) {
+        if (type.getKind() != TypeKind.DECLARED) {
+            return false;
+        }
+        String name = ((TypeElement) ((DeclaredType) type).asElement()).getQualifiedName().toString();
+        return switch (name) {
+            case "java.lang.Integer", "java.lang.Long", "java.lang.Boolean",
+                 "java.lang.Double", "java.lang.Float", "java.lang.Short",
+                 "java.lang.Byte", "java.lang.Character" -> true;
+            default -> false;
+        };
+    }
+
+    /** 返回类型是否标注了 JSpecify {@code @Nullable}(公共工具,见 {@link Nullability})。 */
+    private static boolean isNullableAnnotated(TypeMirror type) {
+        return Nullability.isNullable(type);
     }
 
     /**

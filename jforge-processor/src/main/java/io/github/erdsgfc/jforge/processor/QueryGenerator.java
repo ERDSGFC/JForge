@@ -501,9 +501,11 @@ final class QueryGenerator {
                                     + model.entityQualifiedName() + ": " + sql, method);
                     return;
                 }
-                spec.addCode(SqlCodegen.readColumn(column.typeName, "e", column.setterName, pos + 1));
+                spec.addCode(SqlCodegen.readColumn(column.typeName, "e", column.setterName, pos + 1,
+                        column.nullable));
             } else {
-                spec.addCode(SqlCodegen.readColumnByName(column.typeName, "e", column.setterName, column.columnName));
+                spec.addCode(SqlCodegen.readColumnByName(column.typeName, "e", column.setterName,
+                        column.columnName, column.nullable));
             }
             spec.addCode("\n");
         }
@@ -687,22 +689,9 @@ final class QueryGenerator {
         return parameter != null && isNullableParameter(parameter);
     }
 
-    /** 参数是否标注 JSpecify {@code @Nullable}（注解镜像遍历，类型 + 声明双查）。 */
+    /** 参数是否标注 JSpecify {@code @Nullable}（公共工具,见 {@link Nullability}）。 */
     static boolean isNullableParameter(VariableElement parameter) {
-        // @Nullable 是 TYPE_USE 注解,class 文件证实其落在 METHOD_FORMAL_PARAMETER 的
-        // 类型注解上(与 @Bind 混排时 javac 归类为类型注解)。用注解镜像字符串比较
-        // 读取——绕开 getAnnotation(Class) 的类解析路径,对 CLASS retention 注解最鲁棒。
-        for (var mirror : parameter.asType().getAnnotationMirrors()) {
-            if (mirror.getAnnotationType().toString().equals("org.jspecify.annotations.Nullable")) {
-                return true;
-            }
-        }
-        for (var mirror : parameter.getAnnotationMirrors()) {
-            if (mirror.getAnnotationType().toString().equals("org.jspecify.annotations.Nullable")) {
-                return true;
-            }
-        }
-        return false;
+        return Nullability.isNullableParameter(parameter);
     }
 
     /** {@code @Query} 方法是否含动态 WHERE（含动态段或动态 @Where 追加参数时 SQL 不能作为常量字段）。 */

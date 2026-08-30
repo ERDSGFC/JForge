@@ -1,0 +1,47 @@
+package io.github.erdsgfc.jforge.nullable;
+
+import io.github.erdsgfc.jforge.annotation.GeneratedValue;
+import io.github.erdsgfc.jforge.annotation.Id;
+import io.github.erdsgfc.jforge.annotation.Table;
+import org.jspecify.annotations.Nullable;
+
+/**
+ * 列空性判定的验证实体（包配置 {@code columnsNullable = true}）：
+ * <ul>
+ *   <li>{@code name}——标注 JSpecify {@code @Nullable} → 可空（标注优先）；</li>
+ *   <li>{@code nickname}——未标注 → 取全局配置默认（可空）；</li>
+ *   <li>{@code age}——基本类型 {@code int} → 恒非空（NULL 读 0，无 wasNull 分支）；</li>
+ *   <li>{@code score}——包装类 {@code Integer} → 恒可空。</li>
+ * </ul>
+ */
+@Table(name = "nullable_users")
+public interface NullableUser {
+
+    /** 数据库生成的主键（BIGSERIAL）。 */
+    @Id
+    @GeneratedValue
+    Long id();
+
+    NullableUser id(Long id);
+
+    /** 可空：getter 返回类型标注 @Nullable。 */
+    @Nullable
+    String name();
+
+    NullableUser name(String name);
+
+    /** 可空：未标注，走包级全局配置默认。 */
+    String nickname();
+
+    NullableUser nickname(String nickname);
+
+    /** 恒非空：基本类型。 */
+    int age();
+
+    NullableUser age(int age);
+
+    /** 恒可空：包装类。 */
+    Integer score();
+
+    NullableUser score(Integer score);
+}

@@ -87,6 +87,27 @@ public final class TypeNameUtils {
     }
 
     /**
+     * 返回 jdbcGetter 对应的局部变量类型:基本类型 getter(getInt/getLong/…)返回基本类型
+     * (可空列的行映射用基本类型局部变量承接,避免包装类装箱);getString/getObject 等
+     * 返回原类型。
+     *
+     * @param typeName 字段类型字符串，如 {@code "java.lang.Integer"}
+     * @return 局部变量类型字符串，如 {@code "int"}、{@code "java.lang.String"}
+     */
+    public static String jdbcVarType(String typeName) {
+        String getter = jdbcGetter(typeName);
+        if (getter.startsWith("get") && getter.length() > 3) {
+            String simple = getter.substring(3).toLowerCase();
+            if (simple.equals("int") || simple.equals("long") || simple.equals("boolean")
+                    || simple.equals("double") || simple.equals("float")
+                    || simple.equals("short") || simple.equals("byte")) {
+                return simple;
+            }
+        }
+        return typeName;
+    }
+
+    /**
      * 返回字段类型对应的 JDBC 预编译语句 setter 方法名。
      *
      * @param typeName 字段类型字符串，如 {@code "long"}、{@code "java.lang.String"}
