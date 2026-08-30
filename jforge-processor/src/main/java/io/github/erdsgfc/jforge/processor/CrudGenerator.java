@@ -129,7 +129,7 @@ final class CrudGenerator {
                 method.endControlFlow();
                 method.endControlFlow();
             } else {
-                method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", JDBC_RESULT_SET.getJavaPoetClassName();
+                method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", JDBC_RESULT_SET.getJavaPoetClassName());
                 method.beginControlFlow("if (keys.next())");
                 method.addStatement("$L.$L(keys.get$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
                         model.idColumn().setterName, TypeNameUtils.jdbcReturnSuffix(model.idColumn().typeName));
