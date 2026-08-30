@@ -60,21 +60,24 @@ public final class EntityModel {
         final boolean isId;
         final boolean generated;
         /** builder setter 的返回类型——父接口声明的 setter 返回父接口类型,生成的
-         *  {@code @Override} setter 必须匹配声明处的返回类型;{@code null} = 无 setter。 */
+         *  {@code @Override} setter 必须匹配声明处的返回类型;{@code null} = 无 setter。
+         *  非 final:两遍解析中 setter 信息到第二遍(validateSetter)才确定。 */
         TypeMirror setterReturnType;
         /** 接口是否声明了该属性的 builder setter。{@code false} = 只读属性:
          *  生成的 impl 仍生成 {@code private} 填充 setter(供行映射内部调用),
-         *  但不带 {@code @Override}、也不参与生成键回写。 */
+         *  但不带 {@code @Override}、也不参与生成键回写。
+         *  非 final:同上,第二遍校验时才置 true。 */
         boolean hasSetter;
         /** 属性 getter 是否为 {@code default} 方法(带 @Column/@Id 注解的默认值来源):
          *  save/update 绑定经 接口.super.getter() 强制调用默认实现取值。 */
-        boolean defaultGetter;
+        final boolean defaultGetter;
         /** 列是否参与 INSERT(save)——由 {@code @Column.write()} 策略派生。 */
-        boolean insertable;
+        final boolean insertable;
         /** 列是否参与 UPDATE SET(update)——由 {@code @Column.write()} 策略派生。 */
-        boolean updatable;
+        final boolean updatable;
 
-        ColumnModel(String fieldName, String columnName, TypeMirror returnType, boolean isId, boolean generated) {
+        ColumnModel(String fieldName, String columnName, TypeMirror returnType, boolean isId, boolean generated,
+                boolean defaultGetter, boolean insertable, boolean updatable) {
             this.fieldName = fieldName;
             this.columnName = columnName;
             this.typeName = returnType.toString();
@@ -83,6 +86,9 @@ public final class EntityModel {
             this.setterName = fieldName;
             this.isId = isId;
             this.generated = generated;
+            this.defaultGetter = defaultGetter;
+            this.insertable = insertable;
+            this.updatable = updatable;
         }
     }
 
@@ -322,15 +328,15 @@ public final class EntityModel {
                 return;
             }
         }
-        ColumnModel columnModel = new ColumnModel(fieldName, columnName,
-                method.signature.getReturnType(), isId, generated);
-        columnModel.defaultGetter = element.getModifiers().contains(Modifier.DEFAULT);
         // 写入策略:显式 @Column.write() 派生 INSERT/UPDATE 参与位;
         // 无 @Column 的列(命名策略推断)与 @Id 列缺省 BOTH。无值来源(无 setter 无
         // default)的纯只读列由 insertColumns/updateSql 再按值来源排除。
         WritePolicy write = column != null ? column.write() : WritePolicy.BOTH;
-        columnModel.insertable = write != WritePolicy.UPDATE_ONLY && write != WritePolicy.NONE;
-        columnModel.updatable = write != WritePolicy.INSERT_ONLY && write != WritePolicy.NONE;
+        ColumnModel columnModel = new ColumnModel(fieldName, columnName,
+                method.signature.getReturnType(), isId, generated,
+                element.getModifiers().contains(Modifier.DEFAULT),
+                write != WritePolicy.UPDATE_ONLY && write != WritePolicy.NONE,
+                write != WritePolicy.INSERT_ONLY && write != WritePolicy.NONE);
         if (isId) {
             idColumn = columnModel;
             idGenerated = generated;
