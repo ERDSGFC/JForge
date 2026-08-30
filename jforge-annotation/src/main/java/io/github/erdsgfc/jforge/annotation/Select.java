@@ -14,7 +14,7 @@ import java.lang.annotation.Target;
  *   <li>返回标量（{@code long}/{@code int}/{@code boolean}）→ {@code SELECT COUNT(*)}。</li>
  * </ul>
  *
- * <p>方法参数即查询条件，默认等于（{@code col = ?}）；{@link Where} 可显式指定字段名与
+ * <p>方法参数即查询条件，默认等于（{@code col = ?}）；{@link Condition} 可显式指定字段名与
  * 操作符。参数标注 JSpecify {@code @Nullable} 时条件动态拼接——运行时参数为
  * {@code null} 则跳过该条件（非 null 才拼 {@code AND col op ?}）；未标注的参数
  * 始终拼接。</p>
@@ -27,7 +27,7 @@ import java.lang.annotation.Target;
  * List<UserEntity> findByName(String name);                    // WHERE user_name = ?
  *
  * @Select
- * long countByAge(@Where(op = Op.GT) Integer age);             // SELECT COUNT(*) WHERE age > ?
+ * long countByAge(@Condition(op = Op.GT) Integer age);             // SELECT COUNT(*) WHERE age > ?
  * }</pre>
  */
 @Retention(RetentionPolicy.RUNTIME)

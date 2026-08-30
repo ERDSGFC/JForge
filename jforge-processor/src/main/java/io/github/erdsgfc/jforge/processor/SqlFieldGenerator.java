@@ -2,7 +2,7 @@ package io.github.erdsgfc.jforge.processor;
 
 import com.palantir.javapoet.FieldSpec;
 import io.github.erdsgfc.jforge.annotation.Query;
-import io.github.erdsgfc.jforge.annotation.Where;
+import io.github.erdsgfc.jforge.annotation.Condition;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -142,7 +142,7 @@ final class SqlFieldGenerator {
     }
 
     /**
-     * {@code @Query} 方法的 SQL：命名占位符转 {@code ?}，并拼接静态 {@code @Where}
+     * {@code @Query} 方法的 SQL：命名占位符转 {@code ?}，并拼接静态 {@code @Condition}
      * 追加参数（非 {@code @Nullable}）的条件——动态追加条件运行时拼接，不进入常量。
      */
     static String querySql(JForgeProcessor.DaoInfo info, ExecutableElement method) {
@@ -151,7 +151,7 @@ final class SqlFieldGenerator {
         QueryGenerator.ParsedWhere parsed = QueryGenerator.parseWhere(query.value());
         boolean first = parsed == null || parsed.fragments.isEmpty();
         for (VariableElement parameter : method.getParameters()) {
-            Where where = parameter.getAnnotation(Where.class);
+            Condition where = parameter.getAnnotation(Condition.class);
             if (where == null || QueryGenerator.isNullableParameter(parameter)) {
                 continue; // 动态追加（@Nullable）不进 SQL 常量
             }

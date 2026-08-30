@@ -199,9 +199,9 @@ class SelectQueryTest {
         assertEquals("qin", repo.findNameById(1L).user_name());
     }
 
-    // ---- @Query + @Where 追加条件 ----
+    // ---- @Query + @Condition 追加条件 ----
 
-    /** @Where 动态追加：SQL 写静态条件，@Nullable 参数追加 AND 条件。 */
+    /** @Condition 动态追加：SQL 写静态条件，@Nullable 参数追加 AND 条件。 */
     @Test
     void queryWithAppendedDynamicWhere() {
         // age=null → 只按 name（追加条件跳过）
@@ -218,7 +218,7 @@ class SelectQueryTest {
         assertTrue(repo.findWithAppendedWhere("qin", 30).isEmpty());
     }
 
-    /** @Where 静态追加（无 @Nullable）：恒拼接，走 SQL 常量形态。 */
+    /** @Condition 静态追加（无 @Nullable）：恒拼接，走 SQL 常量形态。 */
     @Test
     void queryWithAppendedStaticWhere() {
         // WHERE user_name = ? AND age >= ?

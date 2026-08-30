@@ -8,7 +8,7 @@ import io.github.erdsgfc.jforge.annotation.Bind;
 import io.github.erdsgfc.jforge.annotation.Query;
 import io.github.erdsgfc.jforge.annotation.ReturnGeneratedKeys;
 import io.github.erdsgfc.jforge.annotation.Table;
-import io.github.erdsgfc.jforge.annotation.Where;
+import io.github.erdsgfc.jforge.annotation.Condition;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Element;
@@ -114,12 +114,12 @@ final class QueryGenerator {
         String methodName = method.getSimpleName().toString();
         ParsedWhere parsed = parseWhere(query.value());
         Map<String, VariableElement> binds = bindsOf(method);
-        // @Where 参数 → 追加条件片段（伪占位符 = 参数名，复用占位符绑定与 @Nullable 动态机制）。
+        // @Condition 参数 → 追加条件片段（伪占位符 = 参数名，复用占位符绑定与 @Nullable 动态机制）。
         Map<String, VariableElement> byName = new HashMap<>();
         List<WhereFragment> appended = new ArrayList<>();
         for (VariableElement parameter : method.getParameters()) {
             byName.put(parameter.getSimpleName().toString(), parameter);
-            Where where = parameter.getAnnotation(Where.class);
+            Condition where = parameter.getAnnotation(Condition.class);
             if (where != null) {
                 WhereFragment fragment = appendFragment(info, method, parameter, where,
                         parsed == null || parsed.fragments.isEmpty());
@@ -129,7 +129,7 @@ final class QueryGenerator {
                 appended.add(fragment);
             }
         }
-        // 片段序列 = SQL 中的片段 + @Where 追加片段；占位符查找 = @Bind 优先、参数名兜底。
+        // 片段序列 = SQL 中的片段 + @Condition 追加片段；占位符查找 = @Bind 优先、参数名兜底。
         List<WhereFragment> fragments = parsed != null ? new ArrayList<>(parsed.fragments) : new ArrayList<>();
         fragments.addAll(appended);
         Map<String, VariableElement> lookup = new HashMap<>(binds);
@@ -139,7 +139,7 @@ final class QueryGenerator {
             return dynamicQueryMethod(info, method, query, builder, embedded, connection,
                     preparedStatement, resultSet, sqlException, parsed, fragments, lookup);
         }
-        // 静态路径：SQL 常量由 SqlFieldGenerator.querySql 统一生成（含静态 @Where 追加），
+        // 静态路径：SQL 常量由 SqlFieldGenerator.querySql 统一生成（含静态 @Condition 追加），
         // 这里只需收集绑定占位符（含追加片段的伪占位符）。
         String sqlField = methodName + "Sql";
         List<String> placeholders = new ArrayList<>();
@@ -295,7 +295,7 @@ final class QueryGenerator {
             spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType()),
                     parameter.getSimpleName().toString());
         }
-        // parsed 为 null = SQL 无 WHERE（@Where 追加片段提供首个条件）——selectPart 取整条 SQL。
+        // parsed 为 null = SQL 无 WHERE（@Condition 追加片段提供首个条件）——selectPart 取整条 SQL。
         String selectPart = parsed != null ? parsed.selectPart : query.value().trim();
         boolean logSql = configHelper.logSql(info.element);
         spec.addStatement("$T conn = getConnection()", connection);
@@ -350,12 +350,12 @@ final class QueryGenerator {
     }
 
     /**
-     * 解析 {@code @Where} 参数为追加条件片段:字段名取 {@link Where#value()}(缺省按参数名),
+     * 解析 {@code @Condition} 参数为追加条件片段:字段名取 {@link Condition#value()}(缺省按参数名),
      * 列名从宿主实体字段映射,文本以参数名作伪占位符(复用占位符绑定与 @Nullable 动态机制)。
      * 连接符:SQL 已有 WHERE 片段时用 {@code " AND "},否则空(where 前缀变量给 WHERE)。
      */
     private WhereFragment appendFragment(JForgeProcessor.DaoInfo info, ExecutableElement method,
-            VariableElement parameter, Where where, boolean first) {
+            VariableElement parameter, Condition where, boolean first) {
         String fieldName = where.value().isEmpty()
                 ? parameter.getSimpleName().toString()
                 : where.value();
@@ -368,7 +368,7 @@ final class QueryGenerator {
         }
         if (columnName == null) {
             processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "@Where parameter field '" + fieldName + "' does not match any field of entity "
+                    "@Condition parameter field '" + fieldName + "' does not match any field of entity "
                             + info.model.entityQualifiedName(), method);
             return null;
         }
@@ -694,7 +694,7 @@ final class QueryGenerator {
         return Nullability.isNullableParameter(parameter);
     }
 
-    /** {@code @Query} 方法是否含动态 WHERE（含动态段或动态 @Where 追加参数时 SQL 不能作为常量字段）。 */
+    /** {@code @Query} 方法是否含动态 WHERE（含动态段或动态 @Condition 追加参数时 SQL 不能作为常量字段）。 */
     static boolean hasDynamicWhere(ExecutableElement method) {
         Query query = method.getAnnotation(Query.class);
         if (query == null) {
@@ -706,9 +706,9 @@ final class QueryGenerator {
                 && parsed.fragments.stream().anyMatch(fragment -> isDynamicFragment(fragment, binds))) {
             return true;
         }
-        // @Where 追加参数标 @Nullable → 条件动态。
+        // @Condition 追加参数标 @Nullable → 条件动态。
         for (VariableElement parameter : method.getParameters()) {
-            if (parameter.getAnnotation(Where.class) != null && isNullableParameter(parameter)) {
+            if (parameter.getAnnotation(Condition.class) != null && isNullableParameter(parameter)) {
                 return true;
             }
         }

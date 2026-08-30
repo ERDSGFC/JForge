@@ -5,7 +5,7 @@ import io.github.erdsgfc.jforge.annotation.Dao;
 import io.github.erdsgfc.jforge.annotation.Op;
 import io.github.erdsgfc.jforge.annotation.Query;
 import io.github.erdsgfc.jforge.annotation.Select;
-import io.github.erdsgfc.jforge.annotation.Where;
+import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.core.BaseRepository;
 import org.jspecify.annotations.Nullable;
 
@@ -49,15 +49,15 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
     @Query("SELECT id, user_name, age FROM users WHERE [age = :age] OR user_name = :name")
     List<UserEntity> findDynamicOr(@Bind("age") @Nullable Integer age, @Bind("name") String name);
 
-    /** @Where 追加条件：手写 SQL + 自动追加（age 非 null 时 AND age > ?，动态）。 */
+    /** @Condition 追加条件：手写 SQL + 自动追加（age 非 null 时 AND age > ?，动态）。 */
     @Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
     List<UserEntity> findWithAppendedWhere(@Bind("name") String name,
-            @Where(op = Op.GT) @Nullable Integer age);
+            @Condition(op = Op.GT) @Nullable Integer age);
 
-    /** @Where 追加条件：静态追加（恒拼接），无 @Nullable。 */
+    /** @Condition 追加条件：静态追加（恒拼接），无 @Nullable。 */
     @Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
     List<UserEntity> findWithAppendedStaticWhere(@Bind("name") String name,
-            @Where(value = "age", op = Op.GE) int minAge);
+            @Condition(value = "age", op = Op.GE) int minAge);
 
     // ---- @Select 声明式查询（不写 SQL，参数即条件，默认等于）----
 
@@ -75,11 +75,11 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 
     /** 操作符：{@code age > ?}。 */
     @Select
-    List<UserEntity> findOlderThan(@Where(op = Op.GT) Integer age);
+    List<UserEntity> findOlderThan(@Condition(op = Op.GT) Integer age);
 
     /** LIKE 操作符。 */
     @Select
-    List<UserEntity> findByNameLike(@Where(op = Op.LIKE) String name);
+    List<UserEntity> findByNameLike(@Condition(op = Op.LIKE) String name);
 
     /** 标量：{@code SELECT COUNT(*) WHERE user_name = ?}。 */
     @Select

@@ -5,6 +5,7 @@ import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
+import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.annotation.Query;
 import io.github.erdsgfc.jforge.annotation.Select;
 import io.github.erdsgfc.jforge.annotation.Table;
@@ -35,8 +36,8 @@ import java.util.Map;
  *   <li>返回标量（primitive）→ {@code SELECT COUNT(*)}。</li>
  * </ul>
  *
- * <p>每个方法参数即一个 WHERE 条件：字段名取自 {@link Where#value()}（缺省按参数名推断）、
- * 操作符取自 {@link Where#op()}（默认等于）。参数标注 JSpecify {@code @Nullable}
+ * <p>每个方法参数即一个 WHERE 条件：字段名取自 {@link Condition#value()}（缺省按参数名推断）、
+ * 操作符取自 {@link Condition#op()}（默认等于）。参数标注 JSpecify {@code @Nullable}
  * 时条件动态拼接——运行时为 {@code null} 则跳过；未标注的参数静态拼接。
  * 生成代码为编译期展开的 StringBuilder 拼接 + 类型精确绑定（拼接与绑定两阶段
  * 各自展开一次相同的条件判断，绑定用运行时索引）。结果映射委托
@@ -47,6 +48,7 @@ final class SelectGenerator {
     private final ProcessingEnvironment processingEnv;
     private final JForgeConfigHelper configHelper;
     private final QueryGenerator queryGenerator;
+    private final CriteriaGenerator criteriaGenerator;
 
     /**
      * @param processingEnv  处理环境（messager 报错）
@@ -58,6 +60,8 @@ final class SelectGenerator {
         this.processingEnv = processingEnv;
         this.configHelper = configHelper;
         this.queryGenerator = queryGenerator;
+        this.criteriaGenerator = new CriteriaGenerator(processingEnv.getMessager(),
+                Diagnostic.Kind.ERROR);
     }
 
     /**
@@ -87,25 +91,35 @@ final class SelectGenerator {
                         "@Select and @Query are mutually exclusive on the same method", method);
                 continue;
             }
-            builder.addMethod(selectMethod(info, method, builder, embedded, connection,
-                    preparedStatement, resultSet, sqlException));
+            // selectMethod 校验失败时返回 null（已报错）——跳过而非 addMethod(null)，
+            // 否则 javapoet 抛 NPE 掩盖真实编译错误。
+            MethodSpec impl = selectMethod(info, method, builder, embedded, connection,
+                    preparedStatement, resultSet, sqlException);
+            if (impl != null) {
+                builder.addMethod(impl);
+            }
         }
     }
 
     /** 一个已解析的 WHERE 条件。 */
-    private static final class Condition {
+    private static final class WhereCondition {
         final String columnName;   // WHERE 中使用的列名
         final String op;           // 操作符 SQL 片段（"="/">"/"LIKE"…）
         final String paramName;    // 参数名（绑定表达式）
         final String typeName;     // 参数类型（绑定 API 选择）
         final boolean dynamic;     // @Nullable → 运行时为 null 时跳过
+        final boolean optional;    // Optional 参数：isPresent → 条件；isEmpty → IS NULL
+        final String valueExpr;    // Optional 的绑定值表达式（param.get()/getAsInt()…）
 
-        Condition(String columnName, String op, String paramName, String typeName, boolean dynamic) {
+        WhereCondition(String columnName, String op, String paramName, String typeName, boolean dynamic,
+                boolean optional, String valueExpr) {
             this.columnName = columnName;
             this.op = op;
             this.paramName = paramName;
             this.typeName = typeName;
             this.dynamic = dynamic;
+            this.optional = optional;
+            this.valueExpr = valueExpr;
         }
     }
 
@@ -162,9 +176,19 @@ final class SelectGenerator {
         }
 
         // 解析每个参数为一个 WHERE 条件（字段名 / 操作符 / 动态判定 + 字段存在性校验）。
-        List<Condition> conditions = new ArrayList<>();
+        // @Where 参数是条件对象——递归展开为片段（值条件/括号分组/Optional IS NULL）。
+        List<WhereCondition> conditions = new ArrayList<>();
+        List<CriteriaGenerator.Unit> criteriaUnits = new ArrayList<>();
         for (VariableElement parameter : method.getParameters()) {
-            Condition condition = resolveCondition(info, method, parameter);
+            if (parameter.getAnnotation(Where.class) != null) {
+                List<CriteriaGenerator.Unit> units = criteriaGenerator.parse(info, method, parameter);
+                if (units == null) {
+                    return null;
+                }
+                criteriaUnits.addAll(units);
+                continue;
+            }
+            WhereCondition condition = resolveCondition(info, method, parameter);
             if (condition == null) {
                 return null;
             }
@@ -182,7 +206,9 @@ final class SelectGenerator {
         }
 
         boolean logSql = configHelper.logSql(info.element);
-        boolean allStatic = conditions.stream().allMatch(condition -> !condition.dynamic);
+        // @Where 条件对象恒动态（字段运行时判断）——存在即走动态形态。
+        boolean allStatic = criteriaUnits.isEmpty()
+                && conditions.stream().allMatch(condition -> !condition.dynamic);
         if (allStatic) {
             // 全静态条件（无 @Nullable 参数）：WHERE 子句与绑定索引均编译期确定——
             // 生成完整 SQL 常量字段 + 静态索引绑定（与 @Query 同一形态，运行时零拼接）。
@@ -202,7 +228,7 @@ final class SelectGenerator {
                     Modifier.PRIVATE, Modifier.FINAL).initializer("$S", fullSql).build());
             SqlCodegen.beginTxBlock(spec, connection, preparedStatement, methodName + "Sql", false, logSql);
             int index = 1;
-            for (Condition condition : conditions) {
+            for (WhereCondition condition : conditions) {
                 spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName, index++));
                 spec.addCode("\n");
             }
@@ -220,12 +246,13 @@ final class SelectGenerator {
         // 运行时第一个执行的条件拼 WHERE、其后拼 AND（动态条件全为 null 时无 WHERE）。
         spec.addStatement("$T sql = new $T($S)", ClassName.get(StringBuilder.class),
                 ClassName.get(StringBuilder.class), baseSql);
-        if (!conditions.isEmpty()) {
+        if (!conditions.isEmpty() || !criteriaUnits.isEmpty()) {
             spec.addStatement("$T where = $S", ClassName.get(String.class), " WHERE ");
         }
-        for (Condition condition : conditions) {
+        for (WhereCondition condition : conditions) {
             appendCondition(spec, condition, true);
         }
+        criteriaGenerator.emitAppend(spec, criteriaUnits, "where", " AND ");
         if (logSql) {
             spec.beginControlFlow("if (log.isDebugEnabled())");
             spec.addStatement("log.debug($S, sql.toString())", "Executing SQL: {}");
@@ -234,9 +261,10 @@ final class SelectGenerator {
         spec.beginControlFlow("try ($T ps = conn.prepareStatement(sql.toString()))", preparedStatement);
         // 绑定阶段：与拼接同条件展开，运行时索引 i 递增，类型精确 setXxx。
         spec.addStatement("int i = 1");
-        for (Condition condition : conditions) {
+        for (WhereCondition condition : conditions) {
             appendCondition(spec, condition, false);
         }
+        criteriaGenerator.emitBind(spec, criteriaUnits, "i++");
 
         // 结果映射：与 @Query 同一套（实体按下标+缺列校验 / record 按下标 / 标量 rs.getX(1)）。
         spec.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
@@ -253,15 +281,32 @@ final class SelectGenerator {
      * 动态条件包在 {@code if (param != null)} 内——拼接与绑定两阶段各自展开一次，
      * 保证占位符与绑定参数严格一一对应。
      */
-    private void appendCondition(MethodSpec.Builder spec, Condition condition, boolean bind) {
+    private void appendCondition(MethodSpec.Builder spec, WhereCondition condition, boolean bind) {
         if (condition.dynamic) {
             spec.beginControlFlow("if ($N != null)", condition.paramName);
         }
         if (bind) {
-            // 前缀由 where 变量运行时维护（首个条件 " WHERE "，其后 " AND "）。
-            spec.addStatement("sql.append(where).append($S)",
-                    " " + condition.columnName + " " + condition.op + " ?");
+            if (condition.optional) {
+                // Optional 参数：有值 → 条件；空 → IS NULL（两者都拼接，连接符仅其后置一次）。
+                spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
+                spec.addStatement("sql.append(where).append($S)",
+                        " " + condition.columnName + " " + condition.op + " ?");
+                spec.nextControlFlow("else");
+                spec.addStatement("sql.append(where).append($S)",
+                        " " + condition.columnName + " IS NULL");
+                spec.endControlFlow();
+            } else {
+                // 前缀由 where 变量运行时维护（首个条件 " WHERE "，其后 " AND "）。
+                spec.addStatement("sql.append(where).append($S)",
+                        " " + condition.columnName + " " + condition.op + " ?");
+            }
             spec.addStatement("where = $S", " AND ");
+        } else if (condition.optional) {
+            // 有值分支绑定（IS NULL 无占位符）。
+            spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
+            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.valueExpr, "i++"));
+            spec.addCode("\n");
+            spec.endControlFlow();
         } else {
             spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName, "i++"));
             spec.addCode("\n");
@@ -272,22 +317,25 @@ final class SelectGenerator {
     }
 
     /**
-     * 解析一个方法参数为 WHERE 条件：字段名取 {@link Where#value()}（缺省按参数名）、
-     * 操作符取 {@link Where#op()}、动态判定看 JSpecify {@code @Nullable}。
+     * 解析一个方法参数为 WHERE 条件：字段名取 {@link Condition#value()}（缺省按参数名）、
+     * 操作符取 {@link Condition#op()}、动态判定看 JSpecify {@code @Nullable}。
      * 校验字段存在并映射为列名：实体/标量场景匹配宿主实体字段；record 场景匹配
      * record 组件名（此时列名经命名策略推断）。
      *
      * @return 解析结果；校验失败已报错并返回 {@code null}
      */
-    private Condition resolveCondition(JForgeProcessor.DaoInfo info, ExecutableElement method,
+    private WhereCondition resolveCondition(JForgeProcessor.DaoInfo info, ExecutableElement method,
             VariableElement parameter) {
         String paramName = parameter.getSimpleName().toString();
-        Where where = parameter.getAnnotation(Where.class);
+        Condition where = parameter.getAnnotation(Condition.class);
         String fieldName = where != null && !where.value().isEmpty() ? where.value() : paramName;
         String op = where != null ? where.op().sql() : io.github.erdsgfc.jforge.annotation.Op.EQ.sql();
+        // Optional 参数：恒动态——isPresent → 条件；isEmpty → IS NULL（显式空值查询）。
+        boolean optional = CriteriaGenerator.isOptional(parameter.asType());
         // JSpecify @Nullable 是 TYPE_USE 注解——标注在类型位置（@Nullable Integer age），
         // 必须从 TypeMirror 读取（参数声明的 getAnnotation 读不到）。
-        boolean dynamic = parameter.asType().getAnnotation(org.jspecify.annotations.Nullable.class) != null;
+        boolean dynamic = optional
+                || parameter.asType().getAnnotation(org.jspecify.annotations.Nullable.class) != null;
 
         String columnName;
         TypeMirror returnType = method.getReturnType();
@@ -310,7 +358,13 @@ final class SelectGenerator {
         if (columnName == null) {
             return null;
         }
-        return new Condition(columnName, op, paramName, TypeNameUtils.plainTypeName(parameter.asType()), dynamic);
+        String bindType = optional
+                ? CriteriaGenerator.optionalValueType(parameter.asType())
+                : TypeNameUtils.plainTypeName(parameter.asType());
+        String valueExpr = optional
+                ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
+                : null;
+        return new WhereCondition(columnName, op, paramName, bindType, dynamic, optional, valueExpr);
     }
 
     /** 在宿主实体字段集合中查找字段并返回其列名；找不到则报错。 */
