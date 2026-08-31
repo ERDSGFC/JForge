@@ -8,6 +8,8 @@ import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 
+import java.io.Serializable;
+
 /**
  * 把 {@code @Table} 实体接口组装成实现类 {@code Xxx_Impl} 的类规格（TypeSpec）：
  * 每个属性方法对应一个私有字段 + getter + builder setter（返回实体接口）。
@@ -35,7 +37,7 @@ public final class EntityGenerator {
         TypeSpec.Builder builder = TypeSpec.classBuilder(
                 EntityModel.implNameOf(model.entitySimpleName(), model.implSuffix()))
                 .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                .addSuperinterface(entityClass);
+                .addSuperinterface(entityClass).addSuperinterface(ClassName.get(Serializable.class));
 
         for (EntityModel.ColumnModel column : model.columns()) {
             TypeName type = TypeName.get(column.returnType);
@@ -76,6 +78,7 @@ public final class EntityGenerator {
                         .build());
             }
         }
+        // todo 重新类的 toString() 和 equals 和 hashCode 方法
         return builder.build();
     }
 }
