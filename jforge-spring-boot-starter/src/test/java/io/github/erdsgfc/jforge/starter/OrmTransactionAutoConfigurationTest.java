@@ -26,7 +26,7 @@ class OrmTransactionAutoConfigurationTest {
     /** 每次启动 runner 时新建的内存 H2 数据源。 */
     private DataSource h2DataSource() {
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:h2:mem:orm_auto;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
+        config.setJdbcUrl("jdbc:h2:mem:orm_auto;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE");
         return new HikariDataSource(config);
     }
 

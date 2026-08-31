@@ -1,6 +1,7 @@
 package io.github.erdsgfc.jforge.processor.generator;
 
 import com.palantir.javapoet.FieldSpec;
+import io.github.erdsgfc.jforge.annotation.DialectSupport;
 import io.github.erdsgfc.jforge.annotation.Query;
 import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.processor.EntityModel;
@@ -69,9 +70,9 @@ public final class SqlFieldGenerator {
         String sql = insertSql(info);
         // PG/H2 方言:生成主键走 INSERT ... RETURNING(单语句拿 id,优于 getGeneratedKeys);
         // MySQL 方言走 JDBC 标准路径。
-        if (info.model.idGenerated()
-                && configHelper.dialectSupport(info.element).supportsReturningKeys()) {
-            sql += " RETURNING " + info.model.idColumn().columnName;
+        DialectSupport dialect = configHelper.dialectSupport(info.element);
+        if (info.model.idGenerated() && dialect.supportsReturningKeys()) {
+            sql += " RETURNING " + SqlCodegen.quoteIdentifier(dialect, info.model.idColumn().columnName);
         }
         return sql;
     }
@@ -87,24 +88,28 @@ public final class SqlFieldGenerator {
 
     private static String insertSql(JForgeProcessor.DaoInfo info) {
         EntityModel model = info.model;
+        DialectSupport dialect = model.dialectSupport();
         List<EntityModel.ColumnModel> insertColumns = SqlCodegen.insertColumns(model);
-        return "INSERT INTO " + model.tableName() + " ("
-                + SqlCodegen.joinColumns(SqlCodegen.namesOf(insertColumns)) + ") VALUES ("
+        return "INSERT INTO " + SqlCodegen.quoteIdentifier(dialect, model.tableName()) + " ("
+                + SqlCodegen.joinColumns(SqlCodegen.quotedNames(insertColumns, dialect)) + ") VALUES ("
                 + SqlCodegen.placeholders(insertColumns.size()) + ")";
     }
 
     static String deleteByIdSql(JForgeProcessor.DaoInfo info) {
-        return "DELETE FROM " + info.model.tableName() + " WHERE "
-                + info.model.idColumn().columnName + "=?";
+        DialectSupport dialect = info.model.dialectSupport();
+        return "DELETE FROM " + SqlCodegen.quoteIdentifier(dialect, info.model.tableName()) + " WHERE "
+                + SqlCodegen.quoteIdentifier(dialect, info.model.idColumn().columnName) + "=?";
     }
 
     static String deleteByIdsBaseSql(JForgeProcessor.DaoInfo info) {
-        return "DELETE FROM " + info.model.tableName() + " WHERE "
-                + info.model.idColumn().columnName + " IN (";
+        DialectSupport dialect = info.model.dialectSupport();
+        return "DELETE FROM " + SqlCodegen.quoteIdentifier(dialect, info.model.tableName()) + " WHERE "
+                + SqlCodegen.quoteIdentifier(dialect, info.model.idColumn().columnName) + " IN (";
     }
 
     static String updateSql(JForgeProcessor.DaoInfo info) {
         EntityModel model = info.model;
+        DialectSupport dialect = model.dialectSupport();
         StringBuilder sets = new StringBuilder();
         for (EntityModel.ColumnModel column : model.columns()) {
             // SET 排除 id、纯只读列(无值来源,由数据库维护)与 INSERT_ONLY/NONE 策略列;
@@ -114,35 +119,42 @@ public final class SqlFieldGenerator {
                 if (!sets.isEmpty()) {
                     sets.append(",");
                 }
-                sets.append(column.columnName).append("=?");
+                sets.append(SqlCodegen.quoteIdentifier(dialect, column.columnName)).append("=?");
             }
         }
-        return "UPDATE " + model.tableName() + " SET " + sets + " WHERE "
-                + model.idColumn().columnName + "=?";
+        return "UPDATE " + SqlCodegen.quoteIdentifier(dialect, model.tableName()) + " SET " + sets
+                + " WHERE " + SqlCodegen.quoteIdentifier(dialect, model.idColumn().columnName) + "=?";
     }
 
     static String findByIdSql(JForgeProcessor.DaoInfo info) {
-        return "SELECT " + SqlCodegen.joinColumns(SqlCodegen.namesOf(info.model.columns())) + " FROM "
-                + info.model.tableName() + " WHERE " + info.model.idColumn().columnName + "=?";
+        DialectSupport dialect = info.model.dialectSupport();
+        return "SELECT " + SqlCodegen.joinColumns(SqlCodegen.quotedNames(info.model.columns(), dialect))
+                + " FROM " + SqlCodegen.quoteIdentifier(dialect, info.model.tableName()) + " WHERE "
+                + SqlCodegen.quoteIdentifier(dialect, info.model.idColumn().columnName) + "=?";
     }
 
     static String findByIdsBaseSql(JForgeProcessor.DaoInfo info) {
-        return "SELECT " + SqlCodegen.joinColumns(SqlCodegen.namesOf(info.model.columns())) + " FROM "
-                + info.model.tableName() + " WHERE " + info.model.idColumn().columnName + " IN (";
+        DialectSupport dialect = info.model.dialectSupport();
+        return "SELECT " + SqlCodegen.joinColumns(SqlCodegen.quotedNames(info.model.columns(), dialect))
+                + " FROM " + SqlCodegen.quoteIdentifier(dialect, info.model.tableName()) + " WHERE "
+                + SqlCodegen.quoteIdentifier(dialect, info.model.idColumn().columnName) + " IN (";
     }
 
     static String findAllSql(JForgeProcessor.DaoInfo info) {
-        return "SELECT " + SqlCodegen.joinColumns(SqlCodegen.namesOf(info.model.columns())) + " FROM "
-                + info.model.tableName();
+        DialectSupport dialect = info.model.dialectSupport();
+        return "SELECT " + SqlCodegen.joinColumns(SqlCodegen.quotedNames(info.model.columns(), dialect))
+                + " FROM " + SqlCodegen.quoteIdentifier(dialect, info.model.tableName());
     }
 
     static String countSql(JForgeProcessor.DaoInfo info) {
-        return "SELECT COUNT(*) FROM " + info.model.tableName();
+        return "SELECT COUNT(*) FROM "
+                + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), info.model.tableName());
     }
 
     static String countByIdSql(JForgeProcessor.DaoInfo info) {
-        return "SELECT COUNT(*) FROM " + info.model.tableName() + " WHERE "
-                + info.model.idColumn().columnName + "=?";
+        DialectSupport dialect = info.model.dialectSupport();
+        return "SELECT COUNT(*) FROM " + SqlCodegen.quoteIdentifier(dialect, info.model.tableName())
+                + " WHERE " + SqlCodegen.quoteIdentifier(dialect, info.model.idColumn().columnName) + "=?";
     }
 
     /**
@@ -172,7 +184,9 @@ public final class SqlFieldGenerator {
             if (columnName == null) {
                 continue; // 字段不匹配的错误已在 queryMethod 报过
             }
-            sql += (first ? " WHERE " : " AND ") + columnName + " " + where.op().sql() + " ?";
+            sql += (first ? " WHERE " : " AND ")
+                    + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), columnName)
+                    + " " + where.op().sql() + " ?";
             first = false;
         }
         return sql;

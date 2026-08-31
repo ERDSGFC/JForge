@@ -78,7 +78,7 @@ public final class EntityGenerator {
                         .build());
             }
         }
-        // todo 重新类的 toString() 和 equals 和 hashCode 方法
+        // todo 生成类的 toString() 和 equals 和 hashCode 方法
         return builder.build();
     }
 }

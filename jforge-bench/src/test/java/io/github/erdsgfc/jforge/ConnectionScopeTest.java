@@ -37,7 +37,7 @@ class ConnectionScopeTest {
     @BeforeEach
     void setUp() throws SQLException {
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:h2:mem:orm_scope;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
+        config.setJdbcUrl("jdbc:h2:mem:orm_scope;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE");
         pool = new HikariDataSource(config);
         try (Connection conn = pool.getConnection(); java.sql.Statement st = conn.createStatement()) {
             st.execute("DROP TABLE IF EXISTS users");

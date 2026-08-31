@@ -25,7 +25,7 @@ class LogSqlTest {
     @BeforeEach
     void setUp() throws SQLException {
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:h2:mem:orm_logsql;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
+        config.setJdbcUrl("jdbc:h2:mem:orm_logsql;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE");
         ds = new HikariDataSource(config);
         try (Connection conn = ds.getConnection(); Statement st = conn.createStatement()) {
             st.execute("DROP TABLE IF EXISTS log_users");

@@ -90,4 +90,4 @@ mvn -Prelease deploy
 - 插件版本统一在根 POM 的 `<pluginManagement>` 管理（compiler/shade/source/javadoc/gpg）；Maven Central 发布用 `mvn -Prelease deploy`（`<licenses>/<developers>/<scm>/<distributionManagement>` 已配置，SCM 地址需按实际仓库核对）
 - **改过注解处理器后**：`mvn install -pl jforge-annotation,jforge-processor -am` 后必须对消费模块 `mvn clean test`——Maven 3.9+ 增量编译在输入源码无变化时跳过 javac，`target/generated-sources` 会停留在旧 processor 生成的版本（表现为"改动没生效"，实测踩过）
 - `maven-compiler-plugin` 显式声明注解处理器（JDK 23+ 默认关闭自动注解处理）
-- 测试用内存 H2（`BIGSERIAL` 自增，PostgreSQL 模式）
+- 测试用内存 H2（`BIGSERIAL` 自增，PostgreSQL 模式 + `DATABASE_TO_LOWER=TRUE`——H2 的 PG 模式不折叠小写，需该参数模拟真 PG 的无引号小写折叠，与生成 SQL 的方言引用符精确匹配）

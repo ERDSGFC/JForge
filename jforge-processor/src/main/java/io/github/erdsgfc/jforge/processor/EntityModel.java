@@ -8,7 +8,7 @@ import io.github.erdsgfc.jforge.annotation.WritePolicy;
 import io.github.erdsgfc.jforge.processor.generator.core.EntityGenerator;
 import io.github.erdsgfc.jforge.processor.utils.CommonUtils;
 import io.github.erdsgfc.jforge.processor.utils.Nullability;
-import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
+import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
@@ -67,13 +67,13 @@ public final class EntityModel {
         public final boolean nullable;
 
         ColumnModel(String fieldName, String columnName, TypeMirror returnType, boolean isId, boolean generated,
-                boolean defaultGetter, boolean insertable, boolean updatable, boolean nullable) {
+                boolean defaultGetter, boolean insertable, boolean updatable, boolean nullable, Types types) {
             this.fieldName = fieldName;
             this.columnName = columnName;
-            // plainTypeName:剥离 TYPE_USE 注解(@Nullable 等)——否则 toString 会输出
-            // "java.lang.@org.jspecify.annotations.Nullable String",破坏 JDBC 映射与 javapoet 解析。
-            // todo 是否可以直接使用 方法Types.stripAnnotations 方法
-            this.typeName = TypeNameUtils.plainTypeName(returnType);
+            // Types.stripAnnotations(JDK 21+)深度剥离全部 TYPE_USE 注解(@Nullable 等)——
+            // 否则 toString 会输出 "java.lang.@org.jspecify.annotations.Nullable String",
+            // 破坏 JDBC 映射与 javapoet 解析。比手写剥除更彻底(含数组组件/类型实参)。
+            this.typeName = types.stripAnnotations(returnType).toString();
             this.returnType = returnType;
             this.getterName = fieldName;
             this.setterName = fieldName;
@@ -108,8 +108,8 @@ public final class EntityModel {
         if (table != null && !table.name().isEmpty()) {
             model.tableName = table.name();
         } else {
-            // todo 结合 数据方言 的 quote 方法返回值， 在自动生成sql的时候做精确匹配，
-            //  生成数据表名称和列名称的时候使用 quote 包裹
+            // 表名/列名在模型里保持原始名（重名列检测、@Condition 字段解析、错误消息都用它）；
+            // 方言引用符（保留字/精确匹配）在 SQL 发射点统一经 SqlCodegen.quoteIdentifier 包裹。
             model.tableName = CommonUtils.camelToSnake(entity.getSimpleName().toString());
         }
 
@@ -333,7 +333,8 @@ public final class EntityModel {
                 element.getModifiers().contains(Modifier.DEFAULT),
                 write != WritePolicy.UPDATE_ONLY && write != WritePolicy.NONE,
                 write != WritePolicy.INSERT_ONLY && write != WritePolicy.NONE,
-                isNullable(method));
+                isNullable(method),
+                types);
         if (isId) {
             idColumn = columnModel;
             idGenerated = generated;
@@ -418,6 +419,14 @@ public final class EntityModel {
 
     public String tableName() {
         return tableName;
+    }
+
+    /**
+     * 实体所在包的生效方言支持（经 {@code @JForgeConfig} 解析）——生成 SQL 时
+     * 对自动推导的表名/列名做引用符包裹（见 {@link SqlCodegen#quoteIdentifier}）。
+     */
+    public io.github.erdsgfc.jforge.annotation.DialectSupport dialectSupport() {
+        return config.dialectSupport(element);
     }
 
     public List<ColumnModel> columns() {

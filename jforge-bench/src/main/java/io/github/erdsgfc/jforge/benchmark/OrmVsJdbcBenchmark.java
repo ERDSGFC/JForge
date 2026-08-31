@@ -39,7 +39,7 @@ import java.util.concurrent.TimeUnit;
 @Fork(2)
 public class OrmVsJdbcBenchmark {
 
-    private static final String URL = "jdbc:h2:mem:orm_bench;DB_CLOSE_DELAY=-1;MODE=PostgreSQL";
+    private static final String URL = "jdbc:h2:mem:orm_bench;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE";
 
     private HikariDataSource dataSource;
     private UserRepository repo;

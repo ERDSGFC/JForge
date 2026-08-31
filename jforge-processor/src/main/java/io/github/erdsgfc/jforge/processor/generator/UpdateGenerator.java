@@ -128,7 +128,8 @@ public final class UpdateGenerator {
             return null;
         }
 
-        String baseSql = "UPDATE " + info.model.tableName();
+        String baseSql = "UPDATE "
+                + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), info.model.tableName());
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
@@ -261,7 +262,8 @@ public final class UpdateGenerator {
                             + info.model.entityQualifiedName(), method);
             return null;
         }
-        return new SetUnit(column, paramName, bindType, dynamic, optional, valueExpr, null);
+        return new SetUnit(SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column),
+                paramName, bindType, dynamic, optional, valueExpr, null);
     }
 
     private void emitSetAppend(MethodSpec.Builder spec, SetUnit unit, String setConnVar,
@@ -382,7 +384,8 @@ public final class UpdateGenerator {
         String valueExpr = optional
                 ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
                 : null;
-        return new WhereCondition(column, op, paramName, bindType, dynamic, optional, valueExpr, null);
+        return new WhereCondition(SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column),
+                op, paramName, bindType, dynamic, optional, valueExpr, null);
     }
 
     private void emitConditionAppend(MethodSpec.Builder spec, WhereCondition condition) {

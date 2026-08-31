@@ -117,7 +117,8 @@ public final class DeleteGenerator {
             }
         }
 
-        String baseSql = "DELETE FROM " + info.model.tableName();
+        String baseSql = "DELETE FROM "
+                + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), info.model.tableName());
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
@@ -234,7 +235,8 @@ public final class DeleteGenerator {
         String valueExpr = optional
                 ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
                 : null;
-        return new WhereCondition(column, op, paramName, bindType, dynamic, optional, valueExpr, null);
+        return new WhereCondition(SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column),
+                op, paramName, bindType, dynamic, optional, valueExpr, null);
     }
 
     private void emitConditionAppend(MethodSpec.Builder spec, WhereCondition condition) {

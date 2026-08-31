@@ -5,6 +5,7 @@ import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeSpec;
 import io.github.erdsgfc.jforge.annotation.Condition;
+import io.github.erdsgfc.jforge.annotation.DialectSupport;
 import io.github.erdsgfc.jforge.annotation.Query;
 import io.github.erdsgfc.jforge.annotation.Select;
 import io.github.erdsgfc.jforge.annotation.Table;
@@ -156,12 +157,15 @@ public final class SelectGenerator {
                                     + " (FROM is the host table): " + element.getQualifiedName(), method);
                     return null;
                 }
-                columns = SqlCodegen.joinColumns(SqlCodegen.namesOf(info.model.columns()));
+                columns = SqlCodegen.joinColumns(SqlCodegen.quotedNames(info.model.columns(),
+                        info.model.dialectSupport()));
             } else if (element.getKind() == ElementKind.RECORD) {
-                // record：组件名经命名策略得列名，SELECT 顺序 = 组件顺序。
+                // record：组件名经命名策略得列名，SELECT 顺序 = 组件顺序（按宿主方言包裹）。
                 List<String> names = new ArrayList<>();
+                DialectSupport dialect = info.model.dialectSupport();
                 for (Element component : element.getRecordComponents()) {
-                    names.add(configHelper.columnName(element, component.getSimpleName().toString()));
+                    names.add(SqlCodegen.quoteIdentifier(dialect,
+                            configHelper.columnName(element, component.getSimpleName().toString())));
                 }
                 columns = SqlCodegen.joinColumns(names);
             } else {
@@ -199,7 +203,8 @@ public final class SelectGenerator {
             conditions.add(condition);
         }
 
-        String baseSql = "SELECT " + columns + " FROM " + info.model.tableName();
+        String baseSql = "SELECT " + columns + " FROM "
+                + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), info.model.tableName());
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
@@ -395,7 +400,7 @@ public final class SelectGenerator {
             if (element.getAnnotation(Table.class) != null || element.getKind() == ElementKind.RECORD) {
                 // 实体/record：条件字段匹配返回类型的字段/组件。
                 columnName = element.getKind() == ElementKind.RECORD
-                        ? findRecordColumn(element, fieldName, method)
+                        ? findRecordColumn(info, element, fieldName, method)
                         : findHostColumn(info, fieldName, method);
             } else {
                 return null; // 返回类型错误已在 selectMethod 报过
@@ -415,11 +420,11 @@ public final class SelectGenerator {
         return new WhereCondition(columnName, op, paramName, bindType, dynamic, optional, valueExpr, null);
     }
 
-    /** 在宿主实体字段集合中查找字段并返回其列名；找不到则报错。 */
+    /** 在宿主实体字段集合中查找字段并返回其列名（按宿主方言包裹）；找不到则报错。 */
     private String findHostColumn(JForgeProcessor.DaoInfo info, String fieldName, ExecutableElement method) {
         for (EntityModel.ColumnModel column : info.model.columns()) {
             if (column.fieldName.equals(fieldName)) {
-                return column.columnName;
+                return SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column.columnName);
             }
         }
         processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
@@ -428,11 +433,13 @@ public final class SelectGenerator {
         return null;
     }
 
-    /** 在 record 组件中查找字段并返回其列名（组件名经命名策略）；找不到则报错。 */
-    private String findRecordColumn(TypeElement record, String fieldName, ExecutableElement method) {
+    /** 在 record 组件中查找字段并返回其列名（组件名经命名策略，按宿主方言包裹）；找不到则报错。 */
+    private String findRecordColumn(JForgeProcessor.DaoInfo info, TypeElement record, String fieldName,
+            ExecutableElement method) {
         for (Element component : record.getRecordComponents()) {
             if (component.getSimpleName().contentEquals(fieldName)) {
-                return configHelper.columnName(record, fieldName);
+                return SqlCodegen.quoteIdentifier(info.model.dialectSupport(),
+                        configHelper.columnName(record, fieldName));
             }
         }
         processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,

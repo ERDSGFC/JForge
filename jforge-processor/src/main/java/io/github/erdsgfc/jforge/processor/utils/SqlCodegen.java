@@ -3,6 +3,7 @@ package io.github.erdsgfc.jforge.processor.utils;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
+import io.github.erdsgfc.jforge.annotation.DialectSupport;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 
 import java.util.ArrayList;
@@ -115,6 +116,36 @@ public final class SqlCodegen {
      */
     public static String joinColumns(List<String> names) {
         return String.join(",", names);
+    }
+
+    /**
+     * 用方言引用符包裹自动生成的标识符（表名/列名），实现数据库端精确匹配：
+     * PG/SQLite 双引号、MySQL 反引号。包裹规则（保守，避免破坏既有行为）——
+     * <ul>
+     *   <li>名字已含方言引用符（用户自行引用的显式名，如 {@code @Table(name="\"Users\"")}）不包；</li>
+     *   <li>名字含大写字母不包——未引用的 DDL（{@code CREATE TABLE Users}）在 PG 折叠为小写存储，
+     *       包裹会让生成 SQL 按大小写精确查找而失败；</li>
+     *   <li>其余（自动推导的 camelToSnake 小写名、显式小写名）包裹——修复保留字列
+     *       （{@code order}/{@code key}）与 Linux MySQL 表名大小写敏感问题。</li>
+     * </ul>
+     * 只用于自动生成的 SQL 文本；用户 SQL（{@code @Query} 方法体、{@code rawSql} 片段）
+     * 原样透传、永不包裹。ResultSet 按标签读取（{@code rs.getString(name)}）也不包裹。
+     *
+     * @param dialect 生效的方言支持（引用符来源）
+     * @param name    标识符（原始名，如 {@code "user_name"}）
+     * @return 包裹后的标识符（如 {@code "\"user_name\""}），不满足包裹规则时原样返回
+     */
+    public static String quoteIdentifier(DialectSupport dialect, String name) {
+        String quote = dialect.quote();
+        if (quote.isEmpty() || name.indexOf(quote.charAt(0)) >= 0) {
+            return name;
+        }
+        for (int i = 0; i < name.length(); i++) {
+            if (Character.isUpperCase(name.charAt(i))) {
+                return name;
+            }
+        }
+        return quote + name + quote;
     }
 
     /**
@@ -245,6 +276,22 @@ public final class SqlCodegen {
         List<String> names = new ArrayList<>();
         for (EntityModel.ColumnModel column : columns) {
             names.add(column.columnName);
+        }
+        return names;
+    }
+
+    /**
+     * 提取列模型列表的列名，并按方言引用符包裹——SELECT / INSERT 列清单用
+     * （{@link #namesOf} 的引号变体）。
+     *
+     * @param columns 列模型
+     * @param dialect 生效的方言支持（引用符来源）
+     * @return 按顺序排列的包裹后列名字符串
+     */
+    public static List<String> quotedNames(List<EntityModel.ColumnModel> columns, DialectSupport dialect) {
+        List<String> names = new ArrayList<>();
+        for (EntityModel.ColumnModel column : columns) {
+            names.add(quoteIdentifier(dialect, column.columnName));
         }
         return names;
     }

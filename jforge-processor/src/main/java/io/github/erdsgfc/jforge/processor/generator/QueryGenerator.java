@@ -379,7 +379,8 @@ public final class QueryGenerator {
             return null;
         }
         return new WhereFragment(first ? "" : " AND ",
-                columnName + " " + where.op().sql() + " :" + parameter.getSimpleName(), false);
+                SqlCodegen.quoteIdentifier(info.model.dialectSupport(), columnName)
+                        + " " + where.op().sql() + " :" + parameter.getSimpleName(), false);
     }
 
     /**

@@ -65,7 +65,7 @@ class JForgeExceptionTest {
     @BeforeEach
     void setUp() throws SQLException {
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:h2:mem:orm_exception;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
+        config.setJdbcUrl("jdbc:h2:mem:orm_exception;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE");
         ds = new HikariDataSource(config);
         try (Connection conn = ds.getConnection(); Statement st = conn.createStatement()) {
             st.execute("DROP TABLE IF EXISTS users");
@@ -87,8 +87,9 @@ class JForgeExceptionTest {
 
         assertEquals(JForgeException.Code.SQL, ex.code());
         assertTrue(ex.getMessage().contains("save on table 'users'"), ex.getMessage());
-        assertTrue(ex.getMessage().contains("INSERT INTO users"), ex.getMessage());
-        assertTrue(ex.sql().contains("INSERT INTO users"), ex.sql());
+        // 生成 SQL 的标识符按方言引用符包裹（POSTGRESQL 方言双引号）。
+        assertTrue(ex.getMessage().contains("INSERT INTO \"users\""), ex.getMessage());
+        assertTrue(ex.sql().contains("INSERT INTO \"users\""), ex.sql());
         assertNotNull(ex.getCause(), "underlying SQLException must be preserved as the cause");
     }
 }

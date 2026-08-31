@@ -49,9 +49,14 @@ H2 测试库走 `POSTGRESQL` 方言（`MODE=PostgreSQL` 下支持 `BIGSERIAL`/`R
 | MySQL | `` `user_entity` `` | 双引号默认是**字符串字面量**，需 `ANSI_QUOTES` 模式 |
 | SQL Server | `[user_entity]` | 或双引号（`QUOTED_IDENTIFIER ON`） |
 
-**大小写折叠**（未加引号的标识符被统一大小写）：PostgreSQL 折叠为**小写**；H2 / MySQL / Oracle 折叠为**大写**。加引号 = 精确名字，不折叠。
+**大小写折叠**（未加引号的标识符被统一大小写）：PostgreSQL 折叠为**小写**；H2 / MySQL / Oracle 折叠为**大写**。加引号 = 精确名字，不折叠。注意：H2 的 `MODE=PostgreSQL` **不**折叠小写（实测 2.3.232 无引号标识符仍存为大写）——测试库需另加 `DATABASE_TO_LOWER=TRUE` 模拟真 PG 折叠（JForge 测试配置已带）。
 
-**对 JForge 的含义**：生成 SQL 一律**不加引号** + 表名/列名约定**全小写 snake_case**——折叠规则差异完全规避（全小写在任何折叠方向下自洽）。代价：**保留字**（如 `order`、`user` 作列名）无法使用——未来若支持保留字，引用符差异就由方言提供（PG/H2 双引号、MySQL 反引号）。
+**对 JForge 的含义**：自动生成的标识符（`@Table` 缺省表名、命名策略/`@Column` 派生的列名）在生成 SQL 时按方言引用符包裹（`DialectSupport.quote()`，PG/SQLite 双引号、MySQL 反引号），数据库端做**精确匹配**。包裹规则（`SqlCodegen.quoteIdentifier`）：
+- 名字已含方言引用符（用户自行引用的显式名，如 `@Table(name="\"Users\"")`）→ 不包；
+- 名字含大写字母 → 不包（无引号 DDL 在 PG 折叠为小写存储，包裹会让按大小写精确查找失败）；
+- 其余（自动推导的小写名、显式小写名）→ 包裹。
+
+**收益**：保留字（`order`、`key` 作列名）可用；Linux MySQL 表名大小写敏感问题消除；混合大小写显式名精确命中。**边界**：用户 SQL（`@Query` 方法体、`@Condition`/`@UpdateSet` 的 `rawSql` 片段）原样透传、永不包裹；ResultSet 按标签读取（`rs.getString(name)`）同样不包。表名/列名在模型中保持原始名（重名列检测、`@Condition` 字段解析、错误消息都用它），引用符只在 SQL 发射点施加。
 
 ### 3.2 自增/生成主键的 DDL 类型
 

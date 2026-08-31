@@ -50,7 +50,7 @@ class SpringTransactionControlTest {
         @Bean
         DataSource dataSource() {
             HikariConfig config = new HikariConfig();
-            config.setJdbcUrl("jdbc:h2:mem:orm_ctl;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
+            config.setJdbcUrl("jdbc:h2:mem:orm_ctl;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE");
             return new HikariDataSource(config);
         }
 

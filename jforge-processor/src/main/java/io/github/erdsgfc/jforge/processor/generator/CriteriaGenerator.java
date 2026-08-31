@@ -201,7 +201,7 @@ public final class CriteriaGenerator {
                 ? condition.value() : fieldName;
         for (EntityModel.ColumnModel column : info.model.columns()) {
             if (column.fieldName.equals(entityField)) {
-                return column.columnName;
+                return SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column.columnName);
             }
         }
         error(method, "@Where field '" + fieldName + "' does not match any field of entity "
