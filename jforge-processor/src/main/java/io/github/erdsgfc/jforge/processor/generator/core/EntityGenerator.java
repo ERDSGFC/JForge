@@ -1,6 +1,7 @@
 package io.github.erdsgfc.jforge.processor.generator.core;
 
 import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import javax.lang.model.element.Modifier;
@@ -9,6 +10,8 @@ import com.palantir.javapoet.TypeSpec;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 
 import java.io.Serializable;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * 把 {@code @Table} 实体接口组装成实现类 {@code Xxx_Impl} 的类规格（TypeSpec）：
@@ -78,7 +81,80 @@ public final class EntityGenerator {
                         .build());
             }
         }
-        // todo 生成类的 toString() 和 equals 和 hashCode 方法
+        List<EntityModel.ColumnModel> columns = model.columns();
+        builder.addMethod(toStringMethod(entityClass, columns));
+        builder.addMethod(equalsMethod(entityClass, columns));
+        builder.addMethod(hashCodeMethod(columns));
         return builder.build();
+    }
+
+    /**
+     * 生成 {@code toString()}:{@code Xxx_Impl{id=1, name=qin}}——全部字段拼接
+     * (String 拼接对 null 字段输出 {@code "null"},不会 NPE)。
+     */
+    private static MethodSpec toStringMethod(ClassName entityClass, List<EntityModel.ColumnModel> columns) {
+        CodeBlock.Builder body = CodeBlock.builder();
+        body.add("return $S", entityClass.simpleName() + "{");
+        for (int i = 0; i < columns.size(); i++) {
+            EntityModel.ColumnModel column = columns.get(i);
+            if (i > 0) {
+                body.add(" + $S", ", ");
+            }
+            body.add(" + $S + $N", column.fieldName + "=", column.fieldName);
+        }
+        body.add(" + $S", "}");
+        return MethodSpec.methodBuilder("toString")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(String.class)
+                .addStatement(body.build())
+                .build();
+    }
+
+    /**
+     * 生成 {@code equals()}:按实体接口契约比较(instanceof 实体接口 + getter 逐个
+     * {@code Objects.equals})——不同仓库各嵌的 impl 副本(不同类)也能互相判等;
+     * default 列比较的是覆盖后的 getter(返回字段值),不是默认值来源。
+     */
+    private static MethodSpec equalsMethod(ClassName entityClass, List<EntityModel.ColumnModel> columns) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("equals")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(boolean.class)
+                .addParameter(Object.class, "o");
+        method.beginControlFlow("if (this == o)");
+        method.addStatement("return true");
+        method.endControlFlow();
+        method.beginControlFlow("if (!(o instanceof $T))", entityClass);
+        method.addStatement("return false");
+        method.endControlFlow();
+        method.addStatement("$T that = ($T) o", entityClass, entityClass);
+        CodeBlock.Builder cond = CodeBlock.builder();
+        for (int i = 0; i < columns.size(); i++) {
+            EntityModel.ColumnModel column = columns.get(i);
+            if (i > 0) {
+                cond.add(" && ");
+            }
+            cond.add("$T.equals(this.$N, that.$N())", Objects.class, column.fieldName, column.getterName);
+        }
+        method.addStatement("return $L", cond.build());
+        return method.build();
+    }
+
+    /** 生成 {@code hashCode()}:全部字段 getter 的 {@code Objects.hash(...)}。 */
+    private static MethodSpec hashCodeMethod(List<EntityModel.ColumnModel> columns) {
+        CodeBlock.Builder args = CodeBlock.builder();
+        for (int i = 0; i < columns.size(); i++) {
+            if (i > 0) {
+                args.add(", ");
+            }
+            args.add("$N()", columns.get(i).getterName);
+        }
+        return MethodSpec.methodBuilder("hashCode")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(int.class)
+                .addStatement("return $T.hash($L)", Objects.class, args.build())
+                .build();
     }
 }

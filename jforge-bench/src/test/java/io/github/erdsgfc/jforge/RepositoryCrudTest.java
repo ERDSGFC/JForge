@@ -13,6 +13,7 @@ import java.sql.Statement;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -147,5 +148,23 @@ class RepositoryCrudTest {
         int affected = repo.updateAge(2L, 99);
         assertEquals(1, affected);
         assertEquals(99, repo.findById(2L).age());
+    }
+
+    /** 实体 impl 生成的 toString/equals/hashCode：值语义（同字段相等、toString 含字段）。 */
+    @Test
+    void entityValueSemantics() {
+        UserEntity a = repo.createEntity().name("qin").age(25);
+        UserEntity b = repo.createEntity().name("qin").age(25);
+        UserEntity c = repo.createEntity().name("lu").age(25);
+
+        assertEquals(a, b, "same field values must be equal");
+        assertEquals(a.hashCode(), b.hashCode());
+        assertFalse(a.equals(c));
+        assertFalse(a.equals(null));
+        assertFalse(a.equals("not an entity"));
+
+        String s = a.toString();
+        assertTrue(s.contains("name=qin"), s);
+        assertTrue(s.contains("age=25"), s);
     }
 }
