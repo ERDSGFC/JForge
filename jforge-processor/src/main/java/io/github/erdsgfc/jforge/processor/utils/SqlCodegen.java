@@ -1,9 +1,9 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.utils;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
-import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
+import io.github.erdsgfc.jforge.processor.EntityModel;
 
 import java.util.ArrayList;
 import java.util.List;

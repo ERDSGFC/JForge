@@ -11,6 +11,7 @@ import io.github.erdsgfc.jforge.annotation.Table;
 import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.processor.*;
 import io.github.erdsgfc.jforge.processor.utils.Nullability;
+import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.annotation.processing.ProcessingEnvironment;

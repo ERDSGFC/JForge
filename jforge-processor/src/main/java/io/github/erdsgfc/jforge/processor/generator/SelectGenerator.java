@@ -10,6 +10,7 @@ import io.github.erdsgfc.jforge.annotation.Select;
 import io.github.erdsgfc.jforge.annotation.Table;
 import io.github.erdsgfc.jforge.annotation.Where;
 import io.github.erdsgfc.jforge.processor.*;
+import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.annotation.processing.ProcessingEnvironment;

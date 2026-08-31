@@ -1,7 +1,5 @@
 package io.github.erdsgfc.jforge.processor.utils;
 
-import io.github.erdsgfc.jforge.processor.SqlCodegen;
-
 /**
  * 命名相关的纯字符串工具:从全限定名提取包名、camelCase 转 snake_case。
  *
