@@ -54,34 +54,34 @@ public final class EntityModel {
     private Types types;
 
     public static final class ColumnModel {
-        final String fieldName;
-        final String columnName;
-        final String typeName;   // TypeMirror#toString,如 "java.lang.Long"、"int"
-        final TypeMirror returnType; // getter 的返回类型,用于 setter 类型校验
-        final String getterName;
-        final String setterName;
-        final boolean isId;
-        final boolean generated;
+        public final String fieldName;
+        public final String columnName;
+        public final String typeName;   // TypeMirror#toString,如 "java.lang.Long"、"int"
+        public final TypeMirror returnType; // getter 的返回类型,用于 setter 类型校验
+        public final String getterName;
+        public final String setterName;
+        public final boolean isId;
+        public final boolean generated;
         /** builder setter 的返回类型——父接口声明的 setter 返回父接口类型,生成的
          *  {@code @Override} setter 必须匹配声明处的返回类型;{@code null} = 无 setter。
          *  非 final:两遍解析中 setter 信息到第二遍(validateSetter)才确定。 */
-        TypeMirror setterReturnType;
+        public TypeMirror setterReturnType;
         /** 接口是否声明了该属性的 builder setter。{@code false} = 只读属性:
          *  生成的 impl 仍生成 {@code private} 填充 setter(供行映射内部调用),
          *  但不带 {@code @Override}、也不参与生成键回写。
          *  非 final:同上,第二遍校验时才置 true。 */
-        boolean hasSetter;
+        public boolean hasSetter;
         /** 属性 getter 是否为 {@code default} 方法(带 @Column/@Id 注解的默认值来源):
          *  save/update 绑定经 接口.super.getter() 强制调用默认实现取值。 */
-        final boolean defaultGetter;
+        public final boolean defaultGetter;
         /** 列是否参与 INSERT(save)——由 {@code @Column.write()} 策略派生。 */
-        final boolean insertable;
+        public final boolean insertable;
         /** 列是否参与 UPDATE SET(update)——由 {@code @Column.write()} 策略派生。 */
-        final boolean updatable;
+        public final boolean updatable;
         /** 列是否可空:基本类型恒非空;包装类恒可空;其他类型看 getter 返回类型的
          *  JSpecify {@code @Nullable} 标注或全局配置默认。可空列的行映射生成
          *  {@code ResultSet.wasNull()} 判断(null 读回为 null 而非 0/空串)。 */
-        final boolean nullable;
+        public final boolean nullable;
 
         ColumnModel(String fieldName, String columnName, TypeMirror returnType, boolean isId, boolean generated,
                 boolean defaultGetter, boolean insertable, boolean updatable, boolean nullable) {

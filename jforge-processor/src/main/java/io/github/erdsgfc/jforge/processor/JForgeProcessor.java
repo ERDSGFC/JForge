@@ -54,16 +54,16 @@ public class JForgeProcessor extends AbstractProcessor {
     private RepositoryGenerator repositoryGenerator;
 
     /** 一个 {@code @Dao} 仓库的解析结果：实体/id 类型、实体模型、生成类名。 */
-    static final class DaoInfo {
-        TypeElement element;
-        String daoQualifiedName;
-        String daoSimpleName;
-        String daoPackage;
-        TypeName entityType;
-        TypeName idType;
-        String idTypeName;
-        EntityModel model;
-        String implName;
+    public static final class DaoInfo {
+        public TypeElement element;
+        public String daoQualifiedName;
+        public String daoSimpleName;
+        public String daoPackage;
+        public TypeName entityType;
+        public TypeName idType;
+        public String idTypeName;
+        public EntityModel model;
+        public String implName;
     }
 
     @Override
