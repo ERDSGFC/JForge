@@ -1,10 +1,14 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.generator;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import io.github.erdsgfc.jforge.annotation.BatchSize;
+import io.github.erdsgfc.jforge.processor.EntityModel;
+import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
+import io.github.erdsgfc.jforge.processor.JForgeProcessor;
+import io.github.erdsgfc.jforge.processor.SqlCodegen;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.lang.model.element.Element;
@@ -26,7 +30,7 @@ import static io.github.erdsgfc.jforge.processor.ClassEnum.*;
  * <p>只依赖 {@link JForgeConfigHelper}（批大小解析）与静态工具类 {@link SqlCodegen}/
  * {@link TypeNameUtils}；其余信息经 {@link JForgeProcessor.DaoInfo} 参数传入。</p>
  */
-final class CrudGenerator {
+public final class CrudGenerator {
 
 
     private final JForgeConfigHelper configHelper;
@@ -34,7 +38,7 @@ final class CrudGenerator {
     /**
      * @param configHelper 共享的 ORM 配置助手（用于批大小解析）
      */
-    CrudGenerator(JForgeConfigHelper configHelper) {
+    public CrudGenerator(JForgeConfigHelper configHelper) {
         this.configHelper = configHelper;
     }
 
@@ -49,9 +53,9 @@ final class CrudGenerator {
      * @param sqlException     SQLException 类
      * @return CRUD 方法规格
      */
-    List<MethodSpec> crudMethods(JForgeProcessor.DaoInfo info, ClassName entityImpl,
-            ClassName connection, ClassName preparedStatement, ClassName resultSet,
-            ClassName sqlException) {
+    public List<MethodSpec> crudMethods(JForgeProcessor.DaoInfo info, ClassName entityImpl,
+                                        ClassName connection, ClassName preparedStatement, ClassName resultSet,
+                                        ClassName sqlException) {
         List<MethodSpec> methods = new ArrayList<>();
         methods.add(saveMethod(info, entityImpl, connection, preparedStatement, resultSet, sqlException));
         methods.add(saveAllMethod(info, entityImpl, connection, preparedStatement, resultSet, sqlException));
@@ -666,8 +670,8 @@ final class CrudGenerator {
      * @param resultSet         ResultSet 类
      * @return countById 方法规格
      */
-    MethodSpec countByIdMethod(JForgeProcessor.DaoInfo info, ClassName sqlException,
-            ClassName connection, ClassName preparedStatement, ClassName resultSet) {
+    public MethodSpec countByIdMethod(JForgeProcessor.DaoInfo info, ClassName sqlException,
+                                      ClassName connection, ClassName preparedStatement, ClassName resultSet) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("countById")
                 .addModifiers(Modifier.PRIVATE)
                 .returns(TypeName.LONG)
@@ -702,8 +706,8 @@ final class CrudGenerator {
      * @param resultSet    ResultSet 类
      * @return mapRow 方法规格
      */
-    MethodSpec rowMapperMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl,
-            ClassName sqlException, ClassName resultSet) {
+    public MethodSpec rowMapperMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl,
+                                      ClassName sqlException, ClassName resultSet) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("mapRow")
                 .addModifiers(Modifier.PRIVATE)
                 .returns(entityImpl)

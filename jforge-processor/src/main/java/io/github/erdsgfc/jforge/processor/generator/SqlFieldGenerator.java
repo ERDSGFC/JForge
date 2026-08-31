@@ -1,8 +1,12 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.generator;
 
 import com.palantir.javapoet.FieldSpec;
 import io.github.erdsgfc.jforge.annotation.Query;
 import io.github.erdsgfc.jforge.annotation.Condition;
+import io.github.erdsgfc.jforge.processor.EntityModel;
+import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
+import io.github.erdsgfc.jforge.processor.JForgeProcessor;
+import io.github.erdsgfc.jforge.processor.SqlCodegen;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -18,7 +22,7 @@ import java.util.List;
  * <p>纯静态、无状态：CRUD 各方法的 SQL + 每个 {@code @Query} 方法的 SQL。IN 查询
  * （findByIds/deleteByIds）只把固定前缀提取为常量，占位符部分仍在方法内动态拼接。</p>
  */
-final class SqlFieldGenerator {
+public final class SqlFieldGenerator {
 
     private SqlFieldGenerator() {
     }
@@ -29,7 +33,7 @@ final class SqlFieldGenerator {
      * @param info the parsed repository info
      * @return the SQL constant field specifications
      */
-    static List<FieldSpec> sqlFields(JForgeProcessor.DaoInfo info, JForgeConfigHelper configHelper) {
+    public static List<FieldSpec> sqlFields(JForgeProcessor.DaoInfo info, JForgeConfigHelper configHelper) {
         List<FieldSpec> fields = new ArrayList<>();
         fields.add(sqlField("saveSql", saveSql(info, configHelper)));
         fields.add(sqlField("saveAllSql", saveAllSql(info)));

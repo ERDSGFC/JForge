@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.generator;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.FieldSpec;
@@ -10,6 +10,10 @@ import io.github.erdsgfc.jforge.annotation.Select;
 import io.github.erdsgfc.jforge.annotation.UpdateSet;
 import io.github.erdsgfc.jforge.annotation.Update;
 import io.github.erdsgfc.jforge.annotation.Where;
+import io.github.erdsgfc.jforge.processor.EntityModel;
+import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
+import io.github.erdsgfc.jforge.processor.JForgeProcessor;
+import io.github.erdsgfc.jforge.processor.SqlCodegen;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.lang.model.element.Element;
@@ -30,7 +34,7 @@ import java.util.List;
  * {@link Where} 条件对象 → WHERE 条件（动态语义与 {@code @Select} 一致）。生成形态
  * 与动态 WHERE 同一套：全静态 → SQL 常量 + 静态绑定；含动态 → StringBuilder 拼接。</p>
  */
-final class UpdateGenerator {
+public final class UpdateGenerator {
 
     /** 一个 SET 单元。 */
     private static final class SetUnit {
@@ -58,16 +62,16 @@ final class UpdateGenerator {
     private final JForgeConfigHelper configHelper;
     private final CriteriaGenerator criteriaGenerator;
 
-    UpdateGenerator(javax.annotation.processing.ProcessingEnvironment processingEnv,
-            JForgeConfigHelper configHelper) {
+    public UpdateGenerator(javax.annotation.processing.ProcessingEnvironment processingEnv,
+                           JForgeConfigHelper configHelper) {
         this.processingEnv = processingEnv;
         this.configHelper = configHelper;
         this.criteriaGenerator = new CriteriaGenerator(processingEnv.getMessager(),
                 Diagnostic.Kind.ERROR);
     }
 
-    void updateMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
-            ClassName connection, ClassName preparedStatement, ClassName sqlException) {
+    public void updateMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
+                              ClassName connection, ClassName preparedStatement, ClassName sqlException) {
         for (Element enclosed : info.element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.METHOD) {
                 continue;

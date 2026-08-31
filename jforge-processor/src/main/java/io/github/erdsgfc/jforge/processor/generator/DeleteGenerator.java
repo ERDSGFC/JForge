@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.generator;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.FieldSpec;
@@ -10,6 +10,10 @@ import io.github.erdsgfc.jforge.annotation.Query;
 import io.github.erdsgfc.jforge.annotation.Select;
 import io.github.erdsgfc.jforge.annotation.Update;
 import io.github.erdsgfc.jforge.annotation.Where;
+import io.github.erdsgfc.jforge.processor.EntityModel;
+import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
+import io.github.erdsgfc.jforge.processor.JForgeProcessor;
+import io.github.erdsgfc.jforge.processor.SqlCodegen;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.lang.model.element.Element;
@@ -26,7 +30,7 @@ import java.util.List;
  * {@code DELETE FROM t WHERE ...}。WHERE 条件与 {@code @Update}/{@code @Select}
  * 同一套（{@link Condition} 参数 / {@link Where} 条件对象，动态/静态形态一致）。
  */
-final class DeleteGenerator {
+public final class DeleteGenerator {
 
     /** WHERE 条件单元（与 UpdateGenerator.WhereCondition 同构）。 */
     private static final class WhereCondition {
@@ -56,16 +60,16 @@ final class DeleteGenerator {
     private final JForgeConfigHelper configHelper;
     private final CriteriaGenerator criteriaGenerator;
 
-    DeleteGenerator(javax.annotation.processing.ProcessingEnvironment processingEnv,
-            JForgeConfigHelper configHelper) {
+    public DeleteGenerator(javax.annotation.processing.ProcessingEnvironment processingEnv,
+                           JForgeConfigHelper configHelper) {
         this.processingEnv = processingEnv;
         this.configHelper = configHelper;
         this.criteriaGenerator = new CriteriaGenerator(processingEnv.getMessager(),
                 Diagnostic.Kind.ERROR);
     }
 
-    void deleteMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
-            ClassName connection, ClassName preparedStatement, ClassName sqlException) {
+    public void deleteMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
+                              ClassName connection, ClassName preparedStatement, ClassName sqlException) {
         for (Element enclosed : info.element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.METHOD) {
                 continue;

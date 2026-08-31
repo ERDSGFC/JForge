@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.generator;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
@@ -6,6 +6,9 @@ import io.github.erdsgfc.jforge.annotation.And;
 import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.annotation.Or;
 import io.github.erdsgfc.jforge.annotation.Where;
+import io.github.erdsgfc.jforge.processor.EntityModel;
+import io.github.erdsgfc.jforge.processor.JForgeProcessor;
+import io.github.erdsgfc.jforge.processor.SqlCodegen;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.lang.model.element.Element;
@@ -35,7 +38,7 @@ import java.util.List;
  * {@code WHERE}、其后按连接符），null 跳过与 Optional 分支在拼接/绑定两阶段
  * 各自展开一次。</p>
  */
-final class CriteriaGenerator {
+public final class CriteriaGenerator {
 
     /** 条件对象类型字段 → 展开单元。 */
     static final class Unit {

@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.generator;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
@@ -9,6 +9,7 @@ import io.github.erdsgfc.jforge.annotation.Query;
 import io.github.erdsgfc.jforge.annotation.ReturnGeneratedKeys;
 import io.github.erdsgfc.jforge.annotation.Table;
 import io.github.erdsgfc.jforge.annotation.Condition;
+import io.github.erdsgfc.jforge.processor.*;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.annotation.processing.ProcessingEnvironment;
@@ -37,17 +38,17 @@ import java.util.Map;
  * 宿主实体直接复用；{@code @Query} 返回其他 {@code @Table} 实体时现场解析并作为
  * {@code private static final} 嵌套类嵌入当前仓库（同实体多个 {@code @Query} 只嵌一份）。</p>
  */
-final class QueryGenerator {
+public final class QueryGenerator {
 
     /**
      * 一个将被嵌入当前仓库 impl 的实体 impl 的解析结果：实体模型 + 其在当前仓库内的
      * 嵌套类名（{@code daoPackage.ImplName.EntityImplName}）。
      */
-    static final class EmbeddedEntity {
+    public static final class EmbeddedEntity {
         final ClassName impl;
         final EntityModel model;
 
-        EmbeddedEntity(ClassName impl, EntityModel model) {
+        public EmbeddedEntity(ClassName impl, EntityModel model) {
             this.impl = impl;
             this.model = model;
         }
@@ -60,7 +61,7 @@ final class QueryGenerator {
      * @param processingEnv the processing environment (for entity-model re-parse and error reporting)
      * @param configHelper  the shared ORM config helper
      */
-    QueryGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper) {
+    public QueryGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper) {
         this.processingEnv = processingEnv;
         this.configHelper = configHelper;
     }
@@ -77,9 +78,9 @@ final class QueryGenerator {
      * @param resultSet         ResultSet 类
      * @param sqlException      SQLException 类
      */
-    void queryMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
-            Map<String, EmbeddedEntity> embedded, ClassName connection, ClassName preparedStatement,
-            ClassName resultSet, ClassName sqlException) {
+    public void queryMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
+                             Map<String, EmbeddedEntity> embedded, ClassName connection, ClassName preparedStatement,
+                             ClassName resultSet, ClassName sqlException) {
         for (Element enclosed : info.element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.METHOD) {
                 continue;

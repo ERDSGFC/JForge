@@ -17,7 +17,7 @@ import com.palantir.javapoet.TypeSpec;
  * {@code repo.createEntity()} 获取实体实例。多个仓库共享同一实体时各仓库各嵌一份副本
  * （私有嵌套类无法共享）。</p>
  */
-final class EntityGenerator {
+public final class EntityGenerator {
 
     private EntityGenerator() {
         // 纯静态工具类，禁止实例化
@@ -29,7 +29,7 @@ final class EntityGenerator {
      * @param model 已解析的实体模型
      * @return 实体 impl 类规格（作为仓库 impl 的 private static final 嵌套类）
      */
-    static TypeSpec buildImpl(EntityModel model) {
+    public static TypeSpec buildImpl(EntityModel model) {
         ClassName entityClass = ClassName.get(model.entityPackage(), model.entitySimpleName());
         TypeSpec.Builder builder = TypeSpec.classBuilder(
                 EntityModel.implNameOf(model.entitySimpleName(), model.implSuffix()))

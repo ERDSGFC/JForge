@@ -7,6 +7,7 @@ import com.palantir.javapoet.JavaFile;
 import com.palantir.javapoet.MethodSpec;
 import javax.lang.model.element.Modifier;
 import com.palantir.javapoet.TypeSpec;
+import io.github.erdsgfc.jforge.processor.generator.*;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Element;
@@ -26,7 +27,7 @@ import static io.github.erdsgfc.jforge.processor.ClassEnum.*;
  * 委托给 {@link SqlFieldGenerator}（固定 SQL 字段）、{@link CrudGenerator}（CRUD + 行映射）与
  * {@link QueryGenerator}（{@code @Query} + 结果映射，必要时现场嵌入其他实体）。</p>
  */
-final class RepositoryGenerator {
+public final class RepositoryGenerator {
 
 
     private final ProcessingEnvironment processingEnv;

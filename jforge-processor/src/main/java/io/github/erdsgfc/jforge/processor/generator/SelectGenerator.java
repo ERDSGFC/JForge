@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.generator;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.FieldSpec;
@@ -9,6 +9,7 @@ import io.github.erdsgfc.jforge.annotation.Query;
 import io.github.erdsgfc.jforge.annotation.Select;
 import io.github.erdsgfc.jforge.annotation.Table;
 import io.github.erdsgfc.jforge.annotation.Where;
+import io.github.erdsgfc.jforge.processor.*;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.annotation.processing.ProcessingEnvironment;
@@ -43,7 +44,7 @@ import java.util.Map;
  * 各自展开一次相同的条件判断，绑定用运行时索引）。结果映射委托
  * {@link QueryGenerator#appendResultMapping}（与 {@code @Query} 完全一致）。</p>
  */
-final class SelectGenerator {
+public final class SelectGenerator {
 
     private final ProcessingEnvironment processingEnv;
     private final JForgeConfigHelper configHelper;
@@ -55,7 +56,7 @@ final class SelectGenerator {
      * @param configHelper   共享的 ORM 配置 helper（命名策略）
      * @param queryGenerator 结果映射的委托目标（{@code @Query} 同一套映射逻辑）
      */
-    SelectGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper,
+    public SelectGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper,
             QueryGenerator queryGenerator) {
         this.processingEnv = processingEnv;
         this.configHelper = configHelper;
@@ -75,9 +76,9 @@ final class SelectGenerator {
      * @param resultSet         ResultSet 类
      * @param sqlException      SQLException 类
      */
-    void selectMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
-            Map<String, QueryGenerator.EmbeddedEntity> embedded, ClassName connection,
-            ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
+    public void selectMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
+                              Map<String, QueryGenerator.EmbeddedEntity> embedded, ClassName connection,
+                              ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         for (Element enclosed : info.element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.METHOD) {
                 continue;
