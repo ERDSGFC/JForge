@@ -106,7 +106,8 @@ abstract class PgsqlTestSupport {
                     "level SMALLINT," +
                     "avatar BYTEA," +
                     "status pg_user_status," +
-                    "external_id VARCHAR(36))");
+                    "external_id VARCHAR(36)," +
+                    "config_json JSONB)");
         }
     }
 }

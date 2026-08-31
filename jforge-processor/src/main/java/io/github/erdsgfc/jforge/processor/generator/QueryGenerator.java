@@ -521,13 +521,11 @@ public final class QueryGenerator {
                 }
                 spec.addCode(SqlCodegen.readColumn(column.typeName, "e", column.setterName, pos + 1,
                         column.nullable, column.isEnum,
-                        column.converter != null ? SqlCodegen.converterFieldName(model, column) : null,
-                        column.converterDbType));
+                        column.converter != null ? SqlCodegen.converterFieldName(model, column) : null));
             } else {
                 spec.addCode(SqlCodegen.readColumnByName(column.typeName, "e", column.setterName,
                         column.columnName, column.nullable, column.isEnum,
-                        column.converter != null ? SqlCodegen.converterFieldName(model, column) : null,
-                        column.converterDbType));
+                        column.converter != null ? SqlCodegen.converterFieldName(model, column) : null));
             }
             spec.addCode("\n");
         }

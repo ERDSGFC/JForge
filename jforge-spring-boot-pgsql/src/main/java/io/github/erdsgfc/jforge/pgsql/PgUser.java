@@ -104,4 +104,10 @@ public interface PgUser {
     java.util.UUID externalId();
 
     PgUser externalId(java.util.UUID externalId);
+
+    /** 配置 JSON——PG jsonb 列经 {@link JsonTextConverter}（任意数据库类型验证）。 */
+    @Convert(converter = JsonTextConverter.class)
+    String configJson();
+
+    PgUser configJson(String configJson);
 }

@@ -128,11 +128,12 @@ public interface UserEntity {
 存为 VARCHAR 文本、枚举存为字符串等):
 
 ```java
-// 转换器:实现 JForgeConverter<X, Y>(X = 实体字段类型, Y = 数据库侧类型),
-// 公开无参构造器;toDatabase/toEntity 必须接受并透传 null。
-public final class UuidStringConverter implements JForgeConverter<UUID, String> {
-    @Override public String toDatabase(UUID attribute) { return attribute == null ? null : attribute.toString(); }
-    @Override public UUID toEntity(String dbData) { return dbData == null ? null : UUID.fromString(dbData); }
+// 转换器:实现 JForgeConverter<X>(X = 实体字段类型),公开无参构造器;
+// 两个方向都以 Object 传递数据库侧值——适配任意数据库类型;
+// toDatabase/toEntity 必须接受并透传 null。
+public final class UuidStringConverter implements JForgeConverter<UUID> {
+    @Override public Object toDatabase(UUID attribute) { return attribute == null ? null : attribute.toString(); }
+    @Override public UUID toEntity(Object dbData) { return dbData == null ? null : UUID.fromString((String) dbData); }
 }
 
 // 实体:getter 标 @Convert,处理器编译期把转换调用生成进 JDBC 代码。
@@ -143,9 +144,11 @@ public interface User {
 }
 ```
 
-- 绑定:`ps.setObject(i, CONVERTER_X.toDatabase(entity.getter()))`;读取:
-  `setter(CONVERTER_X.toEntity(rs.getObject(i, Y.class)))`——转换器以 `private static final`
-  字段嵌入生成的仓库 impl,运行时零反射
+- 绑定:`ps.setObject(i, CONVERTER_X.toDatabase(entity.getter()), Types.OTHER)`——转换结果
+  以 unknown 类型发送,由数据库按目标列推断(jsonb 等不接受 varchar 隐式转换的类型也能绑定);
+  读取:`setter(CONVERTER_X.toEntity(rs.getObject(i)))`——裸 `getObject` 取驱动的默认表示
+  (如 PG jsonb → `PGobject`),转换器内部强转——**任意数据库类型均可转换**;
+  转换器以 `private static final` 字段嵌入生成的仓库 impl,运行时零反射
 - 转换器类可与实体同批编译(处理器经 `MirroredTypeException` 读取类型镜像)或预编译
 - 转换列的 null 透传给转换器,`nullable`/枚举判定不参与;列名仍按 `@Column`/命名策略
 

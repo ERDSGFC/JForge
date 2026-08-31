@@ -725,8 +725,7 @@ public final class CrudGenerator {
             EntityModel.ColumnModel column = columns.get(i);
             method.addCode(SqlCodegen.readColumn(column.typeName, "e", column.setterName, i + 1,
                     column.nullable, column.isEnum,
-                    column.converter != null ? SqlCodegen.converterFieldName(info.model, column) : null,
-                    column.converterDbType));
+                    column.converter != null ? SqlCodegen.converterFieldName(info.model, column) : null));
             method.addCode("\n");
         }
         method.addStatement("return e");

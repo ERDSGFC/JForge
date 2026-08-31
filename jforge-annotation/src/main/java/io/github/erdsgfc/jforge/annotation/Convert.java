@@ -21,5 +21,5 @@ import java.lang.annotation.Target;
 public @interface Convert {
 
     /** 转换器实现类（实现 {@link JForgeConverter}，公开无参构造器）。 */
-    Class<? extends JForgeConverter<?, ?>> converter();
+    Class<? extends JForgeConverter<?>> converter();
 }

@@ -56,8 +56,10 @@ public final class SqlCodegen {
     public static CodeBlock bindParam(String typeName, String expr, int index, boolean nullable, boolean isEnum,
             String converterField) {
         if (converterField != null) {
-            return CodeBlock.of("$L.setObject($L, $L.toDatabase($L));", "ps", index,
-                    converterField, expr);
+            // 转换器列:setObject(i, v, Types.OTHER)——转换结果以 unknown 类型发送,
+            // 由 PG/H2 按目标列推断(jsonb 等不接受 varchar 隐式转换的类型也能绑定)。
+            return CodeBlock.of("$L.setObject($L, $L.toDatabase($L), $T.OTHER);", "ps", index,
+                    converterField, expr, ClassName.get("java.sql", "Types"));
         }
         if (isEnum) {
             return CodeBlock.of("$L.setObject($L, $L, $T.OTHER);", "ps", index, expr,
@@ -86,23 +88,22 @@ public final class SqlCodegen {
      * 按索引构建列读取语句，并经实体 setter 映射。用于生成的 CRUD——其中 SELECT 列顺序
      * 始终与字段顺序一致。
      *
-     * @param typeName         字段类型字符串
-     * @param entityVar        实体变量名
-     * @param setterName       builder setter 方法名
-     * @param index            基于 1 的列索引
-     * @param nullable         列是否可空
-     * @param isEnum           列是否为枚举类型（{@code 枚举.valueOf(rs.getString(i))} 读取）
-     * @param converterField   转换器静态字段名（{@code CONV.toEntity(rs.getObject(i))} 读取）
-     * @param converterDbType  转换器的数据库侧类型 Y（{@code rs.getObject(i, Y.class)}）
+     * @param typeName       字段类型字符串
+     * @param entityVar      实体变量名
+     * @param setterName     builder setter 方法名
+     * @param index          基于 1 的列索引
+     * @param nullable       列是否可空
+     * @param isEnum         列是否为枚举类型（{@code 枚举.valueOf(rs.getString(i))} 读取）
+     * @param converterField 转换器静态字段名（{@code CONV.toEntity(rs.getObject(i))} 读取）
      * @return 读取代码块
      */
     public static CodeBlock readColumn(String typeName, String entityVar, String setterName, int index,
-            boolean nullable, boolean isEnum, String converterField, ClassName converterDbType) {
+            boolean nullable, boolean isEnum, String converterField) {
         if (converterField != null) {
-            // 转换器列:按数据库侧类型精确读取后经 toEntity 还原(null 透传给转换器,
-            // 无需 wasNull 分支)。
-            return CodeBlock.of("$L.$L($L.toEntity(rs.getObject($L, $T.class)));",
-                    entityVar, setterName, converterField, index, converterDbType);
+            // 转换器列:裸 rs.getObject(i) 取驱动的默认数据库表示(如 PG jsonb → PGobject),
+            // 经 toEntity 由转换器转成实体字段类型——适配任意数据库类型(null 透传)。
+            return CodeBlock.of("$L.$L($L.toEntity(rs.getObject($L)));",
+                    entityVar, setterName, converterField, index);
         }
         if (isEnum) {
             // pgjdbc 不支持 getObject(i, Class) 把 PG enum 转成 Java 枚举——读标签字符串
@@ -139,21 +140,20 @@ public final class SqlCodegen {
      * 按名称构建列读取语句，并经实体 setter 映射。用于 {@code @Query} 方法——其 SELECT 列顺序
      * 由用户控制。
      *
-     * @param typeName         字段类型字符串
-     * @param entityVar        实体变量名
-     * @param setterName       builder setter 方法名
-     * @param column           列名
-     * @param nullable         列是否可空
-     * @param isEnum           列是否为枚举类型（{@code 枚举.valueOf(rs.getString(...))} 读取）
-     * @param converterField   转换器静态字段名（{@code CONV.toEntity(rs.getObject(...))} 读取）
-     * @param converterDbType  转换器的数据库侧类型 Y（{@code rs.getObject(..., Y.class)}）
+     * @param typeName       字段类型字符串
+     * @param entityVar      实体变量名
+     * @param setterName     builder setter 方法名
+     * @param column         列名
+     * @param nullable       列是否可空
+     * @param isEnum         列是否为枚举类型（{@code 枚举.valueOf(rs.getString(...))} 读取）
+     * @param converterField 转换器静态字段名（{@code CONV.toEntity(rs.getObject(...))} 读取）
      * @return 读取代码块
      */
     public static CodeBlock readColumnByName(String typeName, String entityVar, String setterName, String column,
-            boolean nullable, boolean isEnum, String converterField, ClassName converterDbType) {
+            boolean nullable, boolean isEnum, String converterField) {
         if (converterField != null) {
-            return CodeBlock.of("$L.$L($L.toEntity(rs.getObject($S, $T.class)));",
-                    entityVar, setterName, converterField, column, converterDbType);
+            return CodeBlock.of("$L.$L($L.toEntity(rs.getObject($S)));",
+                    entityVar, setterName, converterField, column);
         }
         if (isEnum) {
             if (nullable) {

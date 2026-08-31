@@ -175,4 +175,25 @@ class PgsqlCrudTest extends PgsqlTestSupport {
         PgUser nullFound = repo.findByUserName("conv-null").get(0);
         assertNull(nullFound.externalId());
     }
+
+    /** 任意数据库类型：PG jsonb 列（驱动默认表示 PGobject）经转换器转 JSON 文本。 */
+    @Test
+    void convertJsonbColumn() throws SQLException {
+        String json = "{\"theme\": \"dark\", \"pageSize\": 50}";
+
+        PgUser saved = repo.save(repo.createEntity().userName("json").age(1).configJson(json));
+
+        PgUser found = repo.findById(saved.id());
+        assertNotNull(found);
+        assertEquals(json, found.configJson());
+
+        // 数据库实际按 jsonb 存储（SQL 层验证类型与内容）。
+        try (Connection conn = dataSource().getConnection(); Statement st = conn.createStatement()) {
+            ResultSet rs = st.executeQuery(
+                    "SELECT config_json, pg_typeof(config_json) FROM pg_users WHERE id = " + saved.id());
+            rs.next();
+            assertEquals("jsonb", rs.getString(2), "column must be stored as jsonb");
+            assertEquals(json, rs.getString(1));
+        }
+    }
 }
