@@ -6,6 +6,7 @@ import io.github.erdsgfc.jforge.annotation.And;
 import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.annotation.Or;
 import io.github.erdsgfc.jforge.annotation.Where;
+import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;

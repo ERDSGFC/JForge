@@ -3,6 +3,7 @@ package io.github.erdsgfc.jforge.processor;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
+import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import java.util.ArrayList;
 import java.util.List;
