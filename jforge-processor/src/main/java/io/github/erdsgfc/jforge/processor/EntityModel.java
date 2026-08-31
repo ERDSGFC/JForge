@@ -26,25 +26,6 @@ import java.util.*;
  */
 public final class EntityModel {
 
-    /**
-     * 返回实体接口的生成实现类名。
-     *
-     * @param entitySimpleName 实体接口的简单名,如 {@code UserEntity}
-     * @param suffix           配置的实现后缀,如 {@code "_Impl"}
-     * @return 实现的简单名,如 {@code UserEntity_Impl}
-     */
-    public static String implNameOf(String entitySimpleName, String suffix) {
-        return entitySimpleName + suffix;
-    }
-
-    /**
-     * default 属性(默认值来源)在生成的嵌套类中的默认值方法名:
-     * {@code default} + getter 名首字母大写(如 {@code createdAt} → {@code defaultCreatedAt})。
-     */
-    public static String defaultMethodName(String getterName) {
-        return "default" + Character.toUpperCase(getterName.charAt(0)) + getterName.substring(1);
-    }
-
     private TypeElement element;
     private String tableName;
     private final List<ColumnModel> columns = new ArrayList<>();
@@ -89,6 +70,7 @@ public final class EntityModel {
             this.columnName = columnName;
             // plainTypeName:剥离 TYPE_USE 注解(@Nullable 等)——否则 toString 会输出
             // "java.lang.@org.jspecify.annotations.Nullable String",破坏 JDBC 映射与 javapoet 解析。
+            // todo 是否可以直接使用 方法Types.stripAnnotations 方法
             this.typeName = TypeNameUtils.plainTypeName(returnType);
             this.returnType = returnType;
             this.getterName = fieldName;
@@ -124,6 +106,8 @@ public final class EntityModel {
         if (table != null && !table.name().isEmpty()) {
             model.tableName = table.name();
         } else {
+            // todo 结合 数据方言 的 quote 方法返回值， 在自动生成sql的时候做精确匹配，
+            //  生成数据表名称和列名称的时候使用 quote 包裹
             model.tableName = CommonUtils.camelToSnake(entity.getSimpleName().toString());
         }
 
@@ -365,29 +349,10 @@ public final class EntityModel {
         if (returnType.getKind().isPrimitive()) {
             return false;
         }
-        if (isBoxed(returnType)) {
+        if (Nullability.isBoxed(returnType)) {
             return true;
         }
-        return isNullableAnnotated(returnType) || config.columnsNullable(element);
-    }
-
-    /** 是否为 java.lang 包装类(Integer/Long/Boolean/Double/Float/Short/Byte/Character)。 */
-    private static boolean isBoxed(TypeMirror type) {
-        if (type.getKind() != TypeKind.DECLARED) {
-            return false;
-        }
-        String name = ((TypeElement) ((DeclaredType) type).asElement()).getQualifiedName().toString();
-        return switch (name) {
-            case "java.lang.Integer", "java.lang.Long", "java.lang.Boolean",
-                 "java.lang.Double", "java.lang.Float", "java.lang.Short",
-                 "java.lang.Byte", "java.lang.Character" -> true;
-            default -> false;
-        };
-    }
-
-    /** 返回类型是否标注了 JSpecify {@code @Nullable}(公共工具,见 {@link Nullability})。 */
-    private static boolean isNullableAnnotated(TypeMirror type) {
-        return Nullability.isNullable(type);
+        return Nullability.isNullable(returnType) || config.columnsNullable(element);
     }
 
     /**
@@ -428,6 +393,25 @@ public final class EntityModel {
         // 为替换后的子接口类型),生成的 @Override setter 必须返回声明处的类型才能编译。
         getter.setterReturnType = method.signature.getReturnType();
         getter.hasSetter = true;
+    }
+
+    /**
+     * 返回实体接口的生成实现类名。
+     *
+     * @param entitySimpleName 实体接口的简单名,如 {@code UserEntity}
+     * @param suffix           配置的实现后缀,如 {@code "_Impl"}
+     * @return 实现的简单名,如 {@code UserEntity_Impl}
+     */
+    public static String implNameOf(String entitySimpleName, String suffix) {
+        return entitySimpleName + suffix;
+    }
+
+    /**
+     * default 属性(默认值来源)在生成的嵌套类中的默认值方法名:
+     * {@code default} + getter 名首字母大写(如 {@code createdAt} → {@code defaultCreatedAt})。
+     */
+    public static String defaultMethodName(String getterName) {
+        return "default" + Character.toUpperCase(getterName.charAt(0)) + getterName.substring(1);
     }
 
     public String tableName() {

@@ -1,6 +1,9 @@
 package io.github.erdsgfc.jforge.processor;
 
+import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 
 /**
@@ -15,7 +18,7 @@ public final class Nullability {
     }
 
     /** 类型是否标注 JSpecify {@code @Nullable}（TYPE_USE 注解镜像遍历,不经类加载）。 */
-    static boolean isNullable(TypeMirror type) {
+    public static boolean isNullable(TypeMirror type) {
         for (var mirror : type.getAnnotationMirrors()) {
             if (mirror.getAnnotationType().toString().equals(NULLABLE)) {
                 return true;
@@ -39,5 +42,19 @@ public final class Nullability {
             }
         }
         return false;
+    }
+
+    /** 是否为 java.lang 包装类(Integer/Long/Boolean/Double/Float/Short/Byte/Character)。 */
+    public static boolean isBoxed(TypeMirror type) {
+        if (type.getKind() != TypeKind.DECLARED) {
+            return false;
+        }
+        String name = ((TypeElement) ((DeclaredType) type).asElement()).getQualifiedName().toString();
+        return switch (name) {
+            case "java.lang.Integer", "java.lang.Long", "java.lang.Boolean",
+                 "java.lang.Double", "java.lang.Float", "java.lang.Short",
+                 "java.lang.Byte", "java.lang.Character" -> true;
+            default -> false;
+        };
     }
 }
