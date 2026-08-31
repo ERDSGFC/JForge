@@ -4,6 +4,7 @@ import io.github.erdsgfc.jforge.annotation.Dialect;
 import io.github.erdsgfc.jforge.annotation.DialectSupport;
 import io.github.erdsgfc.jforge.annotation.JForgeConfig;
 import io.github.erdsgfc.jforge.annotation.NamingStrategy;
+import io.github.erdsgfc.jforge.processor.dialect.H2Dialect;
 import io.github.erdsgfc.jforge.processor.dialect.MySqlDialect;
 import io.github.erdsgfc.jforge.processor.dialect.PostgreSqlDialect;
 import io.github.erdsgfc.jforge.processor.dialect.SqliteDialect;
@@ -77,6 +78,7 @@ public final class JForgeConfigHelper {
         return switch (config != null ? config.dialect() : Dialect.POSTGRESQL) {
             case MYSQL -> new MySqlDialect();
             case SQLITE -> new SqliteDialect();
+            case H2 -> new H2Dialect();
             case POSTGRESQL -> new PostgreSqlDialect();
         };
     }

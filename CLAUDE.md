@@ -15,8 +15,10 @@ mvn clean compile
 # 全量构建 + 运行全部测试
 mvn clean install
 
-# 运行 ORM 测试（注意：测试在 jforge-bench 与 jforge-spring-boot-starter，不在 jforge-core）
+# 运行 ORM 测试（注意：测试在 jforge-bench 与 jforge-spring-boot-starter，不在 jforge-core；
+# jforge-spring-boot-pgsql 是真 PG 集成测试——本地 PG 不可达时自动跳过）
 mvn test -pl jforge-bench,jforge-spring-boot-starter
+mvn test -pl jforge-spring-boot-pgsql    # 需本地 PG；连接参数 -Djforge.pgsql.url/-Djforge.pgsql.user/-Djforge.pgsql.password
 
 # 运行单个测试类（JUnit 5）
 mvn test -pl jforge-bench -Dtest=TransactionTest
@@ -47,6 +49,7 @@ mvn -Prelease deploy
 | `jforge-core` | 框架库（**无 Spring 依赖**）：`TransactionManager`（SPI）、`SimpleTransactionManager`、`JForgeException`（带 `Code` 错误码分类 + SQL 上下文）、`JForge` 门面（`io.github.erdsgfc.jforge`）；`BaseRepository`、`TransactionOperations`、`AbstractRepository`、回调接口（`io.github.erdsgfc.jforge.core`） |
 | `jforge-bench` | ORM 集成测试（`RepositoryCrudTest`/`TransactionTest`）+ ORM vs 裸 JDBC JMH 基准 |
 | `jforge-spring-boot-starter` | Spring Boot 自动配置：注册 `SpringTransactionManager` bean（包装 `PlatformTransactionManager`），经 `@Autowired` 注入生成的仓库实现（构造器注入，无全局状态） |
+| `jforge-spring-boot-pgsql` | **真 PostgreSQL 集成测试**（不发布）：连接本地 PG 验证引用符 SQL / `INSERT ... RETURNING` 生成键 / 批量键回写 / Spring 事务 join；连接参数 `-Djforge.pgsql.url/-Djforge.pgsql.user/-Djforge.pgsql.password`（默认 `localhost:5432/jforge`、`jforge`/`jforge`），无 PG 时测试经 Assumptions 自动跳过、构建保持绿色 |
 | `jforge-lambda` | 对象创建策略的 JMH 基准（历史方法学验证） |
 
 ## 编程式事务
@@ -90,4 +93,4 @@ mvn -Prelease deploy
 - 插件版本统一在根 POM 的 `<pluginManagement>` 管理（compiler/shade/source/javadoc/gpg）；Maven Central 发布用 `mvn -Prelease deploy`（`<licenses>/<developers>/<scm>/<distributionManagement>` 已配置，SCM 地址需按实际仓库核对）
 - **改过注解处理器后**：`mvn install -pl jforge-annotation,jforge-processor -am` 后必须对消费模块 `mvn clean test`——Maven 3.9+ 增量编译在输入源码无变化时跳过 javac，`target/generated-sources` 会停留在旧 processor 生成的版本（表现为"改动没生效"，实测踩过）
 - `maven-compiler-plugin` 显式声明注解处理器（JDK 23+ 默认关闭自动注解处理）
-- 测试用内存 H2（`BIGSERIAL` 自增，PostgreSQL 模式 + `DATABASE_TO_LOWER=TRUE`——H2 的 PG 模式不折叠小写，需该参数模拟真 PG 的无引号小写折叠，与生成 SQL 的方言引用符精确匹配）
+- 测试用内存 H2（`BIGSERIAL` 自增，PostgreSQL 模式 + `DATABASE_TO_LOWER=TRUE`——H2 的 PG 模式不折叠小写，需该参数模拟真 PG 的无引号小写折叠，与生成 SQL 的方言引用符精确匹配）；**H2 测试实体所在包必须标 `@JForgeConfig(dialect = Dialect.H2)`**（POSTGRESQL 方言现启用 RETURNING，H2 2.3 不支持——不标会语法错误；有自身 package-info 的包要逐个补，配置不合并）

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.github.erdsgfc</groupId>
+        <artifactId>jforge</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>jforge-spring-boot-pgsql</artifactId>
+    <name>jforge-spring-boot-pgsql</name>
+    <description>True-PostgreSQL integration tests for the Spring Boot starter: verifies the
+        generated SQL (identifier quoting, INSERT ... RETURNING key writeback, batch
+        generated keys) and Spring transaction joining against a real PostgreSQL instance.
+        Not published; skipped when no local PostgreSQL is reachable.</description>
+
+    <properties>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <!-- The ORM core (entity/repository contracts + JForge facade). -->
+        <dependency>
+            <groupId>io.github.erdsgfc</groupId>
+            <artifactId>jforge-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The Spring Boot starter under test (auto-configuration + SpringTransactionManager). -->
+        <dependency>
+            <groupId>io.github.erdsgfc</groupId>
+            <artifactId>jforge-spring-boot-starter</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Test stack. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- PostgreSQL JDBC driver; version managed by the Spring Boot BOM. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>io.github.erdsgfc</groupId>
+                            <artifactId>jforge-processor</artifactId>
+                            <version>${project.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                    <annotationProcessors>
+                        <annotationProcessor>io.github.erdsgfc.jforge.processor.JForgeProcessor</annotationProcessor>
+                    </annotationProcessors>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

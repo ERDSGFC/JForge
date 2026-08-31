@@ -2,15 +2,15 @@ package io.github.erdsgfc.jforge.processor.dialect;
 
 import io.github.erdsgfc.jforge.annotation.DialectSupport;
 
-/** PostgreSQL / H2（MODE=PostgreSQL）的内建方言实现（编译期使用，不进框架 jar）。 */
+/** PostgreSQL（真 PG）的内建方言实现（编译期使用，不进框架 jar）——H2 请用 {@link H2Dialect}。 */
 public final class PostgreSqlDialect implements DialectSupport {
 
     @Override
     public boolean supportsReturningKeys() {
-        // 暂不启用:INSERT ... RETURNING 是真 PG 的优化路径,但 H2 2.3(测试库,同样
-        // 走 POSTGRESQL 方言)不支持该语法——方言无法区分两者,统一走 JDBC 标准
-        // getGeneratedKeys。待引入独立 H2 方言或运行时驱动探测后再启用。
-        return false;
+        // INSERT ... RETURNING 是真 PG 官方推荐的生成键路径(单语句拿 id,优于
+        // getGeneratedKeys);H2 已有独立方言(H2Dialect,不支持该语法),POSTGRESQL
+        // 枚举值现仅代表真 PG。
+        return true;
     }
 
     @Override

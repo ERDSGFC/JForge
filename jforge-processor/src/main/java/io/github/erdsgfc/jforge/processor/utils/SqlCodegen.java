@@ -35,6 +35,25 @@ public final class SqlCodegen {
     }
 
     /**
+     * 构建实体字段的绑定语句：可空列走 {@code ps.setObject(index, expr)}——setXxx
+     * 对 {@code null} 值自动拆箱抛 NPE（如 {@code setInt} 接收 {@code Integer} null），
+     * 而 setObject 天然把 null 绑定为 SQL NULL、非 null 值由驱动按参数推断类型；
+     * 非可空列与 {@link #bindParam(String, String, int)} 相同（类型精确 setXxx）。
+     *
+     * @param typeName 字段类型字符串
+     * @param expr     值表达式（实体 getter 调用）
+     * @param index    基于 1 的占位符索引（编译期常量）
+     * @param nullable 列是否可空（可空实体字段可能在运行时为 {@code null}）
+     * @return 绑定代码块
+     */
+    public static CodeBlock bindParam(String typeName, String expr, int index, boolean nullable) {
+        if (nullable) {
+            return CodeBlock.of("$L.setObject($L, $L);", "ps", index, expr);
+        }
+        return bindParam(typeName, expr, index);
+    }
+
+    /**
      * 构建带运行时索引表达式的类型精确参数绑定语句，用于遍历变长参数列表的循环内部。
      *
      * @param typeName  参数的声明类型

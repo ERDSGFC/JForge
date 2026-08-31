@@ -13,10 +13,11 @@ public enum Dialect {
     POSTGRESQL,   // PostgreSQL / H2（MODE=PostgreSQL）
     MYSQL,        // MySQL / MariaDB
     SQLITE        // SQLite（3.35+）
+    H2            // H2（含 MODE=PostgreSQL 模式）
 }
 ```
 
-H2 测试库走 `POSTGRESQL` 方言（`MODE=PostgreSQL` 下支持 `BIGSERIAL`/`RETURNING`）。
+H2 有独立方言（`Dialect.H2`，`MODE=PostgreSQL` 下 `BIGSERIAL`/引用符与 PG 等价，但 2.3 不支持 `RETURNING`——生成键走 JDBC 标准）。
 
 ## 2. 核心原则：编译期决策，而非运行时分发
 
@@ -34,8 +35,8 @@ H2 测试库走 `POSTGRESQL` 方言（`MODE=PostgreSQL` 下支持 `BIGSERIAL`/`R
 无方言对象、无动态分发、无反射
 ```
 
-- `Dialect` 枚举（内建 PG/MySQL 的配置值）与 `DialectSupport` 接口（用户扩展点）→ jforge-annotation
-- 内建实现（`PostgreSqlDialect`/`MySqlDialect`）与加载逻辑 → 只存在于处理器，是编译期实现细节
+- `Dialect` 枚举（内建 PG/MySQL/SQLite/H2 的配置值）与 `DialectSupport` 接口（用户扩展点）→ jforge-annotation
+- 内建实现（`PostgreSqlDialect`/`MySqlDialect`/`SqliteDialect`/`H2Dialect`）与加载逻辑 → 只存在于处理器，是编译期实现细节
 
 ## 3. 数据库差异全景（按维度）
 
@@ -75,11 +76,11 @@ H2 测试库走 `POSTGRESQL` 方言（`MODE=PostgreSQL` 下支持 `BIGSERIAL`/`R
 
 | 方式 | 数据库 | 说明 |
 |---|---|---|
-| `Statement.RETURN_GENERATED_KEYS` | JDBC 标准，PG/H2/MySQL 都支持 | 通用路径（JForge 当前实现） |
-| `INSERT ... RETURNING id` | PostgreSQL / H2 | **单语句拿 id**，PG 官方推荐，比 getGeneratedKeys 更优 |
+| `INSERT ... RETURNING id` | PostgreSQL / SQLite | **单语句拿 id**（`supportsReturningKeys=true`），PG 官方推荐，比 getGeneratedKeys 更优（JForge 当前实现） |
+| `Statement.RETURN_GENERATED_KEYS` | JDBC 标准，H2/MySQL/PG 批量 都支持 | 通用路径（H2/MySQL 方言、全部批量 save） |
 | `getGeneratedKeys` 批量限制 | MySQL Connector/J 旧版 | **只返回批量中最后一条的键**——批量回写需要驱动支持（H2/PG 支持） |
 
-**影响**：save 的生成键回写路径。方言差异点：PG/H2 可走 `RETURNING` 优化路径，MySQL 必须走 JDBC 标准路径。**这是现在就有性能收益的方言项**（框架定位"与手写 JDBC 等效"——手写 PG 代码就会用 RETURNING）。
+**影响**：save 的生成键回写路径。方言差异点：PG/SQLite 走 `RETURNING` 优化路径（`ps.executeQuery()` 单语句拿键），H2/MySQL 走 JDBC 标准路径。**这是现在就有性能收益的方言项**（框架定位"与手写 JDBC 等效"——手写 PG 代码就会用 RETURNING）。批量 save 恒走 JDBC 标准（驱动对批量 `RETURNING` 结果集的读取差异大）。
 
 ### 3.4 分页
 
@@ -252,7 +253,7 @@ DialectSupport support = config.dialectClass().isEmpty()
 
 ```java
 final class PostgreSqlDialect implements DialectSupport {
-    public boolean supportsReturningKeys() { return false; }  // 暂未启用,见下
+    public boolean supportsReturningKeys() { return true; }  // 真 PG 优化路径
     public String serialType()   { return "BIGSERIAL"; }
     public String quote()        { return "\""; }
     public String limitClause()  { return "LIMIT ? OFFSET ?"; }
@@ -263,25 +264,27 @@ final class PostgreSqlDialect implements DialectSupport {
 // ON DUPLICATE KEY、1
 // SqliteDialect：supportsReturningKeys=true（3.35+，官方推荐 RETURNING）、
 // INTEGER PRIMARY KEY AUTOINCREMENT、"、LIMIT ? OFFSET ?、ON CONFLICT、1
+// H2Dialect：supportsReturningKeys=false（2.3 不支持 RETURNING，走 JDBC 标准）、
+// BIGSERIAL、"、LIMIT ? OFFSET ?、ON CONFLICT、TRUE
 ```
 
-> **PostgreSqlDialect 的 `supportsReturningKeys` 当前为 false 的原因**：`INSERT ... RETURNING` 是真 PG 的优化路径，但 H2 2.3（测试库，同样走 `POSTGRESQL` 方言）**实测不支持该语法**（三种形式均语法错误）——方言无法区分两者，统一走 JDBC 标准 `getGeneratedKeys`。待引入独立 H2 方言或运行时驱动探测后再启用（接口与生成分支已就位，改返回值即生效）。
+> **PostgreSqlDialect 的 `supportsReturningKeys` 已启用（true）**：`INSERT ... RETURNING` 是真 PG 官方推荐的生成键路径，单语句拿 id。曾因 H2 2.3（测试库，无独立方言时同样走 `POSTGRESQL`）实测不支持该语法而关闭——现 H2 已有独立方言（`H2Dialect`，`supportsReturningKeys=false`），`POSTGRESQL` 枚举值仅代表真 PG，优化路径已落地并经真 PG 集成测试模块（`jforge-spring-boot-pgsql`）验证。
 >
 > **SqliteDialect 的 `supportsReturningKeys` 为 true**：SQLite 3.35+（2021）支持 `INSERT ... RETURNING`，xerial JDBC 驱动内置引擎均为新版本——RETURNING 是官方推荐的生成键方式（`getGeneratedKeys` 在 SQLite 上等价于 `last_insert_rowid()`）。旧版本引擎需降级。
 
 ### 5.4 生成形态示例（save 生成键回写——方言就位后的两种形态）
 
 ```java
-// PostgreSqlDialect（supportsReturningKeys=true 时）→ RETURNING（单语句拿 id）
-try (PreparedStatement ps = conn.prepareStatement("INSERT INTO users (...) VALUES (...) RETURNING id")) {
+// PostgreSqlDialect（supportsReturningKeys=true，当前 PG 实际形态）→ RETURNING（单语句拿 id）
+try (PreparedStatement ps = conn.prepareStatement("INSERT INTO \"users\" (...) VALUES (...) RETURNING \"id\"")) {
     try (ResultSet rs = ps.executeQuery()) {
         rs.next();
         entity.id(rs.getLong(1));
     }
 }
 
-// 当前实际形态（两内建方言均走 JDBC 标准）→ getGeneratedKeys
-try (PreparedStatement ps = conn.prepareStatement("INSERT INTO users (...) VALUES (...)",
+// H2/MySQL 方言（supportsReturningKeys=false）→ getGeneratedKeys
+try (PreparedStatement ps = conn.prepareStatement("INSERT INTO \"users\" (...) VALUES (...)",
         Statement.RETURN_GENERATED_KEYS)) {
     ps.executeUpdate();
     try (ResultSet keys = ps.getGeneratedKeys()) { /* 回写 */ }
@@ -292,7 +295,7 @@ try (PreparedStatement ps = conn.prepareStatement("INSERT INTO users (...) VALUE
 
 1. **方言选择一次完成**：`SqlCodegen`/`SqlFieldGenerator` 接收 `DialectSupport`，生成点只查 `support.xxx`——不散落 `if (dialect == X)`
 2. **降级策略**：方言只影响"生成什么"；JDBC 标准路径永远是兜底（如驱动不支持 `RETURNING` 时降级 `getGeneratedKeys`）
-3. **H2 走 POSTGRESQL 方言**：`MODE=PostgreSQL` 下 `BIGSERIAL`/`RETURNING` 均支持——测试即方言验证
+3. **H2 有独立方言**（`Dialect.H2`）：`MODE=PostgreSQL` 下 `BIGSERIAL`/引用符与 PG 等价，但 2.3 不支持 `RETURNING`——测试库必须显式标 H2 方言（`POSTGRESQL` 现仅指真 PG）
 4. **处理器内实例化不违反"运行时零反射"**：`Class.forName`/`newInstance` 是编译期工具逻辑；生成的代码不含任何方言对象——运行时依旧零方言、零分发
 5. **不做运行时方言**：方言对象/分发不进框架 jar——那是 MyBatis 的形态，与 JForge 定位冲突
 
@@ -300,8 +303,8 @@ try (PreparedStatement ps = conn.prepareStatement("INSERT INTO users (...) VALUE
 
 | 阶段 | 方言项 | 状态 |
 |---|---|---|
-| 现在 | `Dialect` 枚举 + `configHelper.dialect()` | ✅ 已存在（未接线） |
-| 近期 | `DialectSupport` 接口 + `dialectClass` 配置 + 内建两实现 + save 的 `RETURNING` 优化路径 | 待落地（PG 下即有性能收益） |
+| 现在 | `Dialect` 枚举 + `configHelper.dialect()` + 引用符包裹 | ✅ 已接线 |
+| 近期 | `DialectSupport` 接口 + `dialectClass` 配置 + 内建四实现 + save 的 `RETURNING` 优化路径 | ✅ 已落地（PG/SQLite 启用；真 PG 经 `jforge-spring-boot-pgsql` 验证） |
 | 中期 | DDL 生成（`serialType`/类型映射/`booleanLiteral`） | 需要方言最重的部分 |
 | 远期 | UPSERT（`upsertClause`）、分页（`limitClause`）、锁/NULL 排序 | 特性驱动扩展 |
 

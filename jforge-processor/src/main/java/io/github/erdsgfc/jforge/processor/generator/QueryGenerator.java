@@ -94,8 +94,13 @@ public final class QueryGenerator {
             if (query == null) {
                 continue;
             }
-            builder.addMethod(queryMethod(info, method, query, builder, embedded, connection,
-                    preparedStatement, resultSet, sqlException));
+            // queryMethod 校验失败时返回 null（已报错）——跳过而非 addMethod(null)，
+            // 否则 javapoet 抛 NPE 掩盖真实编译错误（与 @Select/@Update/@Delete 同规则）。
+            MethodSpec impl = queryMethod(info, method, query, builder, embedded, connection,
+                    preparedStatement, resultSet, sqlException);
+            if (impl != null) {
+                builder.addMethod(impl);
+            }
         }
     }
 

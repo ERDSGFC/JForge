@@ -68,8 +68,8 @@ public final class SqlFieldGenerator {
 
     static String saveSql(JForgeProcessor.DaoInfo info, JForgeConfigHelper configHelper) {
         String sql = insertSql(info);
-        // PG/H2 方言:生成主键走 INSERT ... RETURNING(单语句拿 id,优于 getGeneratedKeys);
-        // MySQL 方言走 JDBC 标准路径。
+        // PG/SQLite 方言:生成主键走 INSERT ... RETURNING(单语句拿 id,优于 getGeneratedKeys);
+        // H2/MySQL 方言走 JDBC 标准路径。
         DialectSupport dialect = configHelper.dialectSupport(info.element);
         if (info.model.idGenerated() && dialect.supportsReturningKeys()) {
             sql += " RETURNING " + SqlCodegen.quoteIdentifier(dialect, info.model.idColumn().columnName);

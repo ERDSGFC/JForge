@@ -312,7 +312,7 @@ package com.example.data;
 
 | 属性 | 默认 | 说明 |
 |---|---|---|
-| `dialect` | POSTGRESQL | SQL 方言 |
+| `dialect` | POSTGRESQL | SQL 方言：POSTGRESQL（真 PG，生成键走 `INSERT ... RETURNING`）/ MYSQL / SQLITE / H2（2.3 不支持 RETURNING，走 JDBC 标准）——**H2 测试/应用必须显式标 `Dialect.H2`**，`POSTGRESQL` 现仅用于真 PG |
 | `naming` | NONE | 列名推断策略(无 @Column 时) |
 | `implSuffix` | `_Impl` | 生成类后缀(仓库 impl 及其嵌套的实体 impl) |
 | `springBeans` | false | 生成 `@Repository` + `@Autowired` 构造器 |

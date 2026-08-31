@@ -104,8 +104,8 @@ public final class CrudGenerator {
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         EntityModel model = info.model;
         List<EntityModel.ColumnModel> insertColumns = SqlCodegen.insertColumns(model);
-        // PG/H2 方言:saveSql 含 RETURNING,executeQuery 单语句拿生成键(无需 executeUpdate
-        // 后再 getGeneratedKeys);MySQL 方言走 JDBC 标准路径。
+        // PG/SQLite 方言:saveSql 含 RETURNING,executeQuery 单语句拿生成键(无需 executeUpdate
+        // 后再 getGeneratedKeys);H2/MySQL 方言走 JDBC 标准路径。
         boolean returning = model.idGenerated()
                 && configHelper.dialectSupport(info.element).supportsReturningKeys();
         MethodSpec.Builder method = MethodSpec.methodBuilder("save")
@@ -117,7 +117,8 @@ public final class CrudGenerator {
                 model.idGenerated() && !returning, configHelper.logSql(info.element));
         int index = 1;
         for (EntityModel.ColumnModel column : insertColumns) {
-            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"), index++));
+            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"),
+                    index++, column.nullable));
             method.addCode("\n");
         }
         if (!returning) {
@@ -242,7 +243,8 @@ public final class CrudGenerator {
             List<EntityModel.ColumnModel> columns) {
         int index = 1;
         for (EntityModel.ColumnModel column : columns) {
-            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"), index++));
+            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"),
+                    index++, column.nullable));
             method.addCode("\n");
         }
     }
@@ -487,11 +489,12 @@ public final class CrudGenerator {
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "updateSql", false, configHelper.logSql(info.element));
         int index = 1;
         for (EntityModel.ColumnModel column : updateColumns) {
-            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"), index++));
+            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"),
+                    index++, column.nullable));
             method.addCode("\n");
         }
         method.addCode(SqlCodegen.bindParam(model.idColumn().typeName,
-                "entity." + model.idColumn().getterName + "()", index));
+                "entity." + model.idColumn().getterName + "()", index, model.idColumn().nullable));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
         SqlCodegen.endTxBlock(method, sqlException, "update", info.model.tableName(), SqlFieldGenerator.updateSql(info), configHelper.logSql(info.element));
