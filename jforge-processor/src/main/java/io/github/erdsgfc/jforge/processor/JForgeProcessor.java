@@ -64,6 +64,7 @@ public class JForgeProcessor extends AbstractProcessor {
         public String idTypeName;
         public EntityModel model;
         public String implName;
+        public boolean springBean = false;
     }
 
     @Override
@@ -207,20 +208,29 @@ public class JForgeProcessor extends AbstractProcessor {
                         .build());
         // if/else-if/else 链：分支互斥语义显式化（每个分支都 return，独立的 if 行为等价，
         // 但 else-if 防止未来改动破坏互斥），最后的 else 兜底未匹配类型。
-        for (int i = 0; i < daos.size(); i++) {
-            DaoInfo info = daos.get(i);
-            if (i == 0) {
-                create.beginControlFlow("if (type == $T.class)", ClassName.get(info.daoPackage, info.daoSimpleName));
-            } else {
-                create.nextControlFlow("else if (type == $T.class)", ClassName.get(info.daoPackage, info.daoSimpleName));
+        boolean first = true;
+        for (DaoInfo info : daos) {
+            if (!info.springBean) {
+                if (first) {
+                    create.beginControlFlow("if (type == $T.class)", ClassName.get(info.daoPackage, info.daoSimpleName));
+                    first = false;
+                } else {
+                    create.nextControlFlow("else if (type == $T.class)", ClassName.get(info.daoPackage, info.daoSimpleName));
+                }
+                create.addStatement("return ($T) new $T(dataSource, transactionManager)", t,
+                        ClassName.get(info.daoPackage, info.implName));
             }
-            create.addStatement("return ($T) new $T(dataSource, transactionManager)", t,
-                    ClassName.get(info.daoPackage, info.implName));
         }
-        create.nextControlFlow("else")
-                .addStatement("throw new $T($S + type.getName())", IllegalArgumentException.class,
-                        "No generated repository for type: ")
-                .endControlFlow();
+        if (first) {
+            create.addStatement("throw new $T($S + type.getName())", IllegalArgumentException.class,
+                            "No generated repository for type: ");
+        } else  {
+            create.nextControlFlow("else")
+                    .addStatement("throw new $T($S + type.getName())", IllegalArgumentException.class,
+                            "No generated repository for type: ")
+                    .endControlFlow();
+        }
+
         TypeSpec.Builder factories = TypeSpec.classBuilder(BASE_REPOSITORY_FACTORY.getClassName())
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
