@@ -122,6 +122,33 @@ public interface UserEntity {
 - setter 必须有同名 getter,且参数类型与 getter 返回类型一致
 - 列名不能重复
 
+### 2.1 自定义类型转换(`@Convert`)
+
+标在 getter 上,用自定义转换器处理 Java 类型 ↔ 数据库类型的转换(如把 `UUID`/`LocalDate`
+存为 VARCHAR 文本、枚举存为字符串等):
+
+```java
+// 转换器:实现 JForgeConverter<X, Y>(X = 实体字段类型, Y = 数据库侧类型),
+// 公开无参构造器;toDatabase/toEntity 必须接受并透传 null。
+public final class UuidStringConverter implements JForgeConverter<UUID, String> {
+    @Override public String toDatabase(UUID attribute) { return attribute == null ? null : attribute.toString(); }
+    @Override public UUID toEntity(String dbData) { return dbData == null ? null : UUID.fromString(dbData); }
+}
+
+// 实体:getter 标 @Convert,处理器编译期把转换调用生成进 JDBC 代码。
+public interface User {
+    @Convert(converter = UuidStringConverter.class)
+    UUID externalId();
+    User externalId(UUID externalId);
+}
+```
+
+- 绑定:`ps.setObject(i, CONVERTER_X.toDatabase(entity.getter()))`;读取:
+  `setter(CONVERTER_X.toEntity(rs.getObject(i, Y.class)))`——转换器以 `private static final`
+  字段嵌入生成的仓库 impl,运行时零反射
+- 转换器类可与实体同批编译(处理器经 `MirroredTypeException` 读取类型镜像)或预编译
+- 转换列的 null 透传给转换器,`nullable`/枚举判定不参与;列名仍按 `@Column`/命名策略
+
 ## 3. 定义仓库
 
 仓库是继承 `BaseRepository<T, ID>` 的接口(必须**直接继承**,不支持间接继承/泛型中间层):

@@ -105,7 +105,8 @@ abstract class PgsqlTestSupport {
                     "weight REAL," +
                     "level SMALLINT," +
                     "avatar BYTEA," +
-                    "status pg_user_status)");
+                    "status pg_user_status," +
+                    "external_id VARCHAR(36))");
         }
     }
 }

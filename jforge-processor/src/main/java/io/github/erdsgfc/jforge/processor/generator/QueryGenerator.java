@@ -475,6 +475,12 @@ public final class QueryGenerator {
             ctx = new EmbeddedEntity(impl, model);
             embedded.put(entityElement.getQualifiedName().toString(), ctx);
             builder.addType(EntityGenerator.buildImpl(model));
+            // @Convert 列的转换器实例字段(嵌入实体;字段名含实体名,与宿主字段不冲突)。
+            for (EntityModel.ColumnModel column : model.columns()) {
+                if (column.converter != null) {
+                    builder.addField(SqlCodegen.converterField(model, column));
+                }
+            }
         }
         ClassName impl = ctx.impl;
         EntityModel model = ctx.model;
@@ -514,10 +520,14 @@ public final class QueryGenerator {
                     return;
                 }
                 spec.addCode(SqlCodegen.readColumn(column.typeName, "e", column.setterName, pos + 1,
-                        column.nullable, column.isEnum));
+                        column.nullable, column.isEnum,
+                        column.converter != null ? SqlCodegen.converterFieldName(model, column) : null,
+                        column.converterDbType));
             } else {
                 spec.addCode(SqlCodegen.readColumnByName(column.typeName, "e", column.setterName,
-                        column.columnName, column.nullable, column.isEnum));
+                        column.columnName, column.nullable, column.isEnum,
+                        column.converter != null ? SqlCodegen.converterFieldName(model, column) : null,
+                        column.converterDbType));
             }
             spec.addCode("\n");
         }

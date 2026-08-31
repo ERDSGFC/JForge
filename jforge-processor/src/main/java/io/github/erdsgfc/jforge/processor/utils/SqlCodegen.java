@@ -2,9 +2,12 @@ package io.github.erdsgfc.jforge.processor.utils;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import io.github.erdsgfc.jforge.annotation.DialectSupport;
 import io.github.erdsgfc.jforge.processor.EntityModel;
+
+import javax.lang.model.element.Modifier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,17 +42,23 @@ public final class SqlCodegen {
      * 对 {@code null} 值自动拆箱抛 NPE（如 {@code setInt} 接收 {@code Integer} null），
      * 而 setObject 天然把 null 绑定为 SQL NULL、非 null 值由驱动按参数推断类型；
      * 枚举列走 {@code setObject(index, expr, Types.OTHER)}——pgjdbc 对无显式类型的
-     * 枚举对象无法推断 SQL 类型；非可空列与 {@link #bindParam(String, String, int)}
-     * 相同（类型精确 setXxx）。
+     * 枚举对象无法推断 SQL 类型；转换器列走 {@code setObject(i, CONV.toDatabase(expr))}；
+     * 非可空列与 {@link #bindParam(String, String, int)} 相同（类型精确 setXxx）。
      *
-     * @param typeName 字段类型字符串
-     * @param expr     值表达式（实体 getter 调用）
-     * @param index    基于 1 的占位符索引（编译期常量）
-     * @param nullable 列是否可空（可空实体字段可能在运行时为 {@code null}）
-     * @param isEnum   列是否为枚举类型
+     * @param typeName      字段类型字符串
+     * @param expr          值表达式（实体 getter 调用）
+     * @param index         基于 1 的占位符索引（编译期常量）
+     * @param nullable      列是否可空（可空实体字段可能在运行时为 {@code null}）
+     * @param isEnum        列是否为枚举类型
+     * @param converterField 转换器静态字段名（@Convert 列；{@code null} = 无转换器）
      * @return 绑定代码块
      */
-    public static CodeBlock bindParam(String typeName, String expr, int index, boolean nullable, boolean isEnum) {
+    public static CodeBlock bindParam(String typeName, String expr, int index, boolean nullable, boolean isEnum,
+            String converterField) {
+        if (converterField != null) {
+            return CodeBlock.of("$L.setObject($L, $L.toDatabase($L));", "ps", index,
+                    converterField, expr);
+        }
         if (isEnum) {
             return CodeBlock.of("$L.setObject($L, $L, $T.OTHER);", "ps", index, expr,
                     ClassName.get("java.sql", "Types"));
@@ -77,16 +86,24 @@ public final class SqlCodegen {
      * 按索引构建列读取语句，并经实体 setter 映射。用于生成的 CRUD——其中 SELECT 列顺序
      * 始终与字段顺序一致。
      *
-     * @param typeName   字段类型字符串
-     * @param entityVar  实体变量名
-     * @param setterName builder setter 方法名
-     * @param index      基于 1 的列索引
-     * @param nullable   列是否可空
-     * @param isEnum     列是否为枚举类型（{@code 枚举.valueOf(rs.getString(i))} 读取）
+     * @param typeName         字段类型字符串
+     * @param entityVar        实体变量名
+     * @param setterName       builder setter 方法名
+     * @param index            基于 1 的列索引
+     * @param nullable         列是否可空
+     * @param isEnum           列是否为枚举类型（{@code 枚举.valueOf(rs.getString(i))} 读取）
+     * @param converterField   转换器静态字段名（{@code CONV.toEntity(rs.getObject(i))} 读取）
+     * @param converterDbType  转换器的数据库侧类型 Y（{@code rs.getObject(i, Y.class)}）
      * @return 读取代码块
      */
     public static CodeBlock readColumn(String typeName, String entityVar, String setterName, int index,
-            boolean nullable, boolean isEnum) {
+            boolean nullable, boolean isEnum, String converterField, ClassName converterDbType) {
+        if (converterField != null) {
+            // 转换器列:按数据库侧类型精确读取后经 toEntity 还原(null 透传给转换器,
+            // 无需 wasNull 分支)。
+            return CodeBlock.of("$L.$L($L.toEntity(rs.getObject($L, $T.class)));",
+                    entityVar, setterName, converterField, index, converterDbType);
+        }
         if (isEnum) {
             // pgjdbc 不支持 getObject(i, Class) 把 PG enum 转成 Java 枚举——读标签字符串
             // 后 valueOf（可空列对 NULL 返回 null）。
@@ -122,16 +139,22 @@ public final class SqlCodegen {
      * 按名称构建列读取语句，并经实体 setter 映射。用于 {@code @Query} 方法——其 SELECT 列顺序
      * 由用户控制。
      *
-     * @param typeName   字段类型字符串
-     * @param entityVar  实体变量名
-     * @param setterName builder setter 方法名
-     * @param column     列名
-     * @param nullable   列是否可空
-     * @param isEnum     列是否为枚举类型（{@code 枚举.valueOf(rs.getString(...))} 读取）
+     * @param typeName         字段类型字符串
+     * @param entityVar        实体变量名
+     * @param setterName       builder setter 方法名
+     * @param column           列名
+     * @param nullable         列是否可空
+     * @param isEnum           列是否为枚举类型（{@code 枚举.valueOf(rs.getString(...))} 读取）
+     * @param converterField   转换器静态字段名（{@code CONV.toEntity(rs.getObject(...))} 读取）
+     * @param converterDbType  转换器的数据库侧类型 Y（{@code rs.getObject(..., Y.class)}）
      * @return 读取代码块
      */
     public static CodeBlock readColumnByName(String typeName, String entityVar, String setterName, String column,
-            boolean nullable, boolean isEnum) {
+            boolean nullable, boolean isEnum, String converterField, ClassName converterDbType) {
+        if (converterField != null) {
+            return CodeBlock.of("$L.$L($L.toEntity(rs.getObject($S, $T.class)));",
+                    entityVar, setterName, converterField, column, converterDbType);
+        }
         if (isEnum) {
             if (nullable) {
                 return CodeBlock.of("$T $L = rs.getString($S);\n$L.$L($L == null ? null : $T.valueOf($L));",
@@ -294,6 +317,34 @@ public final class SqlCodegen {
                 .nextControlFlow("finally")
                 .addStatement("releaseConnection(conn)")
                 .endControlFlow();
+    }
+
+    /**
+     * 转换器列的静态字段名：{@code CONVERTER_<实体简单名大写>_<字段名大写>}——字段按列
+     * 唯一（同实体两列不可能同字段名），宿主实体与 {@code @Query} 嵌入实体各自生成
+     * 字段时因实体名不同不会冲突。
+     *
+     * @param model  转换器列所属的实体模型
+     * @param column 标了 {@code @Convert} 的列
+     * @return 生成的 impl 中该转换器的静态字段名
+     */
+    public static String converterFieldName(EntityModel model, EntityModel.ColumnModel column) {
+        return "CONVERTER_" + model.entitySimpleName().toUpperCase() + "_" + column.fieldName.toUpperCase();
+    }
+
+    /**
+     * 构造转换器实例的静态字段：{@code private static final XxxConverter
+     * CONVERTER_X_Y = new XxxConverter();}（转换器须有公开无参构造器）。
+     *
+     * @param model  转换器列所属的实体模型
+     * @param column 标了 {@code @Convert} 的列
+     * @return 转换器字段规格
+     */
+    public static FieldSpec converterField(EntityModel model, EntityModel.ColumnModel column) {
+        return FieldSpec.builder(column.converter, converterFieldName(model, column),
+                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("new $T()", column.converter)
+                .build();
     }
 
     /**

@@ -1,6 +1,8 @@
 package io.github.erdsgfc.jforge.processor;
 
+import com.palantir.javapoet.ClassName;
 import io.github.erdsgfc.jforge.annotation.Column;
+import io.github.erdsgfc.jforge.annotation.Convert;
 import io.github.erdsgfc.jforge.annotation.GeneratedValue;
 import io.github.erdsgfc.jforge.annotation.Id;
 import io.github.erdsgfc.jforge.annotation.NamingStrategy;
@@ -14,6 +16,7 @@ import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.ExecutableType;
+import javax.lang.model.type.MirroredTypeException;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
@@ -70,10 +73,18 @@ public final class EntityModel {
          *  {@code getObject(i, Class)} 不支持把 PG enum 转成 Java 枚举);绑定走
          *  {@code setObject(i, v, Types.OTHER)}(无显式类型时驱动无法推断枚举的 SQL 类型)。 */
         public final boolean isEnum;
+        /** 自定义类型转换器(@Convert 标注)——非 null 时绑定/读取经
+         *  {@code converter.toDatabase/toEntity} 转换(setObject/getObject 路径,
+         *  null 透传给转换器);与 nullable/isEnum 互斥(converter 优先)。 */
+        public final ClassName converter;
+        /** 转换器的数据库侧类型 Y({@code JForgeConverter<X, Y>} 的第二个实参,如
+         *  {@code String})——生成 {@code rs.getObject(i, Y.class)} 精确读取后再
+         *  {@code toEntity}(接口的 {@code toEntity(Y)} 签名无法接收裸 {@code Object})。 */
+        public final ClassName converterDbType;
 
         ColumnModel(String fieldName, String columnName, TypeMirror returnType, boolean isId, boolean generated,
                 boolean defaultGetter, boolean insertable, boolean updatable, boolean nullable, boolean isEnum,
-                Types types) {
+                ClassName converter, ClassName converterDbType, Types types) {
             this.fieldName = fieldName;
             this.columnName = columnName;
             // Types.stripAnnotations(JDK 21+)深度剥离全部 TYPE_USE 注解(@Nullable 等)——
@@ -90,6 +101,8 @@ public final class EntityModel {
             this.updatable = updatable;
             this.nullable = nullable;
             this.isEnum = isEnum;
+            this.converter = converter;
+            this.converterDbType = converterDbType;
         }
     }
 
@@ -345,12 +358,57 @@ public final class EntityModel {
                 write != WritePolicy.INSERT_ONLY && write != WritePolicy.NONE,
                 isNullable(method),
                 isEnum(method),
+                converterOf(element)[0],
+                converterOf(element)[1],
                 types);
         if (isId) {
             idColumn = columnModel;
             idGenerated = generated;
         }
         columns.add(columnModel);
+    }
+
+    /**
+     * 读取 getter 上的 {@code @Convert} 标注:Class 类型属性在注解处理环境中访问时
+     * 总抛 {@code MirroredTypeException}(javac 不加载用户类),经其携带的 TypeMirror
+     * 恢复转换器类型元素——转换器类可为同批源码,不要求已编译。类型约束
+     * ({@code extends JForgeConverter})由注解声明保证,无需处理器强校验。
+     *
+     * @return {@code [转换器类, 数据库侧类型 Y]}；无标注时 {@code [null, null]}
+     */
+    private ClassName[] converterOf(ExecutableElement element) {
+        Convert convert = element.getAnnotation(Convert.class);
+        if (convert == null) {
+            return new ClassName[] {null, null};
+        }
+        try {
+            convert.converter(); // 必填属性:访问即触发 MirroredTypeException
+        } catch (MirroredTypeException e) {
+            TypeMirror mirror = e.getTypeMirror();
+            if (mirror.getKind() == TypeKind.DECLARED) {
+                DeclaredType converterType = (DeclaredType) mirror;
+                ClassName converterClass = ClassName.get((TypeElement) converterType.asElement());
+                // 数据库侧类型 = 转换器实现的 JForgeConverter<X, Y> 接口的第二个实参
+                // (经 directSupertypes 沿继承链展开;仅支持声明类型,如 String/UUID)。
+                for (TypeMirror sup : types.directSupertypes(converterType)) {
+                    if (sup.getKind() != TypeKind.DECLARED) {
+                        continue;
+                    }
+                    DeclaredType supDeclared = (DeclaredType) sup;
+                    TypeElement supElement = (TypeElement) supDeclared.asElement();
+                    if (supElement.getQualifiedName().contentEquals(
+                            "io.github.erdsgfc.jforge.annotation.JForgeConverter")
+                            && supDeclared.getTypeArguments().size() == 2) {
+                        TypeMirror dbType = supDeclared.getTypeArguments().get(1);
+                        if (dbType.getKind() == TypeKind.DECLARED) {
+                            return new ClassName[] {converterClass,
+                                    ClassName.get((TypeElement) ((DeclaredType) dbType).asElement())};
+                        }
+                    }
+                }
+            }
+        }
+        return new ClassName[] {null, null};
     }
 
     /** 列是否为枚举类型(枚举字段的 JDBC 映射路径与常规类型不同,见 {@link ColumnModel#isEnum})。 */

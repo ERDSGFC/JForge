@@ -11,6 +11,7 @@ import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
 import io.github.erdsgfc.jforge.processor.generator.*;
+import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Element;
@@ -135,6 +136,13 @@ public final class RepositoryGenerator {
         // 固定 SQL 常量字段（命名引用，避免方法体内散落字符串字面量）。
         for (FieldSpec field : SqlFieldGenerator.sqlFields(info, configHelper)) {
             builder.addField(field);
+        }
+
+        // @Convert 列的转换器实例字段（宿主实体；@Query 嵌入实体在 QueryGenerator 生成）。
+        for (EntityModel.ColumnModel column : info.model.columns()) {
+            if (column.converter != null) {
+                builder.addField(SqlCodegen.converterField(info.model, column));
+            }
         }
 
         // 行映射 helper 与 CRUD 方法。

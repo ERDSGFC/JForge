@@ -4,7 +4,10 @@ import io.github.erdsgfc.jforge.core.JForge;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -146,5 +149,30 @@ class PgsqlCrudTest extends PgsqlTestSupport {
         assertNull(found.level());
         assertNull(found.avatar());
         assertNull(found.status());
+        assertNull(found.externalId());
+    }
+
+    /** @Convert 自定义转换器：UUID ↔ VARCHAR 文本在真 PG 上的绑定与读取。 */
+    @Test
+    void convertRoundTrip() throws SQLException {
+        java.util.UUID externalId = java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+
+        PgUser saved = repo.save(repo.createEntity().userName("conv").age(1).externalId(externalId));
+
+        PgUser found = repo.findById(saved.id());
+        assertNotNull(found);
+        assertEquals(externalId, found.externalId());
+
+        // 数据库实际存储转换后的 UUID 文本。
+        try (Connection conn = dataSource().getConnection(); Statement st = conn.createStatement()) {
+            ResultSet rs = st.executeQuery("SELECT external_id FROM pg_users WHERE id = " + saved.id());
+            rs.next();
+            assertEquals("550e8400-e29b-41d4-a716-446655440000", rs.getString(1));
+        }
+
+        // null 透传。
+        repo.save(repo.createEntity().userName("conv-null").age(2));
+        PgUser nullFound = repo.findByUserName("conv-null").get(0);
+        assertNull(nullFound.externalId());
     }
 }

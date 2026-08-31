@@ -1,6 +1,7 @@
 package io.github.erdsgfc.jforge.pgsql;
 
 import io.github.erdsgfc.jforge.annotation.Column;
+import io.github.erdsgfc.jforge.annotation.Convert;
 import io.github.erdsgfc.jforge.annotation.GeneratedValue;
 import io.github.erdsgfc.jforge.annotation.Id;
 import io.github.erdsgfc.jforge.annotation.Table;
@@ -97,4 +98,10 @@ public interface PgUser {
     PgUserStatus status();
 
     PgUser status(PgUserStatus status);
+
+    /** 外部 ID——VARCHAR 列经 {@link UuidStringConverter} 存 UUID 文本（@Convert 验证）。 */
+    @Convert(converter = UuidStringConverter.class)
+    java.util.UUID externalId();
+
+    PgUser externalId(java.util.UUID externalId);
 }
