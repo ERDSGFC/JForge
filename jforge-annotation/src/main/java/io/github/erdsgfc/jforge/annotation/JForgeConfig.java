@@ -48,6 +48,14 @@ public @interface JForgeConfig {
     NamingStrategy naming() default NamingStrategy.NONE;
 
     /**
+     * 当没有 {@code @Table} 注解（或 {@code name} 为空）时使用的表名推断策略
+     * （默认 {@link NamingStrategy#CAMEL_TO_SNAKE}——snake_case 表名是数据库惯例，
+     * 与列名策略相互独立：列名默认 {@code NONE} 保持原样，表名默认 snake）。
+     * {@code NONE} 时表名 = 实体接口简单名原样（如 {@code UserEntity}）。
+     */
+    NamingStrategy tableNaming() default NamingStrategy.CAMEL_TO_SNAKE;
+
+    /**
      * 生成的仓库实现类是否标注 Spring {@code @Repository}，并去掉 {@code final}
      * （final 类无法被 CGLIB 代理）；构造器标注 {@code @Autowired}（接收
      * {@code DataSource} 与 {@code TransactionManager}），由 Spring Boot 组件扫描

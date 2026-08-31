@@ -89,6 +89,12 @@ public final class JForgeConfigHelper {
         return config != null ? config.naming() : NamingStrategy.NONE;
     }
 
+    /** 读取配置的表名推断策略(默认 {@link NamingStrategy#CAMEL_TO_SNAKE})。 */
+    public NamingStrategy tableNaming(Element element) {
+        JForgeConfig config = configFor(element);
+        return config != null ? config.tableNaming() : NamingStrategy.CAMEL_TO_SNAKE;
+    }
+
     /** 返回实现类后缀(默认 {@code "_Impl"})。 */
     public String implSuffix(Element element) {
         JForgeConfig config = configFor(element);

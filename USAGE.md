@@ -314,6 +314,7 @@ package com.example.data;
 |---|---|---|
 | `dialect` | POSTGRESQL | SQL 方言：POSTGRESQL（真 PG，生成键走 `INSERT ... RETURNING`）/ MYSQL / SQLITE / H2（2.3 不支持 RETURNING，走 JDBC 标准）——**H2 测试/应用必须显式标 `Dialect.H2`**，`POSTGRESQL` 现仅用于真 PG |
 | `naming` | NONE | 列名推断策略(无 @Column 时) |
+| `tableNaming` | CAMEL_TO_SNAKE | 表名推断策略(无 @Table 或 name 为空时)；`NONE` = 实体接口名原样 |
 | `implSuffix` | `_Impl` | 生成类后缀(仓库 impl 及其嵌套的实体 impl) |
 | `springBeans` | false | 生成 `@Repository` + `@Autowired` 构造器 |
 | `logSql` | false | 生成 SQL DEBUG/WARN 日志代码(开启才有日志开销) |

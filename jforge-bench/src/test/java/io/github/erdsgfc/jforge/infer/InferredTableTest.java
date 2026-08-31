@@ -53,4 +53,21 @@ class InferredTableTest {
         repo.deleteById(saved.id());
         assertEquals(0, repo.count());
     }
+
+    /** {@code tableNaming = NONE}：无 @Table 时表名 = 实体简单名原样（非 snake_case）。 */
+    @Test
+    void tableNamingNoneKeepsEntityNameAsIs() throws SQLException {
+        ExactNameRepository exactRepo = new JForge(ds).repository(ExactNameRepository.class);
+        try (Connection conn = ds.getConnection(); Statement st = conn.createStatement()) {
+            // 原样表名含大写——建表与查询两端都无引号，靠折叠规则匹配（与列名 NONE 语义一致）。
+            st.execute("DROP TABLE IF EXISTS ExactNameEntity");
+            st.execute("CREATE TABLE ExactNameEntity (id BIGSERIAL PRIMARY KEY, name VARCHAR(100))");
+        }
+
+        ExactNameEntity saved = exactRepo.save(exactRepo.createEntity().name("exact").id(null));
+
+        assertNotNull(saved.id());
+        assertEquals(1, exactRepo.count(), "must hit the as-is table name ExactNameEntity");
+        assertEquals("exact", exactRepo.findById(saved.id()).name());
+    }
 }

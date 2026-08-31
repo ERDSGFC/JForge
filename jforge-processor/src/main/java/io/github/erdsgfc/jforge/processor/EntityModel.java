@@ -3,6 +3,7 @@ package io.github.erdsgfc.jforge.processor;
 import io.github.erdsgfc.jforge.annotation.Column;
 import io.github.erdsgfc.jforge.annotation.GeneratedValue;
 import io.github.erdsgfc.jforge.annotation.Id;
+import io.github.erdsgfc.jforge.annotation.NamingStrategy;
 import io.github.erdsgfc.jforge.annotation.Table;
 import io.github.erdsgfc.jforge.annotation.WritePolicy;
 import io.github.erdsgfc.jforge.processor.generator.core.EntityGenerator;
@@ -108,9 +109,12 @@ public final class EntityModel {
         if (table != null && !table.name().isEmpty()) {
             model.tableName = table.name();
         } else {
-            // 表名/列名在模型里保持原始名（重名列检测、@Condition 字段解析、错误消息都用它）；
-            // 方言引用符（保留字/精确匹配）在 SQL 发射点统一经 SqlCodegen.quoteIdentifier 包裹。
-            model.tableName = CommonUtils.camelToSnake(entity.getSimpleName().toString());
+            // 无 @Table 时的表名推断策略(@JForgeConfig.tableNaming,默认 CAMEL_TO_SNAKE);
+            // 表名/列名在模型里保持原始名(重名列检测、@Condition 字段解析、错误消息都用它),
+            // 方言引用符(保留字/精确匹配)在 SQL 发射点统一经 SqlCodegen.quoteIdentifier 包裹。
+            model.tableName = config.tableNaming(entity) == NamingStrategy.CAMEL_TO_SNAKE
+                    ? CommonUtils.camelToSnake(entity.getSimpleName().toString())
+                    : entity.getSimpleName().toString();
         }
 
         // 收集实体接口及其全部父接口(递归)声明的方法,子接口在前、父接口在后:
