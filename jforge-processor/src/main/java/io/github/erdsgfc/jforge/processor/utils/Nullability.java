@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.utils;
 
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
