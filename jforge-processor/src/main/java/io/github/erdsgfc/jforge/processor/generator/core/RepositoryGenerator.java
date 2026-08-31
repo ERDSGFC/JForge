@@ -97,6 +97,7 @@ public final class RepositoryGenerator {
                 .addSuperinterface(daoClass)
                 .superclass(ABSTRACT_REPOSITORY.getJavaPoetClassName());
         if (springBeans) {
+            info.springBean = true;
             builder.addAnnotation(AnnotationSpec.builder(SPRING_REPOSITORY.getJavaPoetClassName()).build());
         }
         // 宿主实体 impl 作为 private static final 嵌套类嵌入仓库 impl（私有嵌套类无法共享，
