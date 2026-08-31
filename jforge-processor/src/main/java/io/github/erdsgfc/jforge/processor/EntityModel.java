@@ -5,6 +5,7 @@ import io.github.erdsgfc.jforge.annotation.GeneratedValue;
 import io.github.erdsgfc.jforge.annotation.Id;
 import io.github.erdsgfc.jforge.annotation.Table;
 import io.github.erdsgfc.jforge.annotation.WritePolicy;
+import io.github.erdsgfc.jforge.processor.generator.core.EntityGenerator;
 import io.github.erdsgfc.jforge.processor.utils.CommonUtils;
 import io.github.erdsgfc.jforge.processor.utils.Nullability;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;

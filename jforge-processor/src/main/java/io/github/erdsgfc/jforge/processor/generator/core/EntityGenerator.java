@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.generator.core;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.FieldSpec;
@@ -6,6 +6,7 @@ import com.palantir.javapoet.MethodSpec;
 import javax.lang.model.element.Modifier;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
+import io.github.erdsgfc.jforge.processor.EntityModel;
 
 /**
  * 把 {@code @Table} 实体接口组装成实现类 {@code Xxx_Impl} 的类规格（TypeSpec）：

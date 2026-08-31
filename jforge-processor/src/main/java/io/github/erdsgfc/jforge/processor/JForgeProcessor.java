@@ -4,6 +4,7 @@ import com.google.auto.service.AutoService;
 import com.palantir.javapoet.*;
 import io.github.erdsgfc.jforge.annotation.Dao;
 import io.github.erdsgfc.jforge.annotation.JForgeConfig;
+import io.github.erdsgfc.jforge.processor.generator.core.RepositoryGenerator;
 import io.github.erdsgfc.jforge.processor.utils.CommonUtils;
 
 import javax.annotation.processing.*;

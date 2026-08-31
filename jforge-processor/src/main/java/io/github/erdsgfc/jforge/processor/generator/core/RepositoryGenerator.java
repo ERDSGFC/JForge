@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge.processor;
+package io.github.erdsgfc.jforge.processor.generator.core;
 
 import com.palantir.javapoet.AnnotationSpec;
 import com.palantir.javapoet.ClassName;
@@ -7,6 +7,9 @@ import com.palantir.javapoet.JavaFile;
 import com.palantir.javapoet.MethodSpec;
 import javax.lang.model.element.Modifier;
 import com.palantir.javapoet.TypeSpec;
+import io.github.erdsgfc.jforge.processor.EntityModel;
+import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
+import io.github.erdsgfc.jforge.processor.JForgeProcessor;
 import io.github.erdsgfc.jforge.processor.generator.*;
 
 import javax.annotation.processing.ProcessingEnvironment;
@@ -38,7 +41,7 @@ public final class RepositoryGenerator {
     private final UpdateGenerator updateGenerator;
     private final DeleteGenerator deleteGenerator;
 
-    RepositoryGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper) {
+    public RepositoryGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper) {
         this.processingEnv = processingEnv;
         this.configHelper = configHelper;
         this.crudGenerator = new CrudGenerator(configHelper);
@@ -53,7 +56,7 @@ public final class RepositoryGenerator {
      *
      * @param info 已解析的仓库信息
      */
-    void generate(JForgeProcessor.DaoInfo info) {
+    public void generate(JForgeProcessor.DaoInfo info) {
         TypeSpec typeSpec = buildImpl(info);
         try {
             JavaFile.builder(info.daoPackage, typeSpec)
