@@ -8,6 +8,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -23,8 +24,7 @@ class PgsqlCrudTest extends PgsqlTestSupport {
 
     @BeforeEach
     void setUp() throws SQLException {
-        createTable("pg_users", "id BIGSERIAL PRIMARY KEY, user_name VARCHAR(100), age INT, "
-                + "\"order\" INT, city VARCHAR(100), street VARCHAR(100), created_at TIMESTAMP");
+        createPgUsersTable();
         jforge = new JForge(dataSource());
         repo = jforge.repository(PgUserRepository.class);
     }
@@ -101,5 +101,50 @@ class PgsqlCrudTest extends PgsqlTestSupport {
         assertEquals("shanghai", found.city());
         assertEquals("nanjing", found.street());
         assertNotNull(found.createdAt());
+    }
+
+    /** 全字段类型 round-trip：BOOLEAN/NUMERIC/DATE/DOUBLE/REAL/SMALLINT/BYTEA/PG 枚举。 */
+    @Test
+    void allTypesRoundTrip() {
+        byte[] avatar = {1, 2, 3, -4, 5};
+        PgUser saved = repo.save(repo.createEntity()
+                .userName("types").age(30).order(1)
+                .active(true)
+                .balance(new java.math.BigDecimal("1234.56"))
+                .birthDate(java.time.LocalDate.of(2000, 1, 2))
+                .height(1.75)
+                .weight(65.5f)
+                .level((short) 3)
+                .avatar(avatar)
+                .status(PgUserStatus.ACTIVE));
+
+        PgUser found = repo.findById(saved.id());
+        assertNotNull(found);
+        assertEquals(Boolean.TRUE, found.active());
+        assertEquals(new java.math.BigDecimal("1234.56"), found.balance());
+        assertEquals(java.time.LocalDate.of(2000, 1, 2), found.birthDate());
+        assertEquals(1.75, found.height(), 1e-9);
+        assertEquals(65.5f, found.weight(), 1e-6f);
+        assertEquals((short) 3, found.level());
+        assertArrayEquals(avatar, found.avatar());
+        assertEquals(PgUserStatus.ACTIVE, found.status());
+    }
+
+    /** 全类型列留 null 时读回 null（可空 boxed 走 wasNull、String 等天然 null）。 */
+    @Test
+    void allTypesNullRoundTrip() {
+        PgUser saved = repo.save(repo.createEntity().userName("nulls").age(1));
+
+        PgUser found = repo.findById(saved.id());
+
+        assertNotNull(found);
+        assertNull(found.active(), "Boolean null must read back as null (wasNull path)");
+        assertNull(found.balance());
+        assertNull(found.birthDate());
+        assertNull(found.height());
+        assertNull(found.weight());
+        assertNull(found.level());
+        assertNull(found.avatar());
+        assertNull(found.status());
     }
 }

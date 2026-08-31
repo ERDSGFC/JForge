@@ -84,8 +84,7 @@ class PgsqlSpringTransactionTest extends PgsqlTestSupport {
 
     @BeforeEach
     void setUp() throws SQLException {
-        createTable("pg_users", "id BIGSERIAL PRIMARY KEY, user_name VARCHAR(100), age INT, "
-                + "\"order\" INT, city VARCHAR(100), street VARCHAR(100), created_at TIMESTAMP");
+        createPgUsersTable();
     }
 
     /** @Transactional 提交：save 参与外层事务，方法正常返回后数据可见。 */

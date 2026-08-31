@@ -66,9 +66,14 @@ public final class EntityModel {
          *  JSpecify {@code @Nullable} 标注或全局配置默认。可空列的行映射生成
          *  {@code ResultSet.wasNull()} 判断(null 读回为 null 而非 0/空串)。 */
         public final boolean nullable;
+        /** 列是否为枚举类型:行映射走 {@code 枚举.valueOf(rs.getString(i))}(pgjdbc 的
+         *  {@code getObject(i, Class)} 不支持把 PG enum 转成 Java 枚举);绑定走
+         *  {@code setObject(i, v, Types.OTHER)}(无显式类型时驱动无法推断枚举的 SQL 类型)。 */
+        public final boolean isEnum;
 
         ColumnModel(String fieldName, String columnName, TypeMirror returnType, boolean isId, boolean generated,
-                boolean defaultGetter, boolean insertable, boolean updatable, boolean nullable, Types types) {
+                boolean defaultGetter, boolean insertable, boolean updatable, boolean nullable, boolean isEnum,
+                Types types) {
             this.fieldName = fieldName;
             this.columnName = columnName;
             // Types.stripAnnotations(JDK 21+)深度剥离全部 TYPE_USE 注解(@Nullable 等)——
@@ -84,6 +89,7 @@ public final class EntityModel {
             this.insertable = insertable;
             this.updatable = updatable;
             this.nullable = nullable;
+            this.isEnum = isEnum;
         }
     }
 
@@ -338,12 +344,20 @@ public final class EntityModel {
                 write != WritePolicy.UPDATE_ONLY && write != WritePolicy.NONE,
                 write != WritePolicy.INSERT_ONLY && write != WritePolicy.NONE,
                 isNullable(method),
+                isEnum(method),
                 types);
         if (isId) {
             idColumn = columnModel;
             idGenerated = generated;
         }
         columns.add(columnModel);
+    }
+
+    /** 列是否为枚举类型(枚举字段的 JDBC 映射路径与常规类型不同,见 {@link ColumnModel#isEnum})。 */
+    private boolean isEnum(MethodInfo method) {
+        TypeMirror returnType = method.signature.getReturnType();
+        return returnType.getKind() == TypeKind.DECLARED
+                && ((TypeElement) ((DeclaredType) returnType).asElement()).getKind() == ElementKind.ENUM;
     }
 
     /**
@@ -357,6 +371,10 @@ public final class EntityModel {
             return false;
         }
         if (Nullability.isBoxed(returnType)) {
+            return true;
+        }
+        // 枚举是引用类型,实体未设置时恒为 null——与包装类同规则恒可空。
+        if (isEnum(method)) {
             return true;
         }
         return Nullability.isNullable(returnType) || config.columnsNullable(element);

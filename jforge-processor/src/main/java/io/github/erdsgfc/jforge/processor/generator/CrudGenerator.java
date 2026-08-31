@@ -118,7 +118,7 @@ public final class CrudGenerator {
         int index = 1;
         for (EntityModel.ColumnModel column : insertColumns) {
             method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"),
-                    index++, column.nullable));
+                    index++, column.nullable, column.isEnum));
             method.addCode("\n");
         }
         if (!returning) {
@@ -244,7 +244,7 @@ public final class CrudGenerator {
         int index = 1;
         for (EntityModel.ColumnModel column : columns) {
             method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"),
-                    index++, column.nullable));
+                    index++, column.nullable, column.isEnum));
             method.addCode("\n");
         }
     }
@@ -490,11 +490,11 @@ public final class CrudGenerator {
         int index = 1;
         for (EntityModel.ColumnModel column : updateColumns) {
             method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"),
-                    index++, column.nullable));
+                    index++, column.nullable, column.isEnum));
             method.addCode("\n");
         }
         method.addCode(SqlCodegen.bindParam(model.idColumn().typeName,
-                "entity." + model.idColumn().getterName + "()", index, model.idColumn().nullable));
+                "entity." + model.idColumn().getterName + "()", index, model.idColumn().nullable, false));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
         SqlCodegen.endTxBlock(method, sqlException, "update", info.model.tableName(), SqlFieldGenerator.updateSql(info), configHelper.logSql(info.element));
@@ -721,7 +721,7 @@ public final class CrudGenerator {
         for (int i = 0; i < columns.size(); i++) {
             EntityModel.ColumnModel column = columns.get(i);
             method.addCode(SqlCodegen.readColumn(column.typeName, "e", column.setterName, i + 1,
-                    column.nullable));
+                    column.nullable, column.isEnum));
             method.addCode("\n");
         }
         method.addStatement("return e");

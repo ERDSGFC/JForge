@@ -76,4 +76,36 @@ abstract class PgsqlTestSupport {
             st.execute("CREATE TABLE " + table + " (" + ddl + ")");
         }
     }
+
+    /** 建 {@code pg_users} 表：覆盖全部受测数据库字段类型（含 PG 原生枚举）。 */
+    static void createPgUsersTable() throws SQLException {
+        try (Connection conn = dataSource().getConnection(); Statement st = conn.createStatement()) {
+            st.execute("DROP TABLE IF EXISTS pg_users");
+            // 枚举类型只建一次、不重建:CREATE TYPE 每次产生新 OID,而 pgjdbc 在连接上
+            // 缓存类型 OID——重建会让已缓存的连接报 "cache lookup failed for type"。
+            try {
+                st.execute("CREATE TYPE pg_user_status AS ENUM ('ACTIVE', 'INACTIVE')");
+            } catch (SQLException e) {
+                if (!"42710".equals(e.getSQLState())) { // 42710 = duplicate_object
+                    throw e;
+                }
+            }
+            st.execute("CREATE TABLE pg_users (" +
+                    "id BIGSERIAL PRIMARY KEY," +
+                    "user_name VARCHAR(100)," +
+                    "age INT," +
+                    "\"order\" INT," +
+                    "city VARCHAR(100)," +
+                    "street VARCHAR(100)," +
+                    "created_at TIMESTAMP," +
+                    "active BOOLEAN," +
+                    "balance NUMERIC(12,2)," +
+                    "birth_date DATE," +
+                    "height DOUBLE PRECISION," +
+                    "weight REAL," +
+                    "level SMALLINT," +
+                    "avatar BYTEA," +
+                    "status pg_user_status)");
+        }
+    }
 }

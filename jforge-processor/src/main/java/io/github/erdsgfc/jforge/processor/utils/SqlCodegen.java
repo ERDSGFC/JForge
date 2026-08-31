@@ -38,15 +38,22 @@ public final class SqlCodegen {
      * 构建实体字段的绑定语句：可空列走 {@code ps.setObject(index, expr)}——setXxx
      * 对 {@code null} 值自动拆箱抛 NPE（如 {@code setInt} 接收 {@code Integer} null），
      * 而 setObject 天然把 null 绑定为 SQL NULL、非 null 值由驱动按参数推断类型；
-     * 非可空列与 {@link #bindParam(String, String, int)} 相同（类型精确 setXxx）。
+     * 枚举列走 {@code setObject(index, expr, Types.OTHER)}——pgjdbc 对无显式类型的
+     * 枚举对象无法推断 SQL 类型；非可空列与 {@link #bindParam(String, String, int)}
+     * 相同（类型精确 setXxx）。
      *
      * @param typeName 字段类型字符串
      * @param expr     值表达式（实体 getter 调用）
      * @param index    基于 1 的占位符索引（编译期常量）
      * @param nullable 列是否可空（可空实体字段可能在运行时为 {@code null}）
+     * @param isEnum   列是否为枚举类型
      * @return 绑定代码块
      */
-    public static CodeBlock bindParam(String typeName, String expr, int index, boolean nullable) {
+    public static CodeBlock bindParam(String typeName, String expr, int index, boolean nullable, boolean isEnum) {
+        if (isEnum) {
+            return CodeBlock.of("$L.setObject($L, $L, $T.OTHER);", "ps", index, expr,
+                    ClassName.get("java.sql", "Types"));
+        }
         if (nullable) {
             return CodeBlock.of("$L.setObject($L, $L);", "ps", index, expr);
         }
@@ -74,10 +81,23 @@ public final class SqlCodegen {
      * @param entityVar  实体变量名
      * @param setterName builder setter 方法名
      * @param index      基于 1 的列索引
+     * @param nullable   列是否可空
+     * @param isEnum     列是否为枚举类型（{@code 枚举.valueOf(rs.getString(i))} 读取）
      * @return 读取代码块
      */
     public static CodeBlock readColumn(String typeName, String entityVar, String setterName, int index,
-            boolean nullable) {
+            boolean nullable, boolean isEnum) {
+        if (isEnum) {
+            // pgjdbc 不支持 getObject(i, Class) 把 PG enum 转成 Java 枚举——读标签字符串
+            // 后 valueOf（可空列对 NULL 返回 null）。
+            if (nullable) {
+                return CodeBlock.of("$T $L = rs.getString($L);\n$L.$L($L == null ? null : $T.valueOf($L));",
+                        String.class, "vs", index, entityVar, setterName, "vs",
+                        TypeNameUtils.toTypeName(typeName), "vs");
+            }
+            return CodeBlock.of("$L.$L($T.valueOf(rs.getString($L)));",
+                    entityVar, setterName, TypeNameUtils.toTypeName(typeName), index);
+        }
         String getter = TypeNameUtils.jdbcGetter(typeName);
         if (getter.equals("getObject")) {
             // LocalDate/LocalDateTime/enums: getObject(index, Class) 对 NULL 列天然返回 null,
@@ -106,10 +126,21 @@ public final class SqlCodegen {
      * @param entityVar  实体变量名
      * @param setterName builder setter 方法名
      * @param column     列名
+     * @param nullable   列是否可空
+     * @param isEnum     列是否为枚举类型（{@code 枚举.valueOf(rs.getString(...))} 读取）
      * @return 读取代码块
      */
     public static CodeBlock readColumnByName(String typeName, String entityVar, String setterName, String column,
-            boolean nullable) {
+            boolean nullable, boolean isEnum) {
+        if (isEnum) {
+            if (nullable) {
+                return CodeBlock.of("$T $L = rs.getString($S);\n$L.$L($L == null ? null : $T.valueOf($L));",
+                        String.class, "vs", column, entityVar, setterName, "vs",
+                        TypeNameUtils.toTypeName(typeName), "vs");
+            }
+            return CodeBlock.of("$L.$L($T.valueOf(rs.getString($S)));",
+                    entityVar, setterName, TypeNameUtils.toTypeName(typeName), column);
+        }
         String getter = TypeNameUtils.jdbcGetter(typeName);
         if (getter.equals("getObject")) {
             // getObject 对 NULL 列天然返回 null——可空与否形态一致,无需 wasNull 分支。

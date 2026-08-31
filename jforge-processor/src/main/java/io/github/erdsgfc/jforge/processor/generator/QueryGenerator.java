@@ -514,10 +514,10 @@ public final class QueryGenerator {
                     return;
                 }
                 spec.addCode(SqlCodegen.readColumn(column.typeName, "e", column.setterName, pos + 1,
-                        column.nullable));
+                        column.nullable, column.isEnum));
             } else {
                 spec.addCode(SqlCodegen.readColumnByName(column.typeName, "e", column.setterName,
-                        column.columnName, column.nullable));
+                        column.columnName, column.nullable, column.isEnum));
             }
             spec.addCode("\n");
         }

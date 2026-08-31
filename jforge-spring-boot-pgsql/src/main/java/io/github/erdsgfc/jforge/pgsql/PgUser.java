@@ -55,4 +55,46 @@ public interface PgUser {
     }
 
     PgUser createdAt(java.time.LocalDateTime createdAt);
+
+    // ---- 各种数据库字段类型（真 PG 上的 JDBC 绑定/读取矩阵验证）----
+
+    /** 布尔 → BOOLEAN。 */
+    Boolean active();
+
+    PgUser active(Boolean active);
+
+    /** 高精度小数 → NUMERIC。 */
+    java.math.BigDecimal balance();
+
+    PgUser balance(java.math.BigDecimal balance);
+
+    /** 日期 → DATE（getObject 路径）。 */
+    java.time.LocalDate birthDate();
+
+    PgUser birthDate(java.time.LocalDate birthDate);
+
+    /** 双精度 → DOUBLE PRECISION。 */
+    Double height();
+
+    PgUser height(Double height);
+
+    /** 单精度 → REAL。 */
+    Float weight();
+
+    PgUser weight(Float weight);
+
+    /** 短整型 → SMALLINT。 */
+    Short level();
+
+    PgUser level(Short level);
+
+    /** 字节数组 → BYTEA。 */
+    byte[] avatar();
+
+    PgUser avatar(byte[] avatar);
+
+    /** 枚举 → PG 原生枚举类型（CREATE TYPE ... AS ENUM）。 */
+    PgUserStatus status();
+
+    PgUser status(PgUserStatus status);
 }

@@ -24,8 +24,7 @@ class PgsqlDeclarativeQueryTest extends PgsqlTestSupport {
 
     @BeforeEach
     void setUp() throws SQLException {
-        createTable("pg_users", "id BIGSERIAL PRIMARY KEY, user_name VARCHAR(100), age INT, "
-                + "\"order\" INT, city VARCHAR(100), street VARCHAR(100), created_at TIMESTAMP");
+        createPgUsersTable();
         jforge = new JForge(dataSource());
         repo = jforge.repository(PgUserRepository.class);
         repo.save(repo.createEntity().userName("qin").age(25).order(1).city("shanghai").street("nanjing"));

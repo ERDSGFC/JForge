@@ -23,8 +23,7 @@ class PgsqlReturningKeysTest extends PgsqlTestSupport {
 
     @BeforeEach
     void setUp() throws SQLException {
-        createTable("pg_users", "id BIGSERIAL PRIMARY KEY, user_name VARCHAR(100), age INT, "
-                + "\"order\" INT, city VARCHAR(100), street VARCHAR(100), created_at TIMESTAMP");
+        createPgUsersTable();
         createTable("pg_auto_id_users", "id BIGSERIAL PRIMARY KEY, user_name VARCHAR(100), age INT");
         jforge = new JForge(dataSource());
     }
