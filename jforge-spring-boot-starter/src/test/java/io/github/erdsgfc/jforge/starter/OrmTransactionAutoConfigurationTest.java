@@ -2,6 +2,7 @@ package io.github.erdsgfc.jforge.starter;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import io.github.erdsgfc.jforge.core.TransactionManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -40,7 +41,7 @@ class OrmTransactionAutoConfigurationTest {
             // 自动配置必须恰好注册一个 SpringTransactionManager
             // Bean——即注入到生成仓库的管理器。
             assertThat(context).hasSingleBean(SpringTransactionManager.class);
-            assertThat(context).hasSingleBean(io.github.erdsgfc.jforge.TransactionManager.class);
+            assertThat(context).hasSingleBean(TransactionManager.class);
         });
     }
 

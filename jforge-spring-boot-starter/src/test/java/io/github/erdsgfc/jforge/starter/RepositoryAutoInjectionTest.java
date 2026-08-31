@@ -2,8 +2,8 @@ package io.github.erdsgfc.jforge.starter;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import io.github.erdsgfc.jforge.SimpleTransactionManager;
-import io.github.erdsgfc.jforge.TransactionManager;
+import io.github.erdsgfc.jforge.core.SimpleTransactionManager;
+import io.github.erdsgfc.jforge.core.TransactionManager;
 import io.github.erdsgfc.jforge.starter.autoinject.AutoUserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

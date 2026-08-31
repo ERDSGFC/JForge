@@ -5,6 +5,7 @@ import io.github.erdsgfc.jforge.annotation.GeneratedValue;
 import io.github.erdsgfc.jforge.annotation.Id;
 import io.github.erdsgfc.jforge.annotation.Table;
 import io.github.erdsgfc.jforge.annotation.WritePolicy;
+import io.github.erdsgfc.jforge.processor.utils.CommonUtils;
 
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;

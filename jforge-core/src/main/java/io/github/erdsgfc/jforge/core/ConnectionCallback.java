@@ -23,7 +23,7 @@ public interface ConnectionCallback<T> {
     /**
      * 在共享连接上执行工作。可能抛出 {@link SQLException}——
      * {@link TransactionOperations#execute} 会将其包装为
-     * {@link io.github.erdsgfc.jforge.JForgeException} 并回滚;任何非受检异常同样
+     * {@link JForgeException} 并回滚;任何非受检异常同样
      * 触发回滚并原样传播。
      *
      * @param conn 绑定到活动事务的连接,或由活动连接作用域共享的连接

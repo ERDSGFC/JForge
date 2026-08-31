@@ -5,10 +5,10 @@ import com.palantir.javapoet.ClassName;
 public enum ClassEnum {
 
     BASE_REPOSITORY("io.github.erdsgfc.jforge.core", "BaseRepository"),
-    BASE_REPOSITORY_FACTORY("io.github.erdsgfc.jforge.generated", "Repositories"),
-    TRANSACTION_MANAGER("io.github.erdsgfc.jforge", "TransactionManager"),
+    BASE_REPOSITORY_FACTORY("io.github.erdsgfc.jforge.core.generated", "Repositories"),
+    TRANSACTION_MANAGER("io.github.erdsgfc.jforge.core", "TransactionManager"),
     ABSTRACT_REPOSITORY("io.github.erdsgfc.jforge.core", "AbstractRepository"),
-    ORM_EXCEPTION("io.github.erdsgfc.jforge", "JForgeException"),
+    ORM_EXCEPTION("io.github.erdsgfc.jforge.core", "JForgeException"),
     JDBC_DATA_SOURCE("javax.sql", "DataSource"),
     JDBC_RESULT_SET("java.sql", "ResultSet"),
     JDBC_STATEMENT("java.sql", "Statement"),

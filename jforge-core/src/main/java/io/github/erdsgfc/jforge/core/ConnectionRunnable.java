@@ -13,7 +13,7 @@ import java.sql.SQLException;
  *
  * <p>与 {@link ConnectionCallback} 一样,回调接收事务绑定(或作用域共享)的
  * {@link Connection} 做裸 JDBC 控制;{@link SQLException} 会被包装为
- * {@link io.github.erdsgfc.jforge.JForgeException} 并回滚(作用域场景则无回滚——
+ * {@link JForgeException} 并回滚(作用域场景则无回滚——
  * 已执行的语句保持已提交)。</p>
  */
 @FunctionalInterface

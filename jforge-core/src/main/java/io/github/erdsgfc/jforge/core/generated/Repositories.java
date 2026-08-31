@@ -1,6 +1,6 @@
-package io.github.erdsgfc.jforge.generated;
+package io.github.erdsgfc.jforge.core.generated;
 
-import io.github.erdsgfc.jforge.TransactionManager;
+import io.github.erdsgfc.jforge.core.TransactionManager;
 
 import javax.sql.DataSource;
 

@@ -18,7 +18,7 @@ public interface ConnectionParamCallback<T, P> {
 
     /**
      * 在共享连接上、使用提供的参数执行工作。可能抛出 {@link SQLException}——
-     * 调用方会将其包装为 {@link io.github.erdsgfc.jforge.JForgeException} 并回滚。
+     * 调用方会将其包装为 {@link JForgeException} 并回滚。
      *
      * @param conn  绑定到活动事务的连接,或由活动连接作用域共享的连接
      * @param param 外部提供的参数

@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge;
+package io.github.erdsgfc.jforge.core;
 
 /**
  * ORM 在连接、SQL、事务、映射和配置错误时抛出的运行时异常。

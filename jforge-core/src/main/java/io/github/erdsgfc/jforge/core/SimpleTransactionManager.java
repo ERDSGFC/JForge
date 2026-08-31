@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge;
+package io.github.erdsgfc.jforge.core;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -12,7 +12,7 @@ import java.sql.SQLException;
  * 只需副作用、无需 {@code return null} 的工作体。
  *
  * <p>回调接收事务绑定(或作用域共享)的 {@link Connection} 与用户提供的参数;
- * {@link SQLException} 会被包装为 {@link io.github.erdsgfc.jforge.JForgeException}
+ * {@link SQLException} 会被包装为 {@link JForgeException}
  * 并回滚(作用域场景则无回滚——已执行的语句保持已提交)。</p>
  *
  * @param <P> 外部提供的参数类型

@@ -2,7 +2,7 @@ package io.github.erdsgfc.jforge.inherit;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import io.github.erdsgfc.jforge.JForge;
+import io.github.erdsgfc.jforge.core.JForge;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

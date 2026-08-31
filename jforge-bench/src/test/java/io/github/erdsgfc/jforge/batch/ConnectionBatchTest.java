@@ -1,5 +1,5 @@
 package io.github.erdsgfc.jforge.batch;
-import io.github.erdsgfc.jforge.JForge;
+import io.github.erdsgfc.jforge.core.JForge;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;

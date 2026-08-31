@@ -1,7 +1,5 @@
 package io.github.erdsgfc.jforge.core;
 
-import io.github.erdsgfc.jforge.TransactionManager;
-
 import javax.sql.DataSource;
 import java.sql.Connection;
 

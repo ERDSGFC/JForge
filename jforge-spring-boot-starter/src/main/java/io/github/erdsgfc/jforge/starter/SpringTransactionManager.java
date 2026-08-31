@@ -1,7 +1,8 @@
 package io.github.erdsgfc.jforge.starter;
 
-import io.github.erdsgfc.jforge.JForgeException;
-import io.github.erdsgfc.jforge.TransactionManager;
+import io.github.erdsgfc.jforge.core.JForgeException;
+import io.github.erdsgfc.jforge.core.SimpleTransactionManager;
+import io.github.erdsgfc.jforge.core.TransactionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
@@ -21,7 +22,7 @@ import java.sql.SQLException;
 /**
  * 基于 Spring 的 {@link PlatformTransactionManager} 实现的 {@link TransactionManager}，
  * 由 {@code jforge-spring-boot-starter} 自动配置提供，作为注入到生成仓库的 Bean
- * （取代内置的 {@link io.github.erdsgfc.jforge.SimpleTransactionManager}）。
+ * （取代内置的 {@link SimpleTransactionManager}）。
  *
  * <p>每个方法都委托给标准 Spring 工具类，因此在此开始的事务完全参与 Spring 的
  * 事务设施：

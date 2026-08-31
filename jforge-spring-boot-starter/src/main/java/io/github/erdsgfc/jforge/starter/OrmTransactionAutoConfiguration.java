@@ -1,6 +1,6 @@
 package io.github.erdsgfc.jforge.starter;
 
-import io.github.erdsgfc.jforge.TransactionManager;
+import io.github.erdsgfc.jforge.core.TransactionManager;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;

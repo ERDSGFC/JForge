@@ -1,7 +1,7 @@
 package io.github.erdsgfc.jforge.starter;
-import io.github.erdsgfc.jforge.JForge;
+import io.github.erdsgfc.jforge.core.JForge;
 
-import io.github.erdsgfc.jforge.JForgeException;
+import io.github.erdsgfc.jforge.core.JForgeException;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.AfterEach;

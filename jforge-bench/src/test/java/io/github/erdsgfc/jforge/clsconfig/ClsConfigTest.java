@@ -2,7 +2,7 @@ package io.github.erdsgfc.jforge.clsconfig;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import io.github.erdsgfc.jforge.JForge;
+import io.github.erdsgfc.jforge.core.JForge;
 import io.github.erdsgfc.jforge.clsconfig.sub.ClsEntity;
 import io.github.erdsgfc.jforge.clsconfig.sub.ClsPlainRepository;
 import io.github.erdsgfc.jforge.clsconfig.sub.ClsRepository;

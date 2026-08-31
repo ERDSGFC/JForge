@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge;
+package io.github.erdsgfc.jforge.core;
 
 import javax.sql.DataSource;
 import java.sql.Connection;

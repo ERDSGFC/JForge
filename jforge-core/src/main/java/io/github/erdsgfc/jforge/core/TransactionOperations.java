@@ -1,7 +1,5 @@
 package io.github.erdsgfc.jforge.core;
 
-import io.github.erdsgfc.jforge.JForgeException;
-
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.function.Consumer;
@@ -13,12 +11,12 @@ import java.util.function.Supplier;
  *
  * <p>用户的 {@code @Dao} 接口继承 {@link BaseRepository}，而后者继承本接口，因此每个生成的
  * 仓库都暴露 {@code beginTransaction/commit/rollback/isTransactionActive} 及 {@link #execute}
- * 模板。事务存活于当前线程（由全局 {@link io.github.erdsgfc.jforge.TransactionManager} 支撑）；
+ * 模板。事务存活于当前线程（由全局 {@link TransactionManager} 支撑）；
  * 激活期间，绑定到同一 {@code DataSource} 的所有仓库共享一个连接与一个事务边界，
  * 因此多仓库工作可包进单个事务。</p>
  *
  * <p>不支持 ORM 层级的嵌套事务：本线程上经此 API 开启的事务仍处于活动状态时再调用
- * {@link #beginTransaction()} 会抛出 {@link io.github.erdsgfc.jforge.JForgeException}。
+ * {@link #beginTransaction()} 会抛出 {@link io.github.erdsgfc.jforge.core.JForgeException}。
  * 安装了 {@code jforge-spring-boot-starter} 后，在外层 Spring 事务（如 {@code @Transactional}
  * 服务方法）内调用则改为加入该事务（{@code PROPAGATION_REQUIRED}）。</p>
  *
@@ -42,7 +40,7 @@ public interface TransactionOperations {
      * 的第二次 ORM 层级 begin。</p>
      *
      * @return 绑定到新开启事务的连接
-     * @throws io.github.erdsgfc.jforge.JForgeException 若本线程已有另一个 ORM 层级事务处于活动
+     * @throws io.github.erdsgfc.jforge.core.JForgeException 若本线程已有另一个 ORM 层级事务处于活动
      *                                  状态，或无法获取连接
      */
     Connection beginTransaction();
@@ -50,14 +48,14 @@ public interface TransactionOperations {
     /**
      * 提交当前活动事务并释放其连接。
      *
-     * @throws io.github.erdsgfc.jforge.JForgeException 若没有活动事务，或提交失败
+     * @throws io.github.erdsgfc.jforge.core.JForgeException 若没有活动事务，或提交失败
      */
     void commit();
 
     /**
      * 回滚当前活动事务并释放其连接。
      *
-     * @throws io.github.erdsgfc.jforge.JForgeException 若没有活动事务，或回滚失败
+     * @throws io.github.erdsgfc.jforge.core.JForgeException 若没有活动事务，或回滚失败
      */
     void rollback();
 
@@ -75,7 +73,7 @@ public interface TransactionOperations {
      * 不抛出异常地标记当前事务为回滚：即使 {@link #execute} 正常返回，事务完成时也会被回滚。
      * 用于违反业务规则时中止，同时仍能从回调返回结果。
      *
-     * @throws io.github.erdsgfc.jforge.JForgeException 若没有活动事务
+     * @throws io.github.erdsgfc.jforge.core.JForgeException 若没有活动事务
      */
     void markRollbackOnly();
 
@@ -239,7 +237,7 @@ public interface TransactionOperations {
      *
      * @return 共享的作用域连接，归作用域所有——不要直接关闭它，也不要在
      *         {@link #endConnectionScope()} 之后使用
-     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接
+     * @throws io.github.erdsgfc.jforge.core.JForgeException 若无法获取连接
      */
     Connection beginConnectionScope();
 
@@ -259,12 +257,12 @@ public interface TransactionOperations {
      * 的函数形态相同，因此同一个 lambda 在两种上下文中无需改动即可使用。当多语句工作只想省去
      * 每条语句的池往返、不需要回滚语义时用它；当语句必须一起提交或回滚时用
      * {@link #execute(ConnectionCallback)}。作用域内不能开启事务（会抛出
-     * {@link io.github.erdsgfc.jforge.JForgeException}）。</p>
+     * {@link JForgeException}）。</p>
      *
      * @param callback 在共享连接上运行的工作
      * @param <T>      回调的返回类型
      * @return 回调的结果，仅副作用的代码体返回 {@code null}
-     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接，或回调抛出
+     * @throws io.github.erdsgfc.jforge.core.JForgeException 若无法获取连接，或回调抛出
      *                                  {@link SQLException}
      */
     default <T> T executeWithoutTransaction(ConnectionCallback<T> callback) {
@@ -282,7 +280,7 @@ public interface TransactionOperations {
      * @param <T>      回调的返回类型
      * @param <P>      参数类型
      * @return 回调的结果，仅副作用的代码体返回 {@code null}
-     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接，或回调抛出
+     * @throws io.github.erdsgfc.jforge.core.JForgeException 若无法获取连接，或回调抛出
      *                                  {@link SQLException}
      */
     default <T, P> T executeWithoutTransaction(P param, ConnectionParamCallback<T, P> callback) {
@@ -298,7 +296,7 @@ public interface TransactionOperations {
      * @param supplier 在共享连接上运行的工作，返回一个值
      * @param <T>      结果类型
      * @return supplier 的结果
-     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接，或仓库调用失败
+     * @throws io.github.erdsgfc.jforge.core.JForgeException 若无法获取连接，或仓库调用失败
      */
     default <T> T executeWithoutTransaction(Supplier<T> supplier) {
         return inScope(ignored -> supplier.get());
@@ -315,7 +313,7 @@ public interface TransactionOperations {
      * @param <T>      结果类型
      * @param <P>      参数类型
      * @return function 的结果
-     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接，或仓库调用失败
+     * @throws io.github.erdsgfc.jforge.core.JForgeException 若无法获取连接，或仓库调用失败
      */
     default <T, P> T executeWithoutTransaction(P param, Function<P, T> function) {
         return inScope(ignored -> function.apply(param));
@@ -326,10 +324,10 @@ public interface TransactionOperations {
      * {@link #executeWithoutTransaction(ConnectionCallback)} 的无返回值对应物,
      * 用于只需副作用、无需 {@code return null} 的工作体。行为完全一致:借用一个连接
      * 供每次仓库调用共享,保持 auto-commit(无原子性),在 {@code finally} 中归还
-     * 连接池({@link SQLException} 包装为 {@link io.github.erdsgfc.jforge.JForgeException})。
+     * 连接池({@link SQLException} 包装为 {@link JForgeException})。
      *
      * @param runnable 在共享连接上执行的工作
-     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接,或工作体抛出 {@link SQLException}
+     * @throws io.github.erdsgfc.jforge.core.JForgeException 若无法获取连接,或工作体抛出 {@link SQLException}
      */
     default void runWithoutTransaction(ConnectionRunnable runnable) {
         executeWithoutTransaction(conn -> {
@@ -343,12 +341,12 @@ public interface TransactionOperations {
      * 与共享的 {@link Connection} 一起传入——{@link #runWithoutTransaction(ConnectionRunnable)}
      * 的带参数对应物。行为完全一致:借用一个连接、保持 auto-commit(无原子性)、
      * 在 {@code finally} 中归还连接池;{@link SQLException} 包装为
-     * {@link io.github.erdsgfc.jforge.JForgeException}。
+     * {@link JForgeException}。
      *
      * @param param    外部提供的参数,转发给工作体
      * @param runnable 在共享连接上执行的工作
      * @param <P>      参数类型
-     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接,或工作体抛出 {@link SQLException}
+     * @throws io.github.erdsgfc.jforge.core.JForgeException 若无法获取连接,或工作体抛出 {@link SQLException}
      */
     default <P> void runWithoutTransaction(P param, ConnectionParamRunnable<P> runnable) {
         executeWithoutTransaction(conn -> {
@@ -361,12 +359,12 @@ public interface TransactionOperations {
      * 在单个共享连接上、无事务地执行 {@code runnable}——无参数、无连接的
      * {@link #runWithoutTransaction(ConnectionRunnable)} 对应物,用于只调用仓库方法、
      * 从不直接接触连接的工作体。工作体无需受检异常处理:没有 {@code Connection} 就没有
-     * 裸 JDBC 路径,只会从仓库调用逃出非受检的 {@link io.github.erdsgfc.jforge.JForgeException}。
+     * 裸 JDBC 路径,只会从仓库调用逃出非受检的 {@link io.github.erdsgfc.jforge.core.JForgeException}。
      * 其余行为一致:借用一个连接供每次仓库调用共享,保持 auto-commit(无原子性),
      * 在 {@code finally} 中归还连接池。
      *
      * @param runnable 在共享连接上执行的工作
-     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接,或仓库调用失败
+     * @throws io.github.erdsgfc.jforge.core.JForgeException 若无法获取连接,或仓库调用失败
      */
     default void runWithoutTransaction(Runnable runnable) {
         executeWithoutTransaction(ignored -> {
@@ -385,7 +383,7 @@ public interface TransactionOperations {
      * @param param    外部提供的参数,转发给工作体
      * @param consumer 在共享连接上执行的工作,接收参数
      * @param <P>      参数类型
-     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接,或仓库调用失败
+     * @throws io.github.erdsgfc.jforge.core.JForgeException 若无法获取连接,或仓库调用失败
      */
     default <P> void runWithoutTransaction(P param, Consumer<P> consumer) {
         executeWithoutTransaction(ignored -> {
@@ -442,7 +440,7 @@ public interface TransactionOperations {
      * @param callback 在共享连接上执行的工作
      * @param <T>      回调的返回类型
      * @return 回调的结果
-     * @throws io.github.erdsgfc.jforge.JForgeException 若无法获取连接,或回调抛出 {@link SQLException}
+     * @throws JForgeException 若无法获取连接,或回调抛出 {@link SQLException}
      */
     private <T> T inScope(ConnectionCallback<T> callback) {
         Connection conn = beginConnectionScope();
