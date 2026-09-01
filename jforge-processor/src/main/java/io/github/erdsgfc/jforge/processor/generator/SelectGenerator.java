@@ -26,6 +26,7 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -81,11 +82,13 @@ public final class SelectGenerator {
     public void selectMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
                               Map<String, QueryGenerator.EmbeddedEntity> embedded, ClassName connection,
                               ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
+        Map<String, Integer> seen = new HashMap<>();
         for (Element enclosed : info.element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.METHOD) {
                 continue;
             }
             ExecutableElement method = (ExecutableElement) enclosed;
+            int overloadIndex = seen.merge(method.getSimpleName().toString(), 1, Integer::sum) - 1;
             if (method.getAnnotation(Select.class) == null) {
                 continue;
             }
@@ -94,7 +97,7 @@ public final class SelectGenerator {
                         "@Select and @Query are mutually exclusive on the same method", method);
                 continue;
             }
-            MethodSpec impl = selectMethod(info, method, builder, embedded, connection,
+            MethodSpec impl = selectMethod(info, method, overloadIndex, builder, embedded, connection,
                     preparedStatement, resultSet, sqlException);
             if (impl != null) {
                 builder.addMethod(impl);
@@ -120,7 +123,7 @@ public final class SelectGenerator {
      * 生成 StringBuilder 拼接 + 类型精确绑定，结果映射委托 {@link QueryGenerator}。
      */
     private MethodSpec selectMethod(JForgeProcessor.DaoInfo info, ExecutableElement method,
-            TypeSpec.Builder builder, Map<String, QueryGenerator.EmbeddedEntity> embedded,
+            int overloadIndex, TypeSpec.Builder builder, Map<String, QueryGenerator.EmbeddedEntity> embedded,
             ClassName connection, ClassName preparedStatement, ClassName resultSet,
             ClassName sqlException) {
         String methodName = method.getSimpleName().toString();
@@ -218,7 +221,7 @@ public final class SelectGenerator {
             StringBuilder fullSqlBuilder = new StringBuilder(baseSql);
             WhereCondition.appendStaticWhereSql(fullSqlBuilder, conditions);
             String fullSql = fullSqlBuilder.toString();
-            String sqlField = SqlFieldGenerator.methodSqlFieldName(method);
+            String sqlField = SqlFieldGenerator.methodSqlFieldName(methodName, overloadIndex);
             builder.addField(FieldSpec.builder(String.class, sqlField,
                     Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL).initializer("$S", fullSql).build());
             SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, false, logSql);

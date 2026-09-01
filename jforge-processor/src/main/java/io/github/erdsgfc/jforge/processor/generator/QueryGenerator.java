@@ -92,11 +92,15 @@ public final class QueryGenerator {
         // 单次遍历同时处理 @Query 的转换器字段、固定 SQL 字段和实现方法，避免多个生成器
         // 重复扫描 DAO 方法、读取注解和解析动态 WHERE。
         Set<String> addedConverters = new HashSet<>();
+        // 同名方法序号（SQL 字段名唯一性）：对每个方法都计数（含非 @Query），
+        // 与"接口声明顺序中同名方法第几个"语义一致。
+        Map<String, Integer> seen = new HashMap<>();
         for (Element enclosed : info.element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.METHOD) {
                 continue;
             }
             ExecutableElement method = (ExecutableElement) enclosed;
+            int overloadIndex = seen.merge(method.getSimpleName().toString(), 1, Integer::sum) - 1;
             Query query = method.getAnnotation(Query.class);
             if (query == null) {
                 continue;
@@ -113,7 +117,7 @@ public final class QueryGenerator {
             }
             // queryMethod 校验失败时返回 null（已报错）——跳过而非 addMethod(null)，
             // 否则 javapoet 抛 NPE 掩盖真实编译错误（与 @Select/@Update/@Delete 同规则）。
-            MethodSpec impl = queryMethod(info, method, query, builder, embedded, connection,
+            MethodSpec impl = queryMethod(info, method, query, overloadIndex, builder, embedded, connection,
                     preparedStatement, resultSet, sqlException);
             if (impl != null) {
                 builder.addMethod(impl);
@@ -137,10 +141,10 @@ public final class QueryGenerator {
      * @return 查询方法规格
      */
     private MethodSpec queryMethod(JForgeProcessor.DaoInfo info, ExecutableElement method, Query query,
-            TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded, ClassName connection,
-            ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
+            int overloadIndex, TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded,
+            ClassName connection, ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         String methodName = method.getSimpleName().toString();
-        String sqlField = SqlFieldGenerator.methodSqlFieldName(method);
+        String sqlField = SqlFieldGenerator.methodSqlFieldName(methodName, overloadIndex);
         ParsedWhere parsed = parseWhere(query.value());
         Map<String, VariableElement> binds = bindsOf(method);
         // @Condition 参数 → 追加条件片段（伪占位符 = 参数名，复用占位符绑定与 @Nullable 动态机制）。

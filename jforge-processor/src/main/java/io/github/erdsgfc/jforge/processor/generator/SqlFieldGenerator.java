@@ -58,20 +58,14 @@ public final class SqlFieldGenerator {
      * 计算注解方法对应的 SQL 字段名。普通方法保持 {@code methodSql}；同名重载按声明顺序
      * 追加 {@code _1}, {@code _2} 等后缀。内置 CRUD 方法名保留给固定 SQL 字段，因此
      * 同名的自定义静态查询从 {@code _1} 开始，避免字段冲突。
+     *
+     * @param methodName     方法名（不含 {@code Sql} 后缀）
+     * @param overloadIndex  同名方法在接口声明顺序中的序号（0-based）——由调用方在遍历
+     *                       接口方法时维护（{@code Map} 计数），避免本方法内部重复遍历
+     * @return SQL 常量字段名
      */
-    static String methodSqlFieldName(ExecutableElement method) {
-        String methodName = method.getSimpleName().toString();
+    static String methodSqlFieldName(String methodName, int overloadIndex) {
         String baseName = methodName + "Sql";
-        int overloadIndex = 0;
-        for (Element enclosed : method.getEnclosingElement().getEnclosedElements()) {
-            if (enclosed.getKind() == ElementKind.METHOD
-                    && ((ExecutableElement) enclosed).getSimpleName().contentEquals(methodName)) {
-                if (enclosed == method) {
-                    break;
-                }
-                overloadIndex++;
-            }
-        }
         boolean reserved = switch (methodName) {
             case "save", "saveAll", "deleteById", "deleteByIds", "update", "findById",
                     "findByIds", "findAll", "count", "countById" -> true;

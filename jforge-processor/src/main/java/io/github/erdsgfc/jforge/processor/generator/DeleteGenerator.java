@@ -22,7 +22,9 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.VariableElement;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 生成 {@code Delete} 声明式删除方法：不写 SQL，按参数自动构造
@@ -45,11 +47,13 @@ public final class DeleteGenerator {
 
     public void deleteMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
                               ClassName connection, ClassName preparedStatement, ClassName sqlException) {
+        Map<String, Integer> seen = new HashMap<>();
         for (Element enclosed : info.element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.METHOD) {
                 continue;
             }
             ExecutableElement method = (ExecutableElement) enclosed;
+            int overloadIndex = seen.merge(method.getSimpleName().toString(), 1, Integer::sum) - 1;
             if (method.getAnnotation(Delete.class) == null) {
                 continue;
             }
@@ -61,7 +65,7 @@ public final class DeleteGenerator {
                         method);
                 continue;
             }
-            MethodSpec impl = deleteMethod(info, builder, method, connection, preparedStatement, sqlException);
+            MethodSpec impl = deleteMethod(info, builder, method, overloadIndex, connection, preparedStatement, sqlException);
             if (impl != null) {
                 builder.addMethod(impl);
             }
@@ -69,7 +73,7 @@ public final class DeleteGenerator {
     }
 
     private MethodSpec deleteMethod(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
-            ExecutableElement method, ClassName connection, ClassName preparedStatement,
+            ExecutableElement method, int overloadIndex, ClassName connection, ClassName preparedStatement,
             ClassName sqlException) {
         String methodName = method.getSimpleName().toString();
 
@@ -111,7 +115,7 @@ public final class DeleteGenerator {
         if (allStatic) {
             StringBuilder sql = new StringBuilder(baseSql);
             WhereCondition.appendStaticWhereSql(sql, conditions);
-            String sqlField = SqlFieldGenerator.methodSqlFieldName(method);
+            String sqlField = SqlFieldGenerator.methodSqlFieldName(methodName, overloadIndex);
             builder.addField(FieldSpec.builder(String.class, sqlField,
                     Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL).initializer("$S", sql.toString()).build());
             SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, false, logSql);
