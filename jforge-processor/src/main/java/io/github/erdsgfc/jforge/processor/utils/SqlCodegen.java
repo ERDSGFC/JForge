@@ -4,6 +4,7 @@ import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeName;
 import io.github.erdsgfc.jforge.annotation.DialectSupport;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 
@@ -92,6 +93,7 @@ public final class SqlCodegen {
      * 始终与字段顺序一致。
      *
      * @param typeName       字段类型字符串
+     * @param javaType       字段的 JavaPoet 类型（已去除 TYPE_USE 注解）
      * @param entityVar      实体变量名
      * @param setterName     builder setter 方法名
      * @param index          基于 1 的列索引
@@ -100,7 +102,7 @@ public final class SqlCodegen {
      * @param converterField 转换器静态字段名（{@code CONV.toEntity(rs.getObject(i))} 读取）
      * @return 读取代码块
      */
-    public static CodeBlock readColumn(String typeName, String entityVar, String setterName, int index,
+    public static CodeBlock readColumn(String typeName, TypeName javaType, String entityVar, String setterName, int index,
             boolean nullable, boolean isEnum, String converterField) {
         if (converterField != null) {
             // 转换器列:裸 rs.getObject(i) 取驱动的默认数据库表示(如 PG jsonb → PGobject),
@@ -114,26 +116,25 @@ public final class SqlCodegen {
             if (nullable) {
                 return CodeBlock.of("$T $L = rs.getString($L);\n$L.$L($L == null ? null : $T.valueOf($L));",
                         String.class, "vs", index, entityVar, setterName, "vs",
-                        TypeNameUtils.toTypeName(typeName), "vs");
+                        javaType, "vs");
             }
             return CodeBlock.of("$L.$L($T.valueOf(rs.getString($L)));",
-                    entityVar, setterName, TypeNameUtils.toTypeName(typeName), index);
+                    entityVar, setterName, javaType, index);
         }
         String getter = TypeNameUtils.jdbcGetter(typeName);
         if (getter.equals("getObject")) {
             // LocalDate/LocalDateTime/enums: getObject(index, Class) 对 NULL 列天然返回 null,
             // 可空与否形态一致——无需 wasNull 分支。
             return CodeBlock.of("$L.$L(($T) $L.getObject($L, $T.class));",
-                    entityVar, setterName, TypeNameUtils.toTypeName(typeName),
-                    "rs", index, TypeNameUtils.toTypeName(typeName));
+                    entityVar, setterName, javaType, "rs", index, javaType);
         }
         if (nullable) {
             // 可空列:基本类型局部变量承接读取值(零装箱),经 rs.wasNull() 三元回退 null——
             // 否则 NULL 列对 getInt/getString 等会读得 0/空串而非 null。
             String var = "v" + setterName;
-            String varType = TypeNameUtils.jdbcVarType(typeName);
             return CodeBlock.of("$T $L = rs.$L($L);\n$L.$L(rs.wasNull() ? null : $L);",
-                    TypeNameUtils.toTypeName(varType), var, getter, index, entityVar, setterName, var);
+                    javaType.isBoxedPrimitive() ? javaType.unbox() : javaType,
+                    var, getter, index, entityVar, setterName, var);
         }
         return CodeBlock.of("$L.$L($L.$L($L));",
                 entityVar, setterName, "rs", getter, index);
@@ -144,6 +145,7 @@ public final class SqlCodegen {
      * 由用户控制。
      *
      * @param typeName       字段类型字符串
+     * @param javaType       字段的 JavaPoet 类型（已去除 TYPE_USE 注解）
      * @param entityVar      实体变量名
      * @param setterName     builder setter 方法名
      * @param column         列名
@@ -152,7 +154,7 @@ public final class SqlCodegen {
      * @param converterField 转换器静态字段名（{@code CONV.toEntity(rs.getObject(...))} 读取）
      * @return 读取代码块
      */
-    public static CodeBlock readColumnByName(String typeName, String entityVar, String setterName, String column,
+    public static CodeBlock readColumnByName(String typeName, TypeName javaType, String entityVar, String setterName, String column,
             boolean nullable, boolean isEnum, String converterField) {
         if (converterField != null) {
             return CodeBlock.of("$L.$L($L.toEntity(rs.getObject($S)));",
@@ -162,23 +164,22 @@ public final class SqlCodegen {
             if (nullable) {
                 return CodeBlock.of("$T $L = rs.getString($S);\n$L.$L($L == null ? null : $T.valueOf($L));",
                         String.class, "vs", column, entityVar, setterName, "vs",
-                        TypeNameUtils.toTypeName(typeName), "vs");
+                        javaType, "vs");
             }
             return CodeBlock.of("$L.$L($T.valueOf(rs.getString($S)));",
-                    entityVar, setterName, TypeNameUtils.toTypeName(typeName), column);
+                    entityVar, setterName, javaType, column);
         }
         String getter = TypeNameUtils.jdbcGetter(typeName);
         if (getter.equals("getObject")) {
             // getObject 对 NULL 列天然返回 null——可空与否形态一致,无需 wasNull 分支。
             return CodeBlock.of("$L.$L(($T) $L.getObject($S, $T.class));",
-                    entityVar, setterName, TypeNameUtils.toTypeName(typeName),
-                    "rs", column, TypeNameUtils.toTypeName(typeName));
+                    entityVar, setterName, javaType, "rs", column, javaType);
         }
         if (nullable) {
             String var = "v" + setterName;
-            String varType = TypeNameUtils.jdbcVarType(typeName);
             return CodeBlock.of("$T $L = rs.$L($S);\n$L.$L(rs.wasNull() ? null : $L);",
-                    TypeNameUtils.toTypeName(varType), var, getter, column, entityVar, setterName, var);
+                    javaType.isBoxedPrimitive() ? javaType.unbox() : javaType,
+                    var, getter, column, entityVar, setterName, var);
         }
         return CodeBlock.of("$L.$L($L.$L($S));",
                 entityVar, setterName, "rs", getter, column);

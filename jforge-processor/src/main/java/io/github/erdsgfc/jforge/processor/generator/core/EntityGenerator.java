@@ -45,6 +45,7 @@ public final class EntityGenerator {
         for (EntityModel.ColumnModel column : model.columns()) {
             TypeName type = TypeName.get(column.returnType);
             builder.addField(FieldSpec.builder(type, column.fieldName, Modifier.PRIVATE).build());
+            // getter
             builder.addMethod(MethodSpec.methodBuilder(column.getterName)
                     .addAnnotation(Override.class)
                     .addModifiers(Modifier.PUBLIC)

@@ -1,6 +1,7 @@
 package io.github.erdsgfc.jforge.processor;
 
 import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.TypeName;
 import io.github.erdsgfc.jforge.annotation.*;
 import io.github.erdsgfc.jforge.processor.generator.core.EntityGenerator;
 import io.github.erdsgfc.jforge.processor.utils.CommonUtils;
@@ -38,6 +39,8 @@ public final class EntityModel {
         public final String fieldName;
         public final String columnName;
         public final String typeName;   // TypeMirror#toString,如 "java.lang.Long"、"int"
+        /** 去除 TYPE_USE 注解后的 JavaPoet 类型，用于生成类型字面量和声明。 */
+        public final TypeName javaType;
         public final TypeMirror returnType; // getter 的返回类型,用于 setter 类型校验
         public final String getterName;
         public final String setterName;
@@ -81,7 +84,9 @@ public final class EntityModel {
             // Types.stripAnnotations(JDK 21+)深度剥离全部 TYPE_USE 注解(@Nullable 等)——
             // 否则 toString 会输出 "java.lang.@org.jspecify.annotations.Nullable String",
             // 破坏 JDBC 映射与 javapoet 解析。比手写剥除更彻底(含数组组件/类型实参)。
-            this.typeName = types.stripAnnotations(returnType).toString();
+            TypeMirror plainType = types.stripAnnotations(returnType);
+            this.typeName = plainType.toString();
+            this.javaType = TypeName.get(plainType);
             this.returnType = returnType;
             this.getterName = fieldName;
             this.setterName = fieldName;

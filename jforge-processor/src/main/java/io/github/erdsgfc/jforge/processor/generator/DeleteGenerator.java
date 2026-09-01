@@ -65,7 +65,7 @@ public final class DeleteGenerator {
         this.processingEnv = processingEnv;
         this.configHelper = configHelper;
         this.criteriaGenerator = new CriteriaGenerator(processingEnv.getMessager(),
-                Diagnostic.Kind.ERROR);
+                Diagnostic.Kind.ERROR, processingEnv.getTypeUtils());
     }
 
     public void deleteMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
@@ -122,9 +122,9 @@ public final class DeleteGenerator {
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(TypeNameUtils.toTypeNameWithGenerics(method.getReturnType()));
+                .returns(TypeNameUtils.toTypeNameWithGenerics(method.getReturnType(), processingEnv.getTypeUtils()));
         for (VariableElement parameter : method.getParameters()) {
-            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType()),
+            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType(), processingEnv.getTypeUtils()),
                     parameter.getSimpleName().toString());
         }
         boolean logSql = configHelper.logSql(info.element);
@@ -213,8 +213,8 @@ public final class DeleteGenerator {
             boolean dynamic = optional
                     || parameter.asType().getAnnotation(org.jspecify.annotations.Nullable.class) != null;
             String bindType = optional
-                    ? CriteriaGenerator.optionalValueType(parameter.asType())
-                    : TypeNameUtils.plainTypeName(parameter.asType());
+                    ? CriteriaGenerator.optionalValueType(parameter.asType(), processingEnv.getTypeUtils())
+                    : processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString();
             String valueExpr = optional
                     ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
                     : null;
@@ -230,8 +230,8 @@ public final class DeleteGenerator {
         boolean dynamic = optional
                 || parameter.asType().getAnnotation(org.jspecify.annotations.Nullable.class) != null;
         String bindType = optional
-                ? CriteriaGenerator.optionalValueType(parameter.asType())
-                : TypeNameUtils.plainTypeName(parameter.asType());
+                ? CriteriaGenerator.optionalValueType(parameter.asType(), processingEnv.getTypeUtils())
+                : processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString();
         String valueExpr = optional
                 ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
                 : null;

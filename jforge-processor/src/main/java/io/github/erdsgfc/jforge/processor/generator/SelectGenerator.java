@@ -64,7 +64,7 @@ public final class SelectGenerator {
         this.configHelper = configHelper;
         this.queryGenerator = queryGenerator;
         this.criteriaGenerator = new CriteriaGenerator(processingEnv.getMessager(),
-                Diagnostic.Kind.ERROR);
+                Diagnostic.Kind.ERROR, processingEnv.getTypeUtils());
     }
 
     /**
@@ -208,9 +208,9 @@ public final class SelectGenerator {
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(TypeNameUtils.toTypeNameWithGenerics(returnType));
+                .returns(TypeNameUtils.toTypeNameWithGenerics(returnType, processingEnv.getTypeUtils()));
         for (VariableElement parameter : method.getParameters()) {
-            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType()),
+            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType(), processingEnv.getTypeUtils()),
                     parameter.getSimpleName().toString());
         }
 
@@ -381,8 +381,8 @@ public final class SelectGenerator {
         String rawSql = where != null ? where.rawSql() : "";
         if (!rawSql.isEmpty()) {
             String bindType = optional
-                    ? CriteriaGenerator.optionalValueType(parameter.asType())
-                    : TypeNameUtils.plainTypeName(parameter.asType());
+                    ? CriteriaGenerator.optionalValueType(parameter.asType(), processingEnv.getTypeUtils())
+                    : processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString();
             String valueExpr = optional
                     ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
                     : null;
@@ -412,8 +412,8 @@ public final class SelectGenerator {
             return null;
         }
         String bindType = optional
-                ? CriteriaGenerator.optionalValueType(parameter.asType())
-                : TypeNameUtils.plainTypeName(parameter.asType());
+                ? CriteriaGenerator.optionalValueType(parameter.asType(), processingEnv.getTypeUtils())
+                : processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString();
         String valueExpr = optional
                 ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
                 : null;

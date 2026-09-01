@@ -168,9 +168,9 @@ public final class QueryGenerator {
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(TypeNameUtils.toTypeNameWithGenerics(returnType));
+                .returns(TypeNameUtils.toTypeNameWithGenerics(returnType, processingEnv.getTypeUtils()));
         for (VariableElement parameter : method.getParameters()) {
-            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType()),
+            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType(), processingEnv.getTypeUtils()),
                     parameter.getSimpleName().toString());
         }
 
@@ -301,9 +301,9 @@ public final class QueryGenerator {
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(TypeNameUtils.toTypeNameWithGenerics(returnType));
+                .returns(TypeNameUtils.toTypeNameWithGenerics(returnType, processingEnv.getTypeUtils()));
         for (VariableElement parameter : method.getParameters()) {
-            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType()),
+            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType(), processingEnv.getTypeUtils()),
                     parameter.getSimpleName().toString());
         }
         // parsed 为 null = SQL 无 WHERE（@Condition 追加片段提供首个条件）——selectPart 取整条 SQL。
@@ -341,7 +341,7 @@ public final class QueryGenerator {
                 spec.beginControlFlow("if ($N != null)", bindUnits.get(f).get(0).getSimpleName());
             }
             for (VariableElement parameter : bindUnits.get(f)) {
-                spec.addCode(SqlCodegen.bindParam(TypeNameUtils.plainTypeName(parameter.asType()),
+                spec.addCode(SqlCodegen.bindParam(processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString(),
                         parameter.getSimpleName().toString(), "i++"));
                 spec.addCode("\n");
             }
@@ -519,11 +519,11 @@ public final class QueryGenerator {
                                     + model.entityQualifiedName() + ": " + sql, method);
                     return;
                 }
-                spec.addCode(SqlCodegen.readColumn(column.typeName, "e", column.setterName, pos + 1,
+                spec.addCode(SqlCodegen.readColumn(column.typeName, column.javaType, "e", column.setterName, pos + 1,
                         column.nullable, column.isEnum,
                         column.converter != null ? SqlCodegen.converterFieldName(model, column) : null));
             } else {
-                spec.addCode(SqlCodegen.readColumnByName(column.typeName, "e", column.setterName,
+                spec.addCode(SqlCodegen.readColumnByName(column.typeName, column.javaType, "e", column.setterName,
                         column.columnName, column.nullable, column.isEnum,
                         column.converter != null ? SqlCodegen.converterFieldName(model, column) : null));
             }

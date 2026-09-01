@@ -1,44 +1,14 @@
 package io.github.erdsgfc.jforge.processor.utils;
 
-import com.palantir.javapoet.ArrayTypeName;
-import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
-import java.util.ArrayList;
-import java.util.List;
+import javax.lang.model.util.Types;
 
-/** TypeMirror 字符串 → JavaPoet TypeName 以及 JDBC 绑定/读取映射的辅助工具。 */
+/** JDBC 绑定/读取映射以及 TypeMirror 到 JavaPoet TypeName 的辅助工具。 */
 public final class TypeNameUtils {
 
     private TypeNameUtils() {
-    }
-
-    /**
-     * 把 TypeMirror 字符串转换为 JavaPoet 类型名。
-     *
-     * @param typeName 类型字符串，如 {@code "int"}、{@code "byte[]"}、{@code "java.lang.Long"}
-     * @return 对应的 JavaPoet 类型（基本类型、数组或类）
-     */
-    public static TypeName toTypeName(String typeName) {
-        if (typeName.equals("byte[]")) {
-            return ArrayTypeName.of(TypeName.BYTE);
-        }
-        return switch (typeName) {
-            case "byte" -> TypeName.BYTE;
-            case "short" -> TypeName.SHORT;
-            case "int" -> TypeName.INT;
-            case "long" -> TypeName.LONG;
-            case "float" -> TypeName.FLOAT;
-            case "double" -> TypeName.DOUBLE;
-            case "boolean" -> TypeName.BOOLEAN;
-            case "char" -> TypeName.CHAR;
-            default -> ClassName.bestGuess(typeName);
-        };
     }
 
     /**
@@ -87,27 +57,6 @@ public final class TypeNameUtils {
     }
 
     /**
-     * 返回 jdbcGetter 对应的局部变量类型:基本类型 getter(getInt/getLong/…)返回基本类型
-     * (可空列的行映射用基本类型局部变量承接,避免包装类装箱);getString/getObject 等
-     * 返回原类型。
-     *
-     * @param typeName 字段类型字符串，如 {@code "java.lang.Integer"}
-     * @return 局部变量类型字符串，如 {@code "int"}、{@code "java.lang.String"}
-     */
-    public static String jdbcVarType(String typeName) {
-        String getter = jdbcGetter(typeName);
-        if (getter.startsWith("get") && getter.length() > 3) {
-            String simple = getter.substring(3).toLowerCase();
-            if (simple.equals("int") || simple.equals("long") || simple.equals("boolean")
-                    || simple.equals("double") || simple.equals("float")
-                    || simple.equals("short") || simple.equals("byte")) {
-                return simple;
-            }
-        }
-        return typeName;
-    }
-
-    /**
      * 返回字段类型对应的 JDBC 预编译语句 setter 方法名。
      *
      * @param typeName 字段类型字符串，如 {@code "long"}、{@code "java.lang.String"}
@@ -153,35 +102,6 @@ public final class TypeNameUtils {
     }
 
     /**
-     * 返回基本类型的包装类型名（用于 setter 强制转换）。
-     *
-     * @param typeName 类型字符串，如 {@code "int"}
-     * @return 包装类型名，如 {@code "Integer"}；非基本类型原样返回
-     */
-    public static String boxedType(String typeName) {
-        switch (typeName) {
-            case "byte":
-                return "Byte";
-            case "short":
-                return "Short";
-            case "int":
-                return "Integer";
-            case "long":
-                return "Long";
-            case "float":
-                return "Float";
-            case "double":
-                return "Double";
-            case "boolean":
-                return "Boolean";
-            case "char":
-                return "Character";
-            default:
-                return typeName;
-        }
-    }
-
-    /**
      * 返回字段类型对应的 JDBC 生成键读取器后缀：{@code getXxx} 方法名去掉开头的
      * {@code "get"}（如 {@code "getLong"} → {@code "Long"}、{@code "getString"} → {@code "String"}）。
      * 用于生成 {@code keys.getXxx(1)} 回写表达式。
@@ -194,55 +114,15 @@ public final class TypeNameUtils {
     }
 
     /**
-     * 把 TypeMirror 转换为 JavaPoet TypeName，保留泛型参数（如 {@code List<UserEntity>}）。
+     * 把 TypeMirror 转换为不带 TYPE_USE 注解的 JavaPoet TypeName。
+     * JavaPoet 原生处理基本类型、数组、泛型、通配符和类型变量等全部类型种类。
      *
      * @param type 类型镜像
-     * @return 对应的 JavaPoet 类型
+     * @param types 类型工具，用于深度剥离 TYPE_USE 注解
+     * @return 对应的 JavaPoet 类型（不含类型注解）
      */
-    public static TypeName toTypeNameWithGenerics(TypeMirror type) {
-        if (type.getKind() == TypeKind.DECLARED) {
-            DeclaredType declared = (DeclaredType) type;
-            if (!declared.getTypeArguments().isEmpty()) {
-                List<TypeName> args = new ArrayList<>();
-                for (TypeMirror arg : declared.getTypeArguments()) {
-                    args.add(toTypeNameWithGenerics(arg));
-                }
-                return ParameterizedTypeName.get(
-                        ClassName.get((TypeElement) declared.asElement()), args.toArray(new TypeName[0]));
-            }
-            // 非泛型直接由元素构造——不经 toString（TypeMirror.toString 会输出
-            // TYPE_USE 注解前缀如 "java.lang.@org.jspecify.annotations.Nullable Integer"，
-            // bestGuess 无法解析）。
-            return ClassName.get((TypeElement) declared.asElement());
-        }
-        return TypeNameUtils.toTypeName(type.toString());
+    public static TypeName toTypeNameWithGenerics(TypeMirror type, Types types) {
+        return TypeName.get(types.stripAnnotations(type));
     }
 
-    /**
-     * 返回类型镜像的"干净"类型名字符串（全限定名），供 JDBC 绑定/读取 API 映射——
-     * 剥除 TYPE_USE 注解：javac 的 {@code TypeMirror.toString()} 会把类型注解
-     * 拼进字符串（如 {@code java.lang.@org.jspecify.annotations.Nullable Integer}），
-     * 与 {@link #jdbcSetter}/{@link #jdbcGetter} 的精确匹配不兼容。
-     *
-     * @param type 类型镜像（可能带 TYPE_USE 注解）
-     * @return 无注解的全限定类型名，如 {@code "java.lang.Integer"}、{@code "java.lang.List<java.lang.String>"}
-     */
-    public static String plainTypeName(TypeMirror type) {
-        if (type.getKind() == TypeKind.DECLARED) {
-            DeclaredType declared = (DeclaredType) type;
-            String qualified = ((TypeElement) declared.asElement()).getQualifiedName().toString();
-            if (declared.getTypeArguments().isEmpty()) {
-                return qualified;
-            }
-            StringBuilder sb = new StringBuilder(qualified).append('<');
-            for (int i = 0; i < declared.getTypeArguments().size(); i++) {
-                if (i > 0) {
-                    sb.append(',');
-                }
-                sb.append(plainTypeName(declared.getTypeArguments().get(i)));
-            }
-            return sb.append('>').toString();
-        }
-        return type.toString(); // 基本类型/数组无 TYPE_USE 注解，toString 干净
-    }
 }

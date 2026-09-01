@@ -9,7 +9,6 @@ import io.github.erdsgfc.jforge.annotation.Where;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
-import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
@@ -18,6 +17,7 @@ import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
 import java.util.List;
@@ -70,12 +70,14 @@ public final class CriteriaGenerator {
 
     private final javax.annotation.processing.Messager messager;
     private final Diagnostic.Kind errorKind;
+    private final Types types;
     /** 嵌套括号组的组内前缀变量名序号（单线程处理器，自增即可唯一）。 */
     private int varSeq;
 
-    CriteriaGenerator(javax.annotation.processing.Messager messager, Diagnostic.Kind errorKind) {
+    CriteriaGenerator(javax.annotation.processing.Messager messager, Diagnostic.Kind errorKind, Types types) {
         this.messager = messager;
         this.errorKind = errorKind;
+        this.types = types;
     }
 
     /**
@@ -159,7 +161,7 @@ public final class CriteriaGenerator {
             }
             return new Unit(conn, null, null, readExpr,
                     rawSql.contains("?") ? readExpr : null,
-                    rawSql.contains("?") ? TypeNameUtils.plainTypeName(fieldType) : null,
+                    rawSql.contains("?") ? types.stripAnnotations(fieldType).toString() : null,
                     readExpr + " != null", false, null, rawSql);
         }
 
@@ -171,7 +173,7 @@ public final class CriteriaGenerator {
             }
             String op = condition != null ? condition.op().sql() : "=";
             return new Unit(conn, column, op, readExpr,
-                    readExpr + optionalValueMethod(fieldType), optionalValueType(fieldType),
+                    readExpr + optionalValueMethod(fieldType), optionalValueType(fieldType, types),
                     readExpr + " != null", true, null, null);
         }
         // 嵌套组：自定义类字段 → 括号递归。
@@ -191,7 +193,7 @@ public final class CriteriaGenerator {
         }
         String op = condition != null ? condition.op().sql() : "=";
         String guard = readExpr + " != null";
-        return new Unit(conn, column, op, readExpr, null, TypeNameUtils.plainTypeName(fieldType),
+        return new Unit(conn, column, op, readExpr, null, types.stripAnnotations(fieldType).toString(),
                 guard, false, null, null);
     }
 
@@ -242,13 +244,13 @@ public final class CriteriaGenerator {
     }
 
     /** Optional 的值读取方法（get()/getAsInt()/…）与绑定类型。 */
-    static String optionalValueType(TypeMirror type) {
+    static String optionalValueType(TypeMirror type, Types types) {
         DeclaredType declared = (DeclaredType) type;
         String name = ((TypeElement) declared.asElement()).getQualifiedName().toString();
         return switch (name) {
             case "java.util.Optional" -> {
                 List<? extends TypeMirror> args = declared.getTypeArguments();
-                yield args.isEmpty() ? "java.lang.Object" : TypeNameUtils.plainTypeName(args.get(0));
+                yield args.isEmpty() ? "java.lang.Object" : types.stripAnnotations(args.get(0)).toString();
             }
             case "java.util.OptionalInt" -> "int";
             case "java.util.OptionalLong" -> "long";
