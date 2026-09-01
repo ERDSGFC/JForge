@@ -53,21 +53,39 @@ public final class SqlCodegen {
      */
     public static CodeBlock bindParam(String typeName, String expr, int index, boolean nullable, boolean isEnum,
             String converterField) {
+        return bindParam(typeName, expr, String.valueOf(index), nullable, isEnum, converterField);
+    }
+
+    /**
+     * 带运行时索引表达式的 6 参绑定：与 int 版等价但索引为运行时表达式（如循环变量
+     * {@code "i++"}）。转换器列走 {@code setObject(i, CONV.toDatabase(expr),
+     * CONV.sqlType())}（SQL 类型由转换器决定，默认 JDBCType.OTHER = unknown）。
+     *
+     * @param typeName      字段类型字符串
+     * @param expr          值表达式
+     * @param indexExpr     基于 1 的索引表达式（编译期常量或运行时表达式）
+     * @param nullable      列是否可空
+     * @param isEnum        列是否为枚举类型
+     * @param converterField 转换器静态字段名（{@code null} = 无转换器）
+     * @return 绑定代码块
+     */
+    public static CodeBlock bindParam(String typeName, String expr, String indexExpr, boolean nullable, boolean isEnum,
+            String converterField) {
         if (converterField != null) {
-            // 转换器列:setObject(i, v, CONV.sqlType())——按转换器声明的 SQL 类型发送;
+            // 转换器绑定:setObject(i, v, CONV.sqlType())——按转换器声明的 SQL 类型发送;
             // 默认 JDBCType.OTHER(unknown),由 PG/H2 按目标列推断(jsonb 等不接受
             // varchar 隐式转换的类型也能绑定);用户覆盖 sqlType() 时钉死具体类型。
-            return CodeBlock.of("$L.setObject($L, $L.toDatabase($L), $L.sqlType());", "ps", index,
+            return CodeBlock.of("$L.setObject($L, $L.toDatabase($L), $L.sqlType());", "ps", indexExpr,
                     converterField, expr, converterField);
         }
         if (isEnum) {
-            return CodeBlock.of("$L.setObject($L, $L, $T.OTHER);", "ps", index, expr,
+            return CodeBlock.of("$L.setObject($L, $L, $T.OTHER);", "ps", indexExpr, expr,
                     ClassName.get("java.sql", "Types"));
         }
         if (nullable) {
-            return CodeBlock.of("$L.setObject($L, $L);", "ps", index, expr);
+            return CodeBlock.of("$L.setObject($L, $L);", "ps", indexExpr, expr);
         }
-        return bindParam(typeName, expr, index);
+        return bindParam(typeName, expr, indexExpr);
     }
 
     /**
@@ -438,9 +456,22 @@ public final class SqlCodegen {
      * @return 转换器字段规格
      */
     public static FieldSpec converterField(EntityModel model, EntityModel.ColumnModel column) {
-        return FieldSpec.builder(column.converter, converterFieldName(model, column),
+        return converterField(column.converter, converterFieldName(model, column));
+    }
+
+    /**
+     * 构造转换器实例的静态字段：{@code private static final XxxConverter <fieldName>
+     * = new XxxConverter();}（转换器须有公开无参构造器）。供 {@code @Bind} 参数转换器
+     * 等非实体列场景复用。
+     *
+     * @param converter 转换器实现类
+     * @param fieldName 生成的静态字段名
+     * @return 转换器字段规格
+     */
+    public static FieldSpec converterField(ClassName converter, String fieldName) {
+        return FieldSpec.builder(converter, fieldName,
                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                .initializer("new $T()", column.converter)
+                .initializer("new $T()", converter)
                 .build();
     }
 

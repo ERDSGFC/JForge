@@ -192,6 +192,20 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 - 非 SELECT → 返回影响行数;配合 `@ReturnGeneratedKeys` 可回写生成键到实体参数
 - 每方法只能有一个语句注解
 
+**@Bind 绑定转换器**(按转换列查询):
+`@Bind(value = "d", converter = XxxConverter.class)` 把该参数的绑定从"按声明类型选 `setXxx`"
+改为 `ps.setObject(i, CONV.toDatabase(param), CONV.sqlType())`——参数与实体列经同一转换器
+生成相同存储表示才能命中(实体列存转换后文本,如 `LocalDate` → VARCHAR,查询参数必须同样
+转成文本):
+
+```java
+@Query("SELECT * FROM convert_users WHERE birth_date = :d")
+ConvertUser findByBirthDate(@Bind(value = "d", converter = StringDateConverter.class) LocalDate d);
+```
+
+- 转换器可为同批源码或预编译(与实体列 `@Convert` 同一机制);转换器以 `static final` 字段嵌入
+- 动态 WHERE 下同样生效(运行时索引绑定);`@Nullable` 参数传 `null` 时整段移除(条件跳过)
+
 **@Query 动态 WHERE**(JSpecify `@Nullable` 驱动,两种语法):
 
 ```java

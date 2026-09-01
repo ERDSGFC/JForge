@@ -25,13 +25,16 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.MirroredTypeException;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 生成仓库 impl 类的 {@code @Query} 方法：命名占位符转 {@code ?}、按类型绑定 {@code @Bind} 参数、
@@ -86,6 +89,28 @@ public final class QueryGenerator {
     public void queryMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
                              Map<String, EmbeddedEntity> embedded, ClassName connection, ClassName preparedStatement,
                              ClassName resultSet, ClassName sqlException) {
+        // 预扫:为所有 @Query 方法的 @Bind 转换器生成 static final 转换器字段(按字段名去重,
+        // 同一转换器被多处引用只嵌一份)。绑定站点经 queryConverterField 复用同名。
+        Set<String> addedConverters = new HashSet<>();
+        for (Element enclosed : info.element.getEnclosedElements()) {
+            if (enclosed.getKind() != ElementKind.METHOD) {
+                continue;
+            }
+            ExecutableElement method = (ExecutableElement) enclosed;
+            if (method.getAnnotation(Query.class) == null) {
+                continue;
+            }
+            for (VariableElement parameter : method.getParameters()) {
+                ClassName converter = bindConverter(parameter);
+                if (converter != null) {
+                    String field = queryConverterFieldName(method.getSimpleName().toString(),
+                            parameter.getSimpleName().toString());
+                    if (addedConverters.add(field)) {
+                        builder.addField(SqlCodegen.converterField(converter, field));
+                    }
+                }
+            }
+        }
         for (Element enclosed : info.element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.METHOD) {
                 continue;
@@ -185,8 +210,14 @@ public final class QueryGenerator {
                         "No @Bind(\"" + placeholders.get(i) + "\") parameter for query placeholder", method);
                 continue;
             }
-            spec.addCode(SqlCodegen.bindParam(parameter.asType().toString(),
-                    parameter.getSimpleName().toString(), i + 1));
+            // @Bind 挂转换器 → 经 CONV.toDatabase(param)+CONV.sqlType() 绑定(按转换列查询);
+            // 否则按声明类型选 setXxx。
+            String converterField = queryConverterField(method, parameter);
+            spec.addCode(converterField != null
+                    ? SqlCodegen.bindParam(parameter.asType().toString(),
+                            parameter.getSimpleName().toString(), i + 1, false, false, converterField)
+                    : SqlCodegen.bindParam(parameter.asType().toString(),
+                            parameter.getSimpleName().toString(), i + 1));
             spec.addCode("\n");
         }
 
@@ -343,8 +374,13 @@ public final class QueryGenerator {
                 spec.beginControlFlow("if ($N != null)", bindUnits.get(f).get(0).getSimpleName());
             }
             for (VariableElement parameter : bindUnits.get(f)) {
-                spec.addCode(SqlCodegen.bindParam(processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString(),
-                        parameter.getSimpleName().toString(), "i++"));
+                // @Bind 挂转换器 → 经转换器绑定（动态路径用运行时索引 "i++"）。
+                String converterField = queryConverterField(method, parameter);
+                spec.addCode(converterField != null
+                        ? SqlCodegen.bindParam(processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString(),
+                                parameter.getSimpleName().toString(), "i++", false, false, converterField)
+                        : SqlCodegen.bindParam(processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString(),
+                                parameter.getSimpleName().toString(), "i++"));
                 spec.addCode("\n");
             }
             if (dynamics.get(f)) {
@@ -694,6 +730,55 @@ public final class QueryGenerator {
             }
         }
         return binds;
+    }
+
+    /** {@code @Bind.converter()} 哨兵的全限定名——处理器按名识别，不加载类。 */
+    private static final String NO_CONVERTER = "io.github.erdsgfc.jforge.annotation.NoConverter";
+
+    /** 生成 {@code @Bind} 转换器静态字段名：{@code CONVERTER_QUERY_<方法名>_<参数名>}（大写）。 */
+    private static String queryConverterFieldName(String methodName, String paramName) {
+        return "CONVERTER_QUERY_" + methodName.toUpperCase() + "_" + paramName.toUpperCase();
+    }
+
+    /**
+     * 读取 {@code @Bind} 参数的绑定转换器：Class 类型属性访问时预编译类直接返回、同批
+     * 源码抛 {@link MirroredTypeException}（与实体列 {@code @Convert} 同一机制）——两种
+     * 路径都处理；哨兵 {@code NoConverter} 视为无转换器。转换器可为同批源码，不要求已编译。
+     *
+     * @param parameter 仓库方法参数
+     * @return 转换器类名；参数无转换器（或默认哨兵）时 {@code null}
+     */
+    private ClassName bindConverter(VariableElement parameter) {
+        Bind bind = parameter.getAnnotation(Bind.class);
+        if (bind == null) {
+            return null;
+        }
+        try {
+            Class<?> cls = bind.converter();
+            if (cls.getName().equals(NO_CONVERTER)) {
+                return null;
+            }
+            TypeElement el = processingEnv.getElementUtils().getTypeElement(cls.getName());
+            return el == null ? null : ClassName.get(el);
+        } catch (MirroredTypeException e) {
+            TypeMirror mirror = e.getTypeMirror();
+            if (mirror.getKind() == TypeKind.DECLARED) {
+                TypeElement el = (TypeElement) ((DeclaredType) mirror).asElement();
+                if (el.getQualifiedName().contentEquals(NO_CONVERTER)) {
+                    return null;
+                }
+                return ClassName.get(el);
+            }
+        }
+        return null;
+    }
+
+    /** {@code @Bind} 参数的转换器静态字段名；无转换器时 {@code null}（供绑定站点复用预扫字段名）。 */
+    private String queryConverterField(ExecutableElement method, VariableElement parameter) {
+        ClassName converter = bindConverter(parameter);
+        return converter == null ? null
+                : queryConverterFieldName(method.getSimpleName().toString(),
+                        parameter.getSimpleName().toString());
     }
 
     /**

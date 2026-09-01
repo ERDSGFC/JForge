@@ -105,4 +105,30 @@ class ConvertTest {
         assertNull(repo.findById(saved.id()).birthDate());
         assertNull(repo.findById(saved.id()).hireDate());
     }
+
+    /** {@code @Query} 按转换列查询：{@code @Bind} 挂同一转换器，参数生成相同存储表示才命中。 */
+    @Test
+    void queryByConvertedColumnThroughBindConverter() {
+        LocalDate birth = LocalDate.of(2000, 1, 2);
+        ConvertUser saved = repo.save(repo.createEntity().name("qin").birthDate(birth));
+
+        ConvertUser found = repo.findByBirthDate(birth);
+        assertNotNull(found);
+        assertEquals(saved.id(), found.id());
+        assertNull(repo.findByBirthDate(birth.plusDays(1)));
+    }
+
+    /** 动态路径：{@code @Nullable} 参数 + {@code @Bind} 转换器（显式 {@code sqlType()=VARCHAR}）。 */
+    @Test
+    void queryByConvertedColumnDynamicPath() {
+        LocalDate hire = LocalDate.of(2024, 6, 15);
+        repo.save(repo.createEntity().name("a").birthDate(LocalDate.of(2000, 1, 2)).hireDate(hire));
+        repo.save(repo.createEntity().name("b").birthDate(LocalDate.of(2010, 3, 4))
+                .hireDate(LocalDate.of(2025, 1, 1)));
+
+        // 非 null：条件经转换器绑定（VARCHAR 显式类型）命中对应行。
+        assertEquals("a", repo.findNullableByHireDate(hire).name());
+        // null：动态条件跳过（无 WHERE 取首行）——验证动态路径无回归。
+        assertEquals("a", repo.findNullableByHireDate(null).name());
+    }
 }
