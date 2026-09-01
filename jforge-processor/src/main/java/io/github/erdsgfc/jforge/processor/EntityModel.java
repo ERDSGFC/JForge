@@ -1,13 +1,7 @@
 package io.github.erdsgfc.jforge.processor;
 
 import com.palantir.javapoet.ClassName;
-import io.github.erdsgfc.jforge.annotation.Column;
-import io.github.erdsgfc.jforge.annotation.Convert;
-import io.github.erdsgfc.jforge.annotation.GeneratedValue;
-import io.github.erdsgfc.jforge.annotation.Id;
-import io.github.erdsgfc.jforge.annotation.NamingStrategy;
-import io.github.erdsgfc.jforge.annotation.Table;
-import io.github.erdsgfc.jforge.annotation.WritePolicy;
+import io.github.erdsgfc.jforge.annotation.*;
 import io.github.erdsgfc.jforge.processor.generator.core.EntityGenerator;
 import io.github.erdsgfc.jforge.processor.utils.CommonUtils;
 import io.github.erdsgfc.jforge.processor.utils.Nullability;
@@ -479,7 +473,7 @@ public final class EntityModel {
      * 实体所在包的生效方言支持（经 {@code @JForgeConfig} 解析）——生成 SQL 时
      * 对自动推导的表名/列名做引用符包裹（见 {@link SqlCodegen#quoteIdentifier}）。
      */
-    public io.github.erdsgfc.jforge.annotation.DialectSupport dialectSupport() {
+    public DialectSupport dialectSupport() {
         return config.dialectSupport(element);
     }
 
