@@ -237,9 +237,8 @@ public final class SelectGenerator {
         // 运行时第一个执行的条件拼 WHERE、其后拼 AND（动态条件全为 null 时无 WHERE）。
         spec.addStatement("$T sql = new $T($S)", ClassName.get(StringBuilder.class),
                 ClassName.get(StringBuilder.class), baseSql);
-        if (!conditions.isEmpty() || !criteriaUnits.isEmpty()) {
-            spec.addStatement("$T where = $S", ClassName.get(String.class), " WHERE ");
-        }
+        // 动态形态必有 WHERE（全静态已在上方 return）——where 前缀变量恒声明。
+        spec.addStatement("$T where = $S", ClassName.get(String.class), " WHERE ");
         for (WhereCondition condition : conditions) {
             WhereCondition.appendSql(spec, condition);
         }

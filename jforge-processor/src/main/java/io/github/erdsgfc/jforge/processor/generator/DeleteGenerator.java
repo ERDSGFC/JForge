@@ -126,10 +126,8 @@ public final class DeleteGenerator {
         spec.addStatement("$T conn = getConnection()", connection);
         spec.addStatement("$T sql = new $T($S)", ClassName.get(StringBuilder.class),
                 ClassName.get(StringBuilder.class), baseSql);
-        boolean hasWhere = !conditions.isEmpty() || !criteriaUnits.isEmpty();
-        if (hasWhere) {
-            spec.addStatement("$T where = $S", ClassName.get(String.class), " WHERE ");
-        }
+        // 动态形态必有 WHERE（全静态已在上方 return）——where 前缀变量恒声明。
+        spec.addStatement("$T where = $S", ClassName.get(String.class), " WHERE ");
         for (WhereCondition condition : conditions) {
             WhereCondition.appendSql(spec, condition);
         }
