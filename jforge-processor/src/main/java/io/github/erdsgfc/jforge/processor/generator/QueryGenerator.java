@@ -210,9 +210,9 @@ public final class QueryGenerator {
                         "No @Bind(\"" + placeholders.get(i) + "\") parameter for query placeholder", method);
                 continue;
             }
-            // @Bind 挂转换器 → 经 CONV.toDatabase(param)+CONV.sqlType() 绑定(按转换列查询);
-            // 否则按声明类型选 setXxx。
-            String converterField = queryConverterField(method, parameter);
+            // 参数挂转换器（@Bind.converter 显式 / @Condition 复用宿主列 @Convert）→
+            // 经 CONV.toDatabase(param)+CONV.sqlType() 绑定；否则按声明类型选 setXxx。
+            String converterField = effectiveConverterField(info, method, parameter);
             spec.addCode(converterField != null
                     ? SqlCodegen.bindParam(parameter.asType().toString(),
                             parameter.getSimpleName().toString(), i + 1, false, false, converterField)
@@ -374,8 +374,9 @@ public final class QueryGenerator {
                 spec.beginControlFlow("if ($N != null)", bindUnits.get(f).get(0).getSimpleName());
             }
             for (VariableElement parameter : bindUnits.get(f)) {
-                // @Bind 挂转换器 → 经转换器绑定（动态路径用运行时索引 "i++"）。
-                String converterField = queryConverterField(method, parameter);
+                // 参数挂转换器（@Bind.converter / @Condition 复用宿主列）→ 经转换器绑定
+                // （动态路径用运行时索引 "i++"）。
+                String converterField = effectiveConverterField(info, method, parameter);
                 spec.addCode(converterField != null
                         ? SqlCodegen.bindParam(processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString(),
                                 parameter.getSimpleName().toString(), "i++", false, false, converterField)
@@ -779,6 +780,27 @@ public final class QueryGenerator {
         return converter == null ? null
                 : queryConverterFieldName(method.getSimpleName().toString(),
                         parameter.getSimpleName().toString());
+    }
+
+    /**
+     * 参数的有效转换器字段：① {@code @Bind.converter} 显式指定优先；② 否则 {@code @Condition}
+     * 参数匹配宿主实体列时复用该列 {@code @Convert} 转换器字段（无需注解）——条件值须与列存
+     * 相同表示才能命中；两者皆无返回 {@code null}（按声明类型绑定）。
+     */
+    private String effectiveConverterField(JForgeProcessor.DaoInfo info, ExecutableElement method,
+            VariableElement parameter) {
+        String field = queryConverterField(method, parameter);
+        if (field != null) {
+            return field;
+        }
+        Condition condition = parameter.getAnnotation(Condition.class);
+        if (condition != null) {
+            String fieldName = condition.value().isEmpty()
+                    ? parameter.getSimpleName().toString()
+                    : condition.value();
+            return SqlCodegen.converterFieldForField(info.model, fieldName);
+        }
+        return null;
     }
 
     /**

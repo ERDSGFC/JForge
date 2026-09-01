@@ -114,9 +114,10 @@ public final class SelectGenerator {
         final boolean optional;    // Optional 参数：isPresent → 条件；isEmpty → IS NULL
         final String valueExpr;    // Optional 的绑定值表达式（param.get()/getAsInt()…）
         final String rawSql;       // 原生 SQL 片段（非 null = 替代 column/op 拼装；含 ? 绑定参数）
+        final String converterField; // 宿主列 @Convert 转换器字段（非 null = 值经转换器绑定）
 
         WhereCondition(String columnName, String op, String paramName, String typeName, boolean dynamic,
-                boolean optional, String valueExpr, String rawSql) {
+                boolean optional, String valueExpr, String rawSql, String converterField) {
             this.columnName = columnName;
             this.op = op;
             this.paramName = paramName;
@@ -125,6 +126,7 @@ public final class SelectGenerator {
             this.optional = optional;
             this.valueExpr = valueExpr;
             this.rawSql = rawSql;
+            this.converterField = converterField;
         }
     }
 
@@ -246,7 +248,8 @@ public final class SelectGenerator {
                 if (condition.rawSql != null && !condition.rawSql.contains("?")) {
                     continue;
                 }
-                spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName, index++));
+                spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.paramName,
+                        index++, condition.converterField));
                 spec.addCode("\n");
             }
             spec.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
@@ -333,8 +336,8 @@ public final class SelectGenerator {
                 if (condition.optional) {
                     spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
                 }
-                spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.valueExpr != null
-                        ? condition.valueExpr : condition.paramName, "i++"));
+                spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.valueExpr != null
+                        ? condition.valueExpr : condition.paramName, "i++", condition.converterField));
                 spec.addCode("\n");
                 if (condition.optional) {
                     spec.endControlFlow();
@@ -343,11 +346,13 @@ public final class SelectGenerator {
         } else if (condition.optional) {
             // 有值分支绑定（IS NULL 无占位符）。
             spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
-            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.valueExpr, "i++"));
+            spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.valueExpr, "i++",
+                    condition.converterField));
             spec.addCode("\n");
             spec.endControlFlow();
         } else {
-            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName, "i++"));
+            spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.paramName, "i++",
+                    condition.converterField));
             spec.addCode("\n");
         }
         if (condition.dynamic) {
@@ -387,10 +392,11 @@ public final class SelectGenerator {
                     ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
                     : null;
             return new WhereCondition(null, null, paramName, bindType, dynamic, optional, valueExpr,
-                    rawSql);
+                    rawSql, null);
         }
 
         String columnName;
+        String converterField = null;   // 宿主列 @Convert 转换器字段;record 组件无转换器
         TypeMirror returnType = method.getReturnType();
         boolean isList = returnType.getKind() == TypeKind.DECLARED
                 && ((DeclaredType) returnType).asElement().getSimpleName().contentEquals("List");
@@ -399,14 +405,19 @@ public final class SelectGenerator {
             TypeElement element = (TypeElement) ((DeclaredType) elementType).asElement();
             if (element.getAnnotation(Table.class) != null || element.getKind() == ElementKind.RECORD) {
                 // 实体/record：条件字段匹配返回类型的字段/组件。
-                columnName = element.getKind() == ElementKind.RECORD
-                        ? findRecordColumn(info, element, fieldName, method)
-                        : findHostColumn(info, fieldName, method);
+                if (element.getKind() == ElementKind.RECORD) {
+                    columnName = findRecordColumn(info, element, fieldName, method);
+                } else {
+                    columnName = findHostColumn(info, fieldName, method);
+                    // 条件字段映射宿主实体列 → 复用该列 @Convert 转换器（无需注解）。
+                    converterField = SqlCodegen.converterFieldForField(info.model, fieldName);
+                }
             } else {
                 return null; // 返回类型错误已在 selectMethod 报过
             }
         } else {
             columnName = findHostColumn(info, fieldName, method);
+            converterField = SqlCodegen.converterFieldForField(info.model, fieldName);
         }
         if (columnName == null) {
             return null;
@@ -417,7 +428,8 @@ public final class SelectGenerator {
         String valueExpr = optional
                 ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
                 : null;
-        return new WhereCondition(columnName, op, paramName, bindType, dynamic, optional, valueExpr, null);
+        return new WhereCondition(columnName, op, paramName, bindType, dynamic, optional, valueExpr,
+                null, converterField);
     }
 
     /** 在宿主实体字段集合中查找字段并返回其列名（按宿主方言包裹）；找不到则报错。 */

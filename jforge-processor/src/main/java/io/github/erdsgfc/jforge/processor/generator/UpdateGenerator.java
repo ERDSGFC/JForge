@@ -45,9 +45,10 @@ public final class UpdateGenerator {
         final boolean optional;    // Optional：空 → SET NULL
         final String valueExpr;    // Optional 绑定值表达式
         final String rawSql;       // 原生 SET 表达式（非 null 替代 列 = ?；含 ? 绑定参数）
+        final String converterField; // 宿主列 @Convert 转换器字段（非 null = 值经转换器绑定）
 
         SetUnit(String column, String paramName, String bindType, boolean dynamic,
-                boolean optional, String valueExpr, String rawSql) {
+                boolean optional, String valueExpr, String rawSql, String converterField) {
             this.column = column;
             this.paramName = paramName;
             this.bindType = bindType;
@@ -55,6 +56,7 @@ public final class UpdateGenerator {
             this.optional = optional;
             this.valueExpr = valueExpr;
             this.rawSql = rawSql;
+            this.converterField = converterField;
         }
     }
 
@@ -173,14 +175,16 @@ public final class UpdateGenerator {
                 if (unit.rawSql != null && !unit.rawSql.contains("?")) {
                     continue;
                 }
-                spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.paramName, index++));
+                spec.addCode(SqlCodegen.bindCondition(unit.bindType, unit.paramName,
+                        index++, unit.converterField));
                 spec.addCode("\n");
             }
             for (WhereCondition condition : conditions) {
                 if (condition.rawSql != null && !condition.rawSql.contains("?")) {
                     continue;
                 }
-                spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName, index++));
+                spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.paramName,
+                        index++, condition.converterField));
                 spec.addCode("\n");
             }
             spec.addStatement("return ps.executeUpdate()");
@@ -249,7 +253,7 @@ public final class UpdateGenerator {
         // 原生 SQL SET 表达式：rawSql 非空直接使用（跳过列映射），含 ? 绑定参数。
         String rawSql = set != null ? set.rawSql() : "";
         if (!rawSql.isEmpty()) {
-            return new SetUnit(null, paramName, bindType, dynamic, optional, valueExpr, rawSql);
+            return new SetUnit(null, paramName, bindType, dynamic, optional, valueExpr, rawSql, null);
         }
 
         String fieldName = set != null && !set.value().isEmpty()
@@ -267,8 +271,10 @@ public final class UpdateGenerator {
                             + info.model.entityQualifiedName(), method);
             return null;
         }
+        // SET 值须与列存同表示 → 复用该列 @Convert 转换器（无需注解）。
+        String converterField = SqlCodegen.converterFieldForField(info.model, fieldName);
         return new SetUnit(SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column),
-                paramName, bindType, dynamic, optional, valueExpr, null);
+                paramName, bindType, dynamic, optional, valueExpr, null, converterField);
     }
 
     private void emitSetAppend(MethodSpec.Builder spec, SetUnit unit, String setConnVar,
@@ -308,11 +314,13 @@ public final class UpdateGenerator {
             // 纯常量 SET 表达式（无 ?）不绑定参数。
         } else if (unit.optional) {
             spec.beginControlFlow("if ($N.isPresent())", unit.paramName);
-            spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.valueExpr, "i++"));
+            spec.addCode(SqlCodegen.bindCondition(unit.bindType, unit.valueExpr, "i++",
+                    unit.converterField));
             spec.addCode("\n");
             spec.endControlFlow();
         } else {
-            spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.paramName, "i++"));
+            spec.addCode(SqlCodegen.bindCondition(unit.bindType, unit.paramName, "i++",
+                    unit.converterField));
             spec.addCode("\n");
         }
         if (unit.dynamic) {
@@ -332,9 +340,10 @@ public final class UpdateGenerator {
         final boolean optional;
         final String valueExpr;
         final String rawSql;       // 原生 SQL 条件（非 null 替代 column/op；含 ? 绑定参数）
+        final String converterField; // 宿主列 @Convert 转换器字段（非 null = 值经转换器绑定）
 
         WhereCondition(String columnName, String op, String paramName, String typeName,
-                boolean dynamic, boolean optional, String valueExpr, String rawSql) {
+                boolean dynamic, boolean optional, String valueExpr, String rawSql, String converterField) {
             this.columnName = columnName;
             this.op = op;
             this.paramName = paramName;
@@ -343,6 +352,7 @@ public final class UpdateGenerator {
             this.optional = optional;
             this.valueExpr = valueExpr;
             this.rawSql = rawSql;
+            this.converterField = converterField;
         }
     }
 
@@ -378,7 +388,7 @@ public final class UpdateGenerator {
             String valueExpr = optional
                     ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
                     : null;
-            return new WhereCondition(null, op, paramName, bindType, dynamic, optional, valueExpr, rawSql);
+            return new WhereCondition(null, op, paramName, bindType, dynamic, optional, valueExpr, rawSql, null);
         }
         boolean optional = CriteriaGenerator.isOptional(parameter.asType());
         boolean dynamic = optional
@@ -389,8 +399,10 @@ public final class UpdateGenerator {
         String valueExpr = optional
                 ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
                 : null;
+        // 条件字段映射宿主列 → 复用该列 @Convert 转换器（无需注解）。
+        String converterField = SqlCodegen.converterFieldForField(info.model, fieldName);
         return new WhereCondition(SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column),
-                op, paramName, bindType, dynamic, optional, valueExpr, null);
+                op, paramName, bindType, dynamic, optional, valueExpr, null, converterField);
     }
 
     private void emitConditionAppend(MethodSpec.Builder spec, WhereCondition condition) {
@@ -431,11 +443,13 @@ public final class UpdateGenerator {
             // 纯常量条件（无 ?）不绑定参数。
         } else if (condition.optional) {
             spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
-            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.valueExpr, "i++"));
+            spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.valueExpr, "i++",
+                    condition.converterField));
             spec.addCode("\n");
             spec.endControlFlow();
         } else {
-            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName, "i++"));
+            spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.paramName, "i++",
+                    condition.converterField));
             spec.addCode("\n");
         }
         if (condition.dynamic) {

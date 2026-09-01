@@ -1,8 +1,13 @@
 package io.github.erdsgfc.jforge.convert;
 
 import io.github.erdsgfc.jforge.annotation.Bind;
+import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.annotation.Dao;
+import io.github.erdsgfc.jforge.annotation.Delete;
 import io.github.erdsgfc.jforge.annotation.Query;
+import io.github.erdsgfc.jforge.annotation.Select;
+import io.github.erdsgfc.jforge.annotation.Update;
+import io.github.erdsgfc.jforge.annotation.UpdateSet;
 import io.github.erdsgfc.jforge.core.BaseRepository;
 import org.jspecify.annotations.Nullable;
 
@@ -29,4 +34,27 @@ public interface ConvertUserRepository extends BaseRepository<ConvertUser, Long>
     @Query("SELECT * FROM convert_users WHERE hire_date = :d")
     ConvertUser findNullableByHireDate(
             @Nullable @Bind(value = "d", converter = VarcharDateConverter.class) LocalDate d);
+
+    /**
+     * {@code @Select}：条件参数名即宿主实体字段名，处理器自动复用该列 {@code @Convert}
+     * 转换器（无需注解）——条件值经 {@code CONV.toDatabase(birthDate)} 生成与列一致的
+     * 存储表示。
+     */
+    @Select
+    ConvertUser findByBirthDateColumn(LocalDate birthDate);
+
+    /**
+     * {@code @Query} + {@code @Condition} 追加条件：{@code birthDate} 条件映射宿主列
+     * {@code birth_date}，自动复用其转换器。
+     */
+    @Query("SELECT * FROM convert_users WHERE name = :n")
+    ConvertUser findByNameAndBirthDate(@Bind("n") String name, @Condition LocalDate birthDate);
+
+    /** {@code @Update}：SET 转换列（值经转换器写库）+ WHERE 主键。 */
+    @Update
+    int updateBirthDateById(@UpdateSet LocalDate birthDate, @Condition Long id);
+
+    /** {@code @Delete}：WHERE 条件自动复用列转换器。 */
+    @Delete
+    int deleteByBirthDate(@Condition LocalDate birthDate);
 }

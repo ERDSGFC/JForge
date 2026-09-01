@@ -131,4 +131,43 @@ class ConvertTest {
         // null：动态条件跳过（无 WHERE 取首行）——验证动态路径无回归。
         assertEquals("a", repo.findNullableByHireDate(null).name());
     }
+
+    /** {@code @Select}：条件参数自动复用宿主列 {@code @Convert} 转换器（无需注解）。 */
+    @Test
+    void selectReusesColumnConverter() {
+        LocalDate birth = LocalDate.of(2000, 1, 2);
+        ConvertUser saved = repo.save(repo.createEntity().name("qin").birthDate(birth));
+
+        assertEquals(saved.id(), repo.findByBirthDateColumn(birth).id());
+        assertNull(repo.findByBirthDateColumn(birth.plusDays(1)));
+    }
+
+    /** {@code @Query} + {@code @Condition}：追加条件参数自动复用列转换器。 */
+    @Test
+    void queryConditionReusesColumnConverter() {
+        repo.save(repo.createEntity().name("qin").birthDate(LocalDate.of(2000, 1, 2)));
+
+        assertNotNull(repo.findByNameAndBirthDate("qin", LocalDate.of(2000, 1, 2)));
+        assertNull(repo.findByNameAndBirthDate("qin", LocalDate.of(1990, 1, 1)));
+    }
+
+    /** {@code @Update}：SET 转换列值经转换器写库。 */
+    @Test
+    void updateSetReusesColumnConverter() {
+        ConvertUser saved = repo.save(repo.createEntity().name("qin").birthDate(LocalDate.of(2000, 1, 2)));
+        LocalDate newBirth = LocalDate.of(1995, 12, 31);
+
+        assertEquals(1, repo.updateBirthDateById(newBirth, saved.id()));
+        assertEquals(newBirth, repo.findById(saved.id()).birthDate());
+    }
+
+    /** {@code @Delete}：WHERE 条件自动复用列转换器。 */
+    @Test
+    void deleteConditionReusesColumnConverter() {
+        ConvertUser saved = repo.save(repo.createEntity().name("qin").birthDate(LocalDate.of(2000, 1, 2)));
+
+        assertEquals(1, repo.deleteByBirthDate(LocalDate.of(2000, 1, 2)));
+        assertNull(repo.findById(saved.id()));
+        assertEquals(0, repo.deleteByBirthDate(LocalDate.of(2000, 1, 2)));
+    }
 }

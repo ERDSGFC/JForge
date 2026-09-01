@@ -89,6 +89,28 @@ public final class SqlCodegen {
     }
 
     /**
+     * 条件/参数绑定：转换器列（{@code converterField} 非 null）经 {@code CONV.toDatabase(expr)
+     * + CONV.sqlType()} 绑定（值须与列存同表示），否则按声明类型选 setXxx——供
+     * {@code @Condition}/{@code @UpdateSet} 参数复用实体列 {@code @Convert} 转换器。
+     *
+     * @param typeName       字段类型字符串
+     * @param expr           值表达式
+     * @param indexExpr      基于 1 的索引表达式（编译期常量或运行时表达式）
+     * @param converterField 转换器静态字段名（{@code null} = 无转换器）
+     * @return 绑定代码块
+     */
+    public static CodeBlock bindCondition(String typeName, String expr, String indexExpr, String converterField) {
+        return converterField != null
+                ? bindParam(typeName, expr, indexExpr, false, false, converterField)
+                : bindParam(typeName, expr, indexExpr);
+    }
+
+    /** int 索引版的 {@link #bindCondition(String, String, String, String)}。 */
+    public static CodeBlock bindCondition(String typeName, String expr, int index, String converterField) {
+        return bindCondition(typeName, expr, String.valueOf(index), converterField);
+    }
+
+    /**
      * 构建带运行时索引表达式的类型精确参数绑定语句，用于遍历变长参数列表的循环内部。
      *
      * @param typeName  参数的声明类型
@@ -445,6 +467,25 @@ public final class SqlCodegen {
      */
     public static String converterFieldName(EntityModel model, EntityModel.ColumnModel column) {
         return "CONVERTER_" + model.entitySimpleName().toUpperCase() + "_" + column.fieldName.toUpperCase();
+    }
+
+    /**
+     * 按字段名查找宿主实体列，返回其 {@code @Convert} 转换器的静态字段名；该列无转换器
+     * 或字段不存在时 {@code null}。供 {@code @Condition}/{@code @UpdateSet} 参数自动复用
+     * 列转换器——条件/SET 值须与列存相同的转换后表示才能命中（复用宿主仓库已有的
+     * {@code CONVERTER_<实体>_<字段>} 字段，无需新生成）。
+     *
+     * @param model     实体模型
+     * @param fieldName 实体字段名
+     * @return 转换器静态字段名；无转换器时 {@code null}
+     */
+    public static String converterFieldForField(EntityModel model, String fieldName) {
+        for (EntityModel.ColumnModel column : model.columns()) {
+            if (column.fieldName.equals(fieldName) && column.converter != null) {
+                return converterFieldName(model, column);
+            }
+        }
+        return null;
     }
 
     /**
