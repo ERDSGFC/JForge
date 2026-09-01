@@ -141,20 +141,30 @@ public final class EntityGenerator {
         return method.build();
     }
 
-    /** 生成 {@code hashCode()}:全部字段 getter 的 {@code Objects.hash(...)}。 */
+    /**
+     * 生成 {@code hashCode()}:按 JDK 常用的 31 质数累加各字段哈希值。
+     *
+     * <p>相较于 {@code Objects.hash(...)}，生成代码不需要创建 varargs 数组；
+     * 基本类型使用包装类的静态 {@code hashCode} 方法，引用类型则显式处理
+     * {@code null}。</p>
+     */
     private static MethodSpec hashCodeMethod(List<EntityModel.ColumnModel> columns) {
-        CodeBlock.Builder args = CodeBlock.builder();
-        for (int i = 0; i < columns.size(); i++) {
-            if (i > 0) {
-                args.add(", ");
-            }
-            args.add("$N()", columns.get(i).getterName);
-        }
-        return MethodSpec.methodBuilder("hashCode")
+        MethodSpec.Builder method = MethodSpec.methodBuilder("hashCode")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(int.class)
-                .addStatement("return $T.hash($L)", Objects.class, args.build())
+                .addStatement("int result = 1");
+        for (EntityModel.ColumnModel column : columns) {
+            TypeName type = TypeName.get(column.returnType);
+            if (type.isPrimitive()) {
+                method.addStatement("result = 31 * result + $T.hashCode($N)",
+                        type.box(), column.fieldName);
+            } else {
+                method.addStatement("result = 31 * result + ($N == null ? 0 : $N.hashCode())",
+                        column.fieldName, column.fieldName);
+            }
+        }
+        return method.addStatement("return result")
                 .build();
     }
 }
