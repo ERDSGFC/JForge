@@ -521,11 +521,13 @@ public final class QueryGenerator {
                                     + model.entityQualifiedName() + ": " + sql, method);
                     return;
                 }
-                spec.addCode(SqlCodegen.readColumn(column.typeName, column.javaType, "e", column.setterName, pos + 1,
+                spec.addCode(SqlCodegen.readColumn(column.typeName, column.javaType, column.javaClassType,
+                        "e", column.setterName, pos + 1,
                         column.nullable, column.isEnum,
                         column.converter != null ? SqlCodegen.converterFieldName(model, column) : null));
             } else {
-                spec.addCode(SqlCodegen.readColumnByName(column.typeName, column.javaType, "e", column.setterName,
+                spec.addCode(SqlCodegen.readColumnByName(column.typeName, column.javaType, column.javaClassType,
+                        "e", column.setterName,
                         column.columnName, column.nullable, column.isEnum,
                         column.converter != null ? SqlCodegen.converterFieldName(model, column) : null));
             }

@@ -41,6 +41,8 @@ public final class EntityModel {
         public final String typeName;   // TypeMirror#toString,如 "java.lang.Long"、"int"
         /** 去除 TYPE_USE 注解后的 JavaPoet 类型，用于生成类型字面量和声明。 */
         public final TypeName javaType;
+        /** 用于 {@code ResultSet.getObject(index, type.class)} 的擦除类型。 */
+        public final TypeName javaClassType;
         public final TypeMirror returnType; // getter 的返回类型,用于 setter 类型校验
         public final String getterName;
         public final String setterName;
@@ -87,6 +89,7 @@ public final class EntityModel {
             TypeMirror plainType = types.stripAnnotations(returnType);
             this.typeName = plainType.toString();
             this.javaType = TypeName.get(plainType);
+            this.javaClassType = TypeName.get(types.erasure(plainType));
             this.returnType = returnType;
             this.getterName = fieldName;
             this.setterName = fieldName;

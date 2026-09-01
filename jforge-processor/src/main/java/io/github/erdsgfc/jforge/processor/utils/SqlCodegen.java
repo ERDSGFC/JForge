@@ -1,15 +1,10 @@
 package io.github.erdsgfc.jforge.processor.utils;
 
-import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.CodeBlock;
-import com.palantir.javapoet.FieldSpec;
-import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.*;
 import io.github.erdsgfc.jforge.annotation.DialectSupport;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 
 import javax.lang.model.element.Modifier;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -94,6 +89,7 @@ public final class SqlCodegen {
      *
      * @param typeName       字段类型字符串
      * @param javaType       字段的 JavaPoet 类型（已去除 TYPE_USE 注解）
+     * @param javaClassType  用于 {@code getObject(..., type.class)} 的擦除类型
      * @param entityVar      实体变量名
      * @param setterName     builder setter 方法名
      * @param index          基于 1 的列索引
@@ -102,7 +98,8 @@ public final class SqlCodegen {
      * @param converterField 转换器静态字段名（{@code CONV.toEntity(rs.getObject(i))} 读取）
      * @return 读取代码块
      */
-    public static CodeBlock readColumn(String typeName, TypeName javaType, String entityVar, String setterName, int index,
+    public static CodeBlock readColumn(String typeName, TypeName javaType, TypeName javaClassType,
+            String entityVar, String setterName, int index,
             boolean nullable, boolean isEnum, String converterField) {
         if (converterField != null) {
             // 转换器列:裸 rs.getObject(i) 取驱动的默认数据库表示(如 PG jsonb → PGobject),
@@ -114,9 +111,10 @@ public final class SqlCodegen {
             // pgjdbc 不支持 getObject(i, Class) 把 PG enum 转成 Java 枚举——读标签字符串
             // 后 valueOf（可空列对 NULL 返回 null）。
             if (nullable) {
+                String var = "v" + setterName;
                 return CodeBlock.of("$T $L = rs.getString($L);\n$L.$L($L == null ? null : $T.valueOf($L));",
-                        String.class, "vs", index, entityVar, setterName, "vs",
-                        javaType, "vs");
+                        String.class, var, index, entityVar, setterName, var,
+                        javaType, var);
             }
             return CodeBlock.of("$L.$L($T.valueOf(rs.getString($L)));",
                     entityVar, setterName, javaType, index);
@@ -126,7 +124,7 @@ public final class SqlCodegen {
             // LocalDate/LocalDateTime/enums: getObject(index, Class) 对 NULL 列天然返回 null,
             // 可空与否形态一致——无需 wasNull 分支。
             return CodeBlock.of("$L.$L(($T) $L.getObject($L, $T.class));",
-                    entityVar, setterName, javaType, "rs", index, javaType);
+                    entityVar, setterName, javaType, "rs", index, javaClassType);
         }
         if (nullable) {
             // 可空列:基本类型局部变量承接读取值(零装箱),经 rs.wasNull() 三元回退 null——
@@ -146,6 +144,7 @@ public final class SqlCodegen {
      *
      * @param typeName       字段类型字符串
      * @param javaType       字段的 JavaPoet 类型（已去除 TYPE_USE 注解）
+     * @param javaClassType  用于 {@code getObject(..., type.class)} 的擦除类型
      * @param entityVar      实体变量名
      * @param setterName     builder setter 方法名
      * @param column         列名
@@ -154,7 +153,8 @@ public final class SqlCodegen {
      * @param converterField 转换器静态字段名（{@code CONV.toEntity(rs.getObject(...))} 读取）
      * @return 读取代码块
      */
-    public static CodeBlock readColumnByName(String typeName, TypeName javaType, String entityVar, String setterName, String column,
+    public static CodeBlock readColumnByName(String typeName, TypeName javaType, TypeName javaClassType,
+            String entityVar, String setterName, String column,
             boolean nullable, boolean isEnum, String converterField) {
         if (converterField != null) {
             return CodeBlock.of("$L.$L($L.toEntity(rs.getObject($S)));",
@@ -162,9 +162,10 @@ public final class SqlCodegen {
         }
         if (isEnum) {
             if (nullable) {
+                String var = "v" + setterName;
                 return CodeBlock.of("$T $L = rs.getString($S);\n$L.$L($L == null ? null : $T.valueOf($L));",
-                        String.class, "vs", column, entityVar, setterName, "vs",
-                        javaType, "vs");
+                        String.class, var, column, entityVar, setterName, var,
+                        javaType, var);
             }
             return CodeBlock.of("$L.$L($T.valueOf(rs.getString($S)));",
                     entityVar, setterName, javaType, column);
@@ -173,7 +174,7 @@ public final class SqlCodegen {
         if (getter.equals("getObject")) {
             // getObject 对 NULL 列天然返回 null——可空与否形态一致,无需 wasNull 分支。
             return CodeBlock.of("$L.$L(($T) $L.getObject($S, $T.class));",
-                    entityVar, setterName, javaType, "rs", column, javaType);
+                    entityVar, setterName, javaType, "rs", column, javaClassType);
         }
         if (nullable) {
             String var = "v" + setterName;
@@ -252,8 +253,84 @@ public final class SqlCodegen {
     public static String convertPlaceholders(String sql, List<String> placeholderOrder) {
         StringBuilder out = new StringBuilder();
         int i = 0;
+        String quote = null;
+        boolean lineComment = false;
+        boolean blockComment = false;
         while (i < sql.length()) {
             char c = sql.charAt(i);
+            if (lineComment) {
+                out.append(c);
+                i++;
+                if (c == '\n' || c == '\r') {
+                    lineComment = false;
+                }
+                continue;
+            }
+            if (blockComment) {
+                out.append(c);
+                i++;
+                if (c == '*' && i < sql.length() && sql.charAt(i) == '/') {
+                    out.append('/');
+                    i++;
+                    blockComment = false;
+                }
+                continue;
+            }
+            if (quote != null) {
+                if (quote.length() > 1 && sql.startsWith(quote, i)) {
+                    out.append(quote);
+                    i += quote.length();
+                    quote = null;
+                    continue;
+                }
+                out.append(c);
+                i++;
+                if (quote.length() > 1) {
+                    continue;
+                }
+                if (c == '\\' && i < sql.length()) {
+                    out.append(sql.charAt(i++));
+                } else if (c == quote.charAt(0)) {
+                    if (i < sql.length() && sql.charAt(i) == quote.charAt(0)) {
+                        out.append(sql.charAt(i++));
+                    } else {
+                        quote = null;
+                    }
+                }
+                continue;
+            }
+            if (c == '\'' || c == '"' || c == '`') {
+                quote = String.valueOf(c);
+                out.append(c);
+                i++;
+                continue;
+            }
+            if (c == '-' && i + 1 < sql.length() && sql.charAt(i + 1) == '-') {
+                lineComment = true;
+                out.append("--");
+                i += 2;
+                continue;
+            }
+            if (c == '/' && i + 1 < sql.length() && sql.charAt(i + 1) == '*') {
+                blockComment = true;
+                out.append("/*");
+                i += 2;
+                continue;
+            }
+            if (c == '$') {
+                int delimiterEnd = dollarQuoteDelimiterEnd(sql, i);
+                if (delimiterEnd >= 0) {
+                    quote = sql.substring(i, delimiterEnd);
+                    out.append(quote);
+                    i = delimiterEnd;
+                    continue;
+                }
+            }
+            if (c == ':' && i + 1 < sql.length() && sql.charAt(i + 1) == ':') {
+                out.append("::");
+                i += 2;
+                continue;
+            }
             if (c == ':' && i + 1 < sql.length() && Character.isJavaIdentifierStart(sql.charAt(i + 1))) {
                 int start = ++i;
                 while (i < sql.length() && Character.isJavaIdentifierPart(sql.charAt(i))) {
@@ -267,6 +344,22 @@ public final class SqlCodegen {
             }
         }
         return out.toString();
+    }
+
+    /** 返回 PostgreSQL dollar-quote 分隔符结束位置，非分隔符返回 -1。 */
+    private static int dollarQuoteDelimiterEnd(String sql, int start) {
+        int i = start + 1;
+        if (i < sql.length() && sql.charAt(i) == '$') {
+            return i + 1;
+        }
+        if (i >= sql.length() || !(Character.isLetter(sql.charAt(i)) || sql.charAt(i) == '_')) {
+            return -1;
+        }
+        i++;
+        while (i < sql.length() && (Character.isLetterOrDigit(sql.charAt(i)) || sql.charAt(i) == '_')) {
+            i++;
+        }
+        return i < sql.length() && sql.charAt(i) == '$' ? i + 1 : -1;
     }
 
     /**
@@ -372,22 +465,7 @@ public final class SqlCodegen {
     }
 
     /**
-     * 提取列模型列表的列名。
-     *
-     * @param columns 列模型
-     * @return 按顺序排列的列名字符串
-     */
-    public static List<String> namesOf(List<EntityModel.ColumnModel> columns) {
-        List<String> names = new ArrayList<>();
-        for (EntityModel.ColumnModel column : columns) {
-            names.add(column.columnName);
-        }
-        return names;
-    }
-
-    /**
-     * 提取列模型列表的列名，并按方言引用符包裹——SELECT / INSERT 列清单用
-     * （{@link #namesOf} 的引号变体）。
+     * 提取列模型列表的列名的引号变体，并按方言引用符包裹——SELECT / INSERT 列清单用
      *
      * @param columns 列模型
      * @param dialect 生效的方言支持（引用符来源）
