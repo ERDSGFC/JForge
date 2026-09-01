@@ -250,7 +250,7 @@ public final class CriteriaGenerator {
         return switch (name) {
             case "java.util.Optional" -> {
                 List<? extends TypeMirror> args = declared.getTypeArguments();
-                yield args.isEmpty() ? "java.lang.Object" : types.stripAnnotations(args.get(0)).toString();
+                yield args.isEmpty() ? "java.lang.Object" : types.stripAnnotations(args.getFirst()).toString();
             }
             case "java.util.OptionalInt" -> "int";
             case "java.util.OptionalLong" -> "long";
