@@ -8,8 +8,7 @@ public final class PostgreSqlDialect implements DialectSupport {
     @Override
     public boolean supportsReturningKeys() {
         // INSERT ... RETURNING 是真 PG 官方推荐的生成键路径(单语句拿 id,优于
-        // getGeneratedKeys);H2 已有独立方言(H2Dialect,不支持该语法),POSTGRESQL
-        // 枚举值现仅代表真 PG。
+        // getGeneratedKeys);
         return true;
     }
 

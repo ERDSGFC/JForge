@@ -112,9 +112,11 @@ public final class EntityGenerator {
     }
 
     /**
-     * 生成 {@code equals()}:按实体接口契约比较(instanceof 实体接口 + getter 逐个
-     * {@code Objects.equals})——不同仓库各嵌的 impl 副本(不同类)也能互相判等;
-     * default 列比较的是覆盖后的 getter(返回字段值),不是默认值来源。
+     * 生成 {@code equals()}:按实体接口契约比较(instanceof 实体接口 + getter 逐个比较)
+     * ——不同仓库各嵌的 impl 副本(不同类)也能互相判等;引用类型使用
+     * {@code Objects.equals},基本类型避免装箱,浮点类型使用 {@code compare} 保持
+     * {@code NaN} 与 {@code -0.0} 的相等语义;default 列比较的是覆盖后的 getter
+     * (返回字段值),不是默认值来源。
      */
     private static MethodSpec equalsMethod(ClassName entityClass, List<EntityModel.ColumnModel> columns) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("equals")
@@ -135,7 +137,28 @@ public final class EntityGenerator {
             if (i > 0) {
                 cond.add(" && ");
             }
-            cond.add("$T.equals(this.$N, that.$N())", Objects.class, column.fieldName, column.getterName);
+            switch (column.returnType.getKind()) {
+                case FLOAT:
+                    cond.add("$T.compare(this.$N, that.$N()) == 0", Float.class,
+                            column.fieldName, column.getterName);
+                    break;
+                case DOUBLE:
+                    cond.add("$T.compare(this.$N, that.$N()) == 0", Double.class,
+                            column.fieldName, column.getterName);
+                    break;
+                case BOOLEAN:
+                case BYTE:
+                case SHORT:
+                case INT:
+                case LONG:
+                case CHAR:
+                    cond.add("this.$N == that.$N()", column.fieldName, column.getterName);
+                    break;
+                default:
+                    cond.add("$T.equals(this.$N, that.$N())", Objects.class,
+                            column.fieldName, column.getterName);
+                    break;
+            }
         }
         method.addStatement("return $L", cond.build());
         return method.build();
