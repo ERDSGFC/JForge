@@ -214,7 +214,7 @@ public final class UpdateGenerator {
         }
         criteriaGenerator.emitBind(spec, criteriaUnits, "i++");
         spec.addStatement("return ps.executeUpdate()");
-        SqlCodegen.endTxBlockDynamic(spec, sqlException, methodName, info.model.tableName(),
+        SqlCodegen.endTxBlockExpr(spec, sqlException, methodName, info.model.tableName(),
                 "sql.toString()", logSql);
         return spec.build();
     }

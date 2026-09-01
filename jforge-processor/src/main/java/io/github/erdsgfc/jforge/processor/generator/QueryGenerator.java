@@ -389,7 +389,7 @@ public final class QueryGenerator {
             appendResultMapping(spec, info, method, builder, embedded, returnType, selectPart);
             spec.endControlFlow();
         }
-        SqlCodegen.endTxBlockDynamic(spec, sqlException, methodName, info.model.tableName(),
+        SqlCodegen.endTxBlockExpr(spec, sqlException, methodName, info.model.tableName(),
                 "sql.toString()", logSql);
         return spec.build();
     }

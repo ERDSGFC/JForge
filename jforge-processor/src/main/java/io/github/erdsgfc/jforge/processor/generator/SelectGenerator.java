@@ -261,7 +261,7 @@ public final class SelectGenerator {
         queryGenerator.appendResultMapping(spec, info, method, builder, embedded, returnType, baseSql);
         spec.endControlFlow();
 
-        SqlCodegen.endTxBlockDynamic(spec, sqlException, methodName, info.model.tableName(),
+        SqlCodegen.endTxBlockExpr(spec, sqlException, methodName, info.model.tableName(),
                 "sql.toString()", configHelper.logSql(info.element));
         return spec.build();
     }

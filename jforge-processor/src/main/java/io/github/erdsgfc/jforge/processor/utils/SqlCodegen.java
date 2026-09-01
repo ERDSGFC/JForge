@@ -416,11 +416,14 @@ public final class SqlCodegen {
     }
 
     /**
-     * 关闭 SQL 动态构建的事务代码块。与 {@link #endTxBlock(MethodSpec.Builder,
-     * ClassName, String, String, String, boolean)} 不同，{@code sqlExpr} 是生成代码中的
-     * 表达式（例如 {@code sql.toString()}），因此异常消息和失败日志包含运行时完整 SQL。
+     * 关闭事务代码块（SQL 为运行时表达式版）。与 {@link #endTxBlock(MethodSpec.Builder,
+     * ClassName, String, String, String, boolean)}（编译期字面量）不同，{@code sqlExpr}
+     * 是生成代码中的表达式（如动态拼接的 {@code sql.toString()}，或静态 SQL 常量
+     * <em>字段名</em>如 {@code "saveSql"}），因此异常消息和失败日志包含运行时完整
+     * SQL——静态方法传字段名还避免了编译期重复调用 SQL 生成函数（字段初始化与错误
+     * 消息共用同一字符串）。
      */
-    public static void endTxBlockDynamic(MethodSpec.Builder method, ClassName sqlException,
+    public static void endTxBlockExpr(MethodSpec.Builder method, ClassName sqlException,
             String operation, String tableName, String sqlExpr, boolean logSql) {
         String prefix = operation + " on table '" + tableName + "' [";
         String suffix = "]: ";

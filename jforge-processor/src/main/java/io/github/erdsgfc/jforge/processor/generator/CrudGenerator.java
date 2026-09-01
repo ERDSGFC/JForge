@@ -146,8 +146,8 @@ public final class CrudGenerator {
             }
         }
         method.addStatement("return entity");
-        SqlCodegen.endTxBlock(method, sqlException, "save", info.model.tableName(),
-                SqlFieldGenerator.saveSql(info, configHelper), configHelper.logSql(info.element));
+        SqlCodegen.endTxBlockExpr(method, sqlException, "save", info.model.tableName(),
+                "saveSql", configHelper.logSql(info.element));
         return method.build();
     }
 
@@ -230,8 +230,8 @@ public final class CrudGenerator {
         }
 
         method.addStatement("return entities");
-        SqlCodegen.endTxBlock(method, sqlException, "save", info.model.tableName(),
-                SqlFieldGenerator.saveAllSql(info), configHelper.logSql(info.element));
+        SqlCodegen.endTxBlockExpr(method, sqlException, "save", info.model.tableName(),
+                "saveAllSql", configHelper.logSql(info.element));
         return method.build();
     }
 
@@ -458,7 +458,7 @@ public final class CrudGenerator {
         method.addCode(idBindParam(info, "id", 1));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
-        SqlCodegen.endTxBlock(method, sqlException, "deleteById", info.model.tableName(), SqlFieldGenerator.deleteByIdSql(info), configHelper.logSql(info.element));
+        SqlCodegen.endTxBlockExpr(method, sqlException, "deleteById", info.model.tableName(), "deleteByIdSql", configHelper.logSql(info.element));
         return method.build();
     }
 
@@ -486,7 +486,7 @@ public final class CrudGenerator {
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "sql.toString()", false, configHelper.logSql(info.element));
         appendInBindings(method, info);
         method.addStatement("return ps.executeUpdate()");
-        SqlCodegen.endTxBlockDynamic(method, sqlException, "deleteByIds", info.model.tableName(),
+        SqlCodegen.endTxBlockExpr(method, sqlException, "deleteByIds", info.model.tableName(),
                 "sql.toString()", configHelper.logSql(info.element));
         return method.build();
     }
@@ -529,7 +529,7 @@ public final class CrudGenerator {
         method.addCode(idBindParam(info, "entity." + model.idColumn().getterName + "()", index));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
-        SqlCodegen.endTxBlock(method, sqlException, "update", info.model.tableName(), SqlFieldGenerator.updateSql(info), configHelper.logSql(info.element));
+        SqlCodegen.endTxBlockExpr(method, sqlException, "update", info.model.tableName(), "updateSql", configHelper.logSql(info.element));
         return method.build();
     }
 
@@ -560,7 +560,7 @@ public final class CrudGenerator {
         method.endControlFlow();
         method.addStatement("return mapRow(rs)");
         method.endControlFlow();
-        SqlCodegen.endTxBlock(method, sqlException, "findById", info.model.tableName(), SqlFieldGenerator.findByIdSql(info), configHelper.logSql(info.element));
+        SqlCodegen.endTxBlockExpr(method, sqlException, "findById", info.model.tableName(), "findByIdSql", configHelper.logSql(info.element));
         return method.build();
     }
 
@@ -596,7 +596,7 @@ public final class CrudGenerator {
         method.endControlFlow();
         method.endControlFlow();
         method.addStatement("return result");
-        SqlCodegen.endTxBlockDynamic(method, sqlException, "findByIds", info.model.tableName(),
+        SqlCodegen.endTxBlockExpr(method, sqlException, "findByIds", info.model.tableName(),
                 "sql.toString()", configHelper.logSql(info.element));
         return method.build();
     }
@@ -626,7 +626,7 @@ public final class CrudGenerator {
         method.endControlFlow();
         method.endControlFlow();
         method.addStatement("return result");
-        SqlCodegen.endTxBlock(method, sqlException, "findAll", info.model.tableName(), SqlFieldGenerator.findAllSql(info), configHelper.logSql(info.element));
+        SqlCodegen.endTxBlockExpr(method, sqlException, "findAll", info.model.tableName(), "findAllSql", configHelper.logSql(info.element));
         return method.build();
     }
 
@@ -651,7 +651,7 @@ public final class CrudGenerator {
         method.addStatement("rs.next()");
         method.addStatement("return rs.getLong(1)");
         method.endControlFlow();
-        SqlCodegen.endTxBlock(method, sqlException, "count", info.model.tableName(), SqlFieldGenerator.countSql(info), configHelper.logSql(info.element));
+        SqlCodegen.endTxBlockExpr(method, sqlException, "count", info.model.tableName(), "countSql", configHelper.logSql(info.element));
         return method.build();
     }
 
@@ -696,8 +696,8 @@ public final class CrudGenerator {
         method.addStatement("rs.next()");
         method.addStatement("return rs.getLong(1)");
         method.endControlFlow();
-        SqlCodegen.endTxBlock(method, sqlException, "countById", info.model.tableName(),
-                SqlFieldGenerator.countByIdSql(info), configHelper.logSql(info.element));
+        SqlCodegen.endTxBlockExpr(method, sqlException, "countById", info.model.tableName(),
+                "countByIdSql", configHelper.logSql(info.element));
         return method.build();
     }
 
