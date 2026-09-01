@@ -21,20 +21,17 @@ public final class SqlCodegen {
     }
 
     /**
-     * 构建实体字段的绑定语句：可空列走 {@code ps.setObject(index, expr)}——setXxx
-     * 对 {@code null} 值自动拆箱抛 NPE（如 {@code setInt} 接收 {@code Integer} null），
-     * 而 setObject 天然把 null 绑定为 SQL NULL、非 null 值由驱动按参数推断类型；
-     * 枚举列走 {@code setObject(index, expr, Types.OTHER)}——pgjdbc 对无显式类型的
-     * 枚举对象无法推断 SQL 类型；转换器列走 {@code setObject(i, CONV.toDatabase(expr),
-     * CONV.sqlType())}——SQL 类型由转换器决定（默认 JDBCType.OTHER = unknown，让
-     * 服务端按目标列推断）；非可空列与 {@link #bindParam(String, String, int)} 相同
-     * （类型精确 setXxx）。
+     * 编译期常量索引的便捷重载：委托 {@link #bindParam(String, String, String, boolean, boolean, String)}
+     * （索引经 {@code String.valueOf} 传入）。绑定形态选择见 6 参版本 javadoc——
+     * 可空列 {@code setObject}、枚举列 {@code setObject(Types.OTHER)}、转换器列
+     * {@code setObject(CONV.toDatabase(...), CONV.sqlType().getVendorTypeNumber())}、
+     * 非可空列类型精确 {@code setXxx}。
      *
-     * @param typeName      字段类型字符串
-     * @param expr          值表达式（实体 getter 调用）
-     * @param index         基于 1 的占位符索引（编译期常量）
-     * @param nullable      列是否可空（可空实体字段可能在运行时为 {@code null}）
-     * @param isEnum        列是否为枚举类型
+     * @param typeName       字段类型字符串
+     * @param expr           值表达式（实体 getter 调用）
+     * @param index          基于 1 的占位符索引（编译期常量）
+     * @param nullable       列是否可空（可空实体字段可能在运行时为 {@code null}）
+     * @param isEnum         列是否为枚举类型
      * @param converterField 转换器静态字段名（@Convert 列；{@code null} = 无转换器）
      * @return 绑定代码块
      */
@@ -44,26 +41,34 @@ public final class SqlCodegen {
     }
 
     /**
-     * 带运行时索引表达式的 6 参绑定：与 int 版等价但索引为运行时表达式（如循环变量
-     * {@code "i++"}）。转换器列走 {@code setObject(i, CONV.toDatabase(expr),
-     * CONV.sqlType())}（SQL 类型由转换器决定，默认 JDBCType.OTHER = unknown）。
+     * 构建实体字段的绑定语句（int 版 {@link #bindParam(String, String, int, boolean, boolean, String)}
+     * 的单一实现，索引为编译期常量或运行时表达式）：可空列走 {@code ps.setObject(index, expr)}
+     * ——setXxx 对 {@code null} 值自动拆箱抛 NPE（如 {@code setInt} 接收 {@code Integer}
+     * null），而 setObject 天然把 null 绑定为 SQL NULL、非 null 值由驱动按参数推断类型；
+     * 枚举列走 {@code setObject(index, expr, Types.OTHER)}——pgjdbc 对无显式类型的
+     * 枚举对象无法推断 SQL 类型；转换器列走 {@code setObject(index, CONV.toDatabase(expr),
+     * CONV.sqlType().getVendorTypeNumber())}——int 类型码发送（3 参 SQLType 版本 pgjdbc
+     * 对 JDBCType.OTHER 未实现），默认 OTHER=1111 由驱动/数据库按目标列推断，覆盖
+     * {@code sqlType()} 返回 JDBCType 时钉死具体类型；非可空列类型精确 {@code setXxx}。
      *
-     * @param typeName      字段类型字符串
-     * @param expr          值表达式
-     * @param indexExpr     基于 1 的索引表达式（编译期常量或运行时表达式）
-     * @param nullable      列是否可空
-     * @param isEnum        列是否为枚举类型
-     * @param converterField 转换器静态字段名（{@code null} = 无转换器）
+     * @param typeName       字段类型字符串
+     * @param expr           值表达式（实体 getter 调用）
+     * @param indexExpr      基于 1 的索引表达式（编译期常量或运行时表达式如 {@code "i++"}）
+     * @param nullable       列是否可空（可空实体字段可能在运行时为 {@code null}）
+     * @param isEnum         列是否为枚举类型
+     * @param converterField 转换器静态字段名（@Convert 列；{@code null} = 无转换器）
      * @return 绑定代码块
      */
     public static CodeBlock bindParam(String typeName, String expr, String indexExpr, boolean nullable, boolean isEnum,
             String converterField) {
         if (converterField != null) {
-            // 转换器绑定:setObject(i, v, CONV.sqlType())——按转换器声明的 SQL 类型发送;
-            // 默认 JDBCType.OTHER(unknown),由 PG/H2 按目标列推断(jsonb 等不接受
-            // varchar 隐式转换的类型也能绑定);用户覆盖 sqlType() 时钉死具体类型。
-            return CodeBlock.of("$L.setObject($L, $L.toDatabase($L), $L.sqlType());", "ps", indexExpr,
-                    converterField, expr, converterField);
+            // 转换器绑定:setObject(i, v, CONV.sqlType().getVendorTypeNumber())——转 int
+            // 类型码发送(3 参 SQLType 版本 pgjdbc 对 JDBCType.OTHER 未实现,抛"方法尚未
+            // 实现");默认 OTHER=1111(unknown),由 PG/H2 按目标列推断(jsonb 等不接受
+            // varchar 隐式转换的类型也能绑定);用户覆盖 sqlType() 返回 JDBCType 时钉死
+            // 具体类型码(驱动自定义 SQLType 需驱动支持其 vendorTypeNumber 语义)。
+            return CodeBlock.of("$L.setObject($L, $L.toDatabase($L), $L.sqlType().getVendorTypeNumber());",
+                    "ps", indexExpr, converterField, expr, converterField);
         }
         if (isEnum) {
             return CodeBlock.of("$L.setObject($L, $L, $T.OTHER);", "ps", indexExpr, expr,
