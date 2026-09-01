@@ -1,6 +1,7 @@
 package io.github.erdsgfc.jforge.processor.generator;
 
 import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
@@ -193,7 +194,8 @@ public final class QueryGenerator {
             spec.addStatement("ps.executeUpdate()");
             spec.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", resultSet);
             spec.beginControlFlow("if (keys.next())");
-            spec.addStatement("$L", generatedKeysWriteback(info, method));
+            spec.addCode(generatedKeysWriteback(info, method));
+            spec.addCode("\n");
             spec.endControlFlow();
             spec.endControlFlow();
             if (returnType.getKind() == TypeKind.VOID) {
@@ -220,9 +222,9 @@ public final class QueryGenerator {
      *
      * @param info   仓库信息
      * @param method 标注了注解的方法
-     * @return 回写表达式;无实体参数时返回 no-op 注释
+     * @return 回写代码块;无实体参数时返回 no-op 注释
      */
-    private String generatedKeysWriteback(JForgeProcessor.DaoInfo info, ExecutableElement method) {
+    private CodeBlock generatedKeysWriteback(JForgeProcessor.DaoInfo info, ExecutableElement method) {
         for (VariableElement parameter : method.getParameters()) {
             TypeMirror type = parameter.asType();
             if (type.getKind() == TypeKind.DECLARED) {
@@ -239,12 +241,12 @@ public final class QueryGenerator {
                             ? paramName
                             : "((" + EntityModel.implNameOf(info.model.entitySimpleName(),
                                     info.model.implSuffix()) + ") " + paramName + ")";
-                    return receiver + "." + idColumn.setterName + "(keys.get"
-                            + TypeNameUtils.jdbcReturnSuffix(idColumn.typeName) + "(1))";
+                    return CodeBlock.of("$L.$L(keys.$L(1));", receiver, idColumn.setterName,
+                            TypeNameUtils.jdbcGetter(idColumn.typeName));
                 }
             }
         }
-        return "/* no entity parameter to write back the generated key */";
+        return CodeBlock.of("/* no entity parameter to write back the generated key */");
     }
 
     /**

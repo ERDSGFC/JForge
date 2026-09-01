@@ -102,18 +102,6 @@ public final class TypeNameUtils {
     }
 
     /**
-     * 返回字段类型对应的 JDBC 生成键读取器后缀：{@code getXxx} 方法名去掉开头的
-     * {@code "get"}（如 {@code "getLong"} → {@code "Long"}、{@code "getString"} → {@code "String"}）。
-     * 用于生成 {@code keys.getXxx(1)} 回写表达式。
-     *
-     * @param typeName 字段类型字符串
-     * @return 生成键读取器的后缀
-     */
-    public static String jdbcReturnSuffix(String typeName) {
-        return jdbcGetter(typeName).substring(3);
-    }
-
-    /**
      * 把 TypeMirror 转换为不带 TYPE_USE 注解的 JavaPoet TypeName。
      * JavaPoet 原生处理基本类型、数组、泛型、通配符和类型变量等全部类型种类。
      *

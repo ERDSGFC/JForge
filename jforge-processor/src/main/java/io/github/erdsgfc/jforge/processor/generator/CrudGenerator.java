@@ -131,15 +131,15 @@ public final class CrudGenerator {
             if (returning) {
                 method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
                 method.beginControlFlow("if (rs.next())");
-                method.addStatement("$L.$L(rs.get$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
-                        model.idColumn().setterName, TypeNameUtils.jdbcReturnSuffix(model.idColumn().typeName));
+                method.addStatement("$L.$L(rs.$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
+                        model.idColumn().setterName, TypeNameUtils.jdbcGetter(model.idColumn().typeName));
                 method.endControlFlow();
                 method.endControlFlow();
             } else {
                 method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", JDBC_RESULT_SET.getJavaPoetClassName());
                 method.beginControlFlow("if (keys.next())");
-                method.addStatement("$L.$L(keys.get$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
-                        model.idColumn().setterName, TypeNameUtils.jdbcReturnSuffix(model.idColumn().typeName));
+                method.addStatement("$L.$L(keys.$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
+                        model.idColumn().setterName, TypeNameUtils.jdbcGetter(model.idColumn().typeName));
                 method.endControlFlow();
                 method.endControlFlow();
             }
@@ -220,8 +220,8 @@ public final class CrudGenerator {
             if (idGenerated) {
                 method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", resultSet);
                 method.beginControlFlow("if (keys.next())");
-                method.addStatement("$L.$L(keys.get$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
-                        model.idColumn().setterName, TypeNameUtils.jdbcReturnSuffix(model.idColumn().typeName));
+                method.addStatement("$L.$L(keys.$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
+                        model.idColumn().setterName, TypeNameUtils.jdbcGetter(model.idColumn().typeName));
                 method.endControlFlow();
                 method.endControlFlow();
             }
@@ -285,9 +285,9 @@ public final class CrudGenerator {
         method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", resultSet);
         method.addStatement("int i = $L", startExpr);
         method.beginControlFlow("while (keys.next())");
-        method.addStatement("$L.$L(keys.get$L(1))", idWritebackReceiver(info.model, entityImpl, "entities.get(i)"),
+        method.addStatement("$L.$L(keys.$L(1))", idWritebackReceiver(info.model, entityImpl, "entities.get(i)"),
                 info.model.idColumn().setterName,
-                TypeNameUtils.jdbcReturnSuffix(info.model.idColumn().typeName));
+                TypeNameUtils.jdbcGetter(info.model.idColumn().typeName));
         method.addStatement("i++");
         method.endControlFlow();
         method.endControlFlow();
