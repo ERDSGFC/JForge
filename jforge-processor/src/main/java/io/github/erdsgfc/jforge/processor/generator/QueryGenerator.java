@@ -6,10 +6,10 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import io.github.erdsgfc.jforge.annotation.Bind;
+import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.annotation.Query;
 import io.github.erdsgfc.jforge.annotation.ReturnGeneratedKeys;
 import io.github.erdsgfc.jforge.annotation.Table;
-import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.processor.*;
 import io.github.erdsgfc.jforge.processor.generator.core.EntityGenerator;
 import io.github.erdsgfc.jforge.processor.generator.core.RepositoryGenerator;
@@ -89,15 +89,16 @@ public final class QueryGenerator {
     public void queryMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
                              Map<String, EmbeddedEntity> embedded, ClassName connection, ClassName preparedStatement,
                              ClassName resultSet, ClassName sqlException) {
-        // 预扫:为所有 @Query 方法的 @Bind 转换器生成 static final 转换器字段(按字段名去重,
-        // 同一转换器被多处引用只嵌一份)。绑定站点经 queryConverterField 复用同名。
+        // 单次遍历同时处理 @Query 的转换器字段、固定 SQL 字段和实现方法，避免多个生成器
+        // 重复扫描 DAO 方法、读取注解和解析动态 WHERE。
         Set<String> addedConverters = new HashSet<>();
         for (Element enclosed : info.element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.METHOD) {
                 continue;
             }
             ExecutableElement method = (ExecutableElement) enclosed;
-            if (method.getAnnotation(Query.class) == null) {
+            Query query = method.getAnnotation(Query.class);
+            if (query == null) {
                 continue;
             }
             for (VariableElement parameter : method.getParameters()) {
@@ -109,16 +110,6 @@ public final class QueryGenerator {
                         builder.addField(SqlCodegen.converterField(converter, field));
                     }
                 }
-            }
-        }
-        for (Element enclosed : info.element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.METHOD) {
-                continue;
-            }
-            ExecutableElement method = (ExecutableElement) enclosed;
-            Query query = method.getAnnotation(Query.class);
-            if (query == null) {
-                continue;
             }
             // queryMethod 校验失败时返回 null（已报错）——跳过而非 addMethod(null)，
             // 否则 javapoet 抛 NPE 掩盖真实编译错误（与 @Select/@Update/@Delete 同规则）。
@@ -176,7 +167,10 @@ public final class QueryGenerator {
             return dynamicQueryMethod(info, method, query, builder, embedded, connection,
                     preparedStatement, resultSet, sqlException, parsed, fragments, lookup);
         }
-        // 静态路径：SQL 常量由 SqlFieldGenerator.querySql 统一生成（含静态 @Condition 追加），
+        // 静态查询的 SQL 只计算一次：同时用于常量字段和异常信息，避免重复解析占位符/@Condition。
+        String staticSql = querySql(info, method, query, parsed);
+        builder.addField(SqlFieldGenerator.sqlField(methodName + "Sql", staticSql));
+        // 静态路径：SQL 常量由 querySql 统一生成（含静态 @Condition 追加），
         // 这里只需收集绑定占位符（含追加片段的伪占位符）。
         String sqlField = methodName + "Sql";
         List<String> placeholders = new ArrayList<>();
@@ -243,7 +237,7 @@ public final class QueryGenerator {
         }
 
         SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(),
-                SqlFieldGenerator.querySql(info, method), configHelper.logSql(info.element));
+                staticSql, configHelper.logSql(info.element));
         return spec.build();
     }
 
@@ -825,25 +819,38 @@ public final class QueryGenerator {
         return Nullability.isNullableParameter(parameter);
     }
 
-    /** {@code @Query} 方法是否含动态 WHERE（含动态段或动态 @Condition 追加参数时 SQL 不能作为常量字段）。 */
-    static boolean hasDynamicWhere(ExecutableElement method) {
-        Query query = method.getAnnotation(Query.class);
-        if (query == null) {
-            return false;
-        }
-        ParsedWhere parsed = parseWhere(query.value());
-        Map<String, VariableElement> binds = bindsOf(method);
-        if (parsed != null
-                && parsed.fragments.stream().anyMatch(fragment -> isDynamicFragment(fragment, binds))) {
-            return true;
-        }
-        // @Condition 追加参数标 @Nullable → 条件动态。
+    /**
+     * {@code @Query} 方法的 SQL：命名占位符转 {@code ?}，并拼接静态 @Condition
+     * 追加参数（非 {@code @Nullable}）的条件；动态追加条件由运行时 SQL 拼接处理。
+     */
+    static String querySql(JForgeProcessor.DaoInfo info, ExecutableElement method, Query query,
+            ParsedWhere parsed) {
+        String sql = SqlCodegen.convertPlaceholders(query.value(), new ArrayList<>());
+        boolean first = parsed == null || parsed.fragments.isEmpty();
         for (VariableElement parameter : method.getParameters()) {
-            if (parameter.getAnnotation(Condition.class) != null && isNullableParameter(parameter)) {
-                return true;
+            Condition where = parameter.getAnnotation(Condition.class);
+            if (where == null || isNullableParameter(parameter)) {
+                continue;
             }
+            String fieldName = where.value().isEmpty()
+                    ? parameter.getSimpleName().toString()
+                    : where.value();
+            String columnName = null;
+            for (EntityModel.ColumnModel column : info.model.columns()) {
+                if (column.fieldName.equals(fieldName)) {
+                    columnName = column.columnName;
+                    break;
+                }
+            }
+            if (columnName == null) {
+                continue;
+            }
+            sql += (first ? " WHERE " : " AND ")
+                    + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), columnName)
+                    + " " + where.op().sql() + " ?";
+            first = false;
         }
-        return false;
+        return sql;
     }
 
     // ---- SELECT 列顺序解析(实体映射按下标读取) -------------------------------

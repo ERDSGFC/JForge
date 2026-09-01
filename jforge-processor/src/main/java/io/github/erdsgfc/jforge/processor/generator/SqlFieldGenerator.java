@@ -2,25 +2,20 @@ package io.github.erdsgfc.jforge.processor.generator;
 
 import com.palantir.javapoet.FieldSpec;
 import io.github.erdsgfc.jforge.annotation.DialectSupport;
-import io.github.erdsgfc.jforge.annotation.Query;
-import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 
-import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
-import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
-import javax.lang.model.element.VariableElement;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * 生成仓库 impl 类的固定 SQL 常量字段（{@code private final String xxxSql = "..."}）。
  *
- * <p>纯静态、无状态：CRUD 各方法的 SQL + 每个 {@code @Query} 方法的 SQL。IN 查询
+ * <p>纯静态、无状态，只负责 CRUD 各方法的 SQL。{@code @Query} 方法的 SQL
+ * 由 {@link QueryGenerator} 在生成查询实现时统一处理。IN 查询
  * （findByIds/deleteByIds）只把固定前缀提取为常量，占位符部分仍在方法内动态拼接。</p>
  */
 public final class SqlFieldGenerator {
@@ -29,7 +24,7 @@ public final class SqlFieldGenerator {
     }
 
     /**
-     * 收集仓库类的固定 SQL 常量字段：CRUD 各方法的 SQL + 每个 {@code @Query} 方法的 SQL。
+     * 收集仓库类的 CRUD 固定 SQL 常量字段。
      *
      * @param info the parsed repository info
      * @return the SQL constant field specifications
@@ -46,21 +41,11 @@ public final class SqlFieldGenerator {
         fields.add(sqlField("findAllSql", findAllSql(info)));
         fields.add(sqlField("countSql", countSql(info)));
         fields.add(sqlField("countByIdSql", countByIdSql(info)));
-        for (Element enclosed : info.element.getEnclosedElements()) {
-            if (enclosed.getKind() == ElementKind.METHOD) {
-                ExecutableElement method = (ExecutableElement) enclosed;
-                if (method.getAnnotation(Query.class) != null
-                        && !QueryGenerator.hasDynamicWhere(method)) {
-                    // 动态 WHERE 查询的 SQL 运行时拼接,不生成常量字段。
-                    fields.add(sqlField(method.getSimpleName() + "Sql", querySql(info, method)));
-                }
-            }
-        }
         return fields;
     }
 
     /** 构造一个 {@code private final String name = "sql";} 字段。 */
-    private static FieldSpec sqlField(String name, String sql) {
+    static FieldSpec sqlField(String name, String sql) {
         return FieldSpec.builder(String.class, name, Modifier.PRIVATE, Modifier.FINAL)
                 .initializer("$S", sql)
                 .build();
@@ -157,38 +142,4 @@ public final class SqlFieldGenerator {
                 + " WHERE " + SqlCodegen.quoteIdentifier(dialect, info.model.idColumn().columnName) + "=?";
     }
 
-    /**
-     * {@code @Query} 方法的 SQL：命名占位符转 {@code ?}，并拼接静态 {@code @Condition}
-     * 追加参数（非 {@code @Nullable}）的条件——动态追加条件运行时拼接，不进入常量。
-     */
-    static String querySql(JForgeProcessor.DaoInfo info, ExecutableElement method) {
-        Query query = method.getAnnotation(Query.class);
-        String sql = SqlCodegen.convertPlaceholders(query.value(), new ArrayList<>());
-        QueryGenerator.ParsedWhere parsed = QueryGenerator.parseWhere(query.value());
-        boolean first = parsed == null || parsed.fragments.isEmpty();
-        for (VariableElement parameter : method.getParameters()) {
-            Condition where = parameter.getAnnotation(Condition.class);
-            if (where == null || QueryGenerator.isNullableParameter(parameter)) {
-                continue; // 动态追加（@Nullable）不进 SQL 常量
-            }
-            String fieldName = where.value().isEmpty()
-                    ? parameter.getSimpleName().toString()
-                    : where.value();
-            String columnName = null;
-            for (EntityModel.ColumnModel column : info.model.columns()) {
-                if (column.fieldName.equals(fieldName)) {
-                    columnName = column.columnName;
-                    break;
-                }
-            }
-            if (columnName == null) {
-                continue; // 字段不匹配的错误已在 queryMethod 报过
-            }
-            sql += (first ? " WHERE " : " AND ")
-                    + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), columnName)
-                    + " " + where.op().sql() + " ?";
-            first = false;
-        }
-        return sql;
-    }
 }
