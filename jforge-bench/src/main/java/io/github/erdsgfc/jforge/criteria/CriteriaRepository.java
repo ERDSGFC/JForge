@@ -23,7 +23,7 @@ public interface CriteriaRepository extends BaseRepository<CriteriaUser, Long> {
 
     /** Optional 参数：isEmpty → user_name IS NULL；有值 → user_name = ?（列映射 name 字段）。 */
     @Select
-    List<CriteriaUser> findByNickname(@Condition(value = "name") Optional<String> nickname);
+    List<CriteriaUser> findByNickname(@Condition(value = "name") @Nullable Optional<String> nickname);
 
     /** 声明式更新：SET 列 + WHERE 条件（全静态 → SQL 常量）。 */
     @Update
@@ -35,7 +35,7 @@ public interface CriteriaRepository extends BaseRepository<CriteriaUser, Long> {
 
     /** 声明式更新：Optional SET 空 → SET 列 = NULL。 */
     @Update
-    int updateNickname(@UpdateSet(value = "name") Optional<String> nickname, @Condition Long id);
+    int updateNickname(@UpdateSet(value = "name") @Nullable Optional<String> nickname, @Condition Long id);
 
     /** 声明式更新：WHERE 用条件对象（@Where）。 */
     @Update
@@ -47,7 +47,7 @@ public interface CriteriaRepository extends BaseRepository<CriteriaUser, Long> {
 
     /** 声明式删除：Optional WHERE 参数（isEmpty → IS NULL）。 */
     @Delete
-    int deleteByNickname(@Condition(value = "name") Optional<String> nickname);
+    int deleteByNickname(@Condition(value = "name") @Nullable Optional<String> nickname);
 
     /** 声明式删除：WHERE 用条件对象（@Where 嵌套分组）。 */
     @Delete

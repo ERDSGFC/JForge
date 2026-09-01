@@ -140,10 +140,10 @@ public final class UpdateGenerator {
         boolean logSql = configHelper.logSql(info.element);
 
         // 全静态：SET 无动态 + WHERE 无动态 + 无 @Where 条件对象 → SQL 常量 + 静态绑定。
-        // Optional SET/条件(isPresent/IS NULL 运行时分支)即使 dynamic=false 也走动态形态。
+        // 静态形态 = 全部 SET/条件无 null 守卫(optional 可进静态——非空契约 opt.get())。
         boolean allStatic = criteriaUnits.isEmpty()
-                && sets.stream().noneMatch(s -> s.dynamic || s.optional)
-                && conditions.stream().noneMatch(c -> c.dynamic() || c.optional());
+                && sets.stream().noneMatch(s -> s.dynamic)
+                && conditions.stream().allMatch(WhereCondition::staticCompatible);
         if (allStatic) {
             StringBuilder sql = new StringBuilder(baseSql + " SET ");
             for (int i = 0; i < sets.size(); i++) {
@@ -164,7 +164,9 @@ public final class UpdateGenerator {
                 if (unit.rawSql != null && !unit.rawSql.contains("?")) {
                     continue;
                 }
-                spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.paramName,
+                // Optional SET(非空契约,静态形态):绑定 valueExpr(opt.get());普通 SET 绑参数。
+                spec.addCode(SqlCodegen.bindParam(unit.bindType,
+                        unit.valueExpr != null ? unit.valueExpr : unit.paramName,
                         index++, false, false, unit.converterField));
                 spec.addCode("\n");
             }

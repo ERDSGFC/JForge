@@ -101,9 +101,10 @@ public final class DeleteGenerator {
         boolean logSql = configHelper.logSql(info.element);
 
         // 全静态：WHERE 无动态 + 无 @Where 条件对象 → SQL 常量 + 静态绑定。
-        // Optional 条件(isPresent/IS NULL 运行时分支)即使 dynamic=false 也走动态形态。
+        // 静态形态 = 全部条件无 null 守卫(optional 可进静态——非空契约 opt.get()
+        // 绑定;IS NULL 只在可空 Optional 下生成)。
         boolean allStatic = criteriaUnits.isEmpty()
-                && conditions.stream().noneMatch(c -> c.dynamic() || c.optional());
+                && conditions.stream().allMatch(WhereCondition::staticCompatible);
         if (allStatic) {
             StringBuilder sql = new StringBuilder(baseSql);
             WhereCondition.appendStaticWhereSql(sql, conditions);

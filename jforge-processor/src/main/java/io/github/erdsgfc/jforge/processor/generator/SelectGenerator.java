@@ -204,9 +204,10 @@ public final class SelectGenerator {
 
         boolean logSql = configHelper.logSql(info.element);
         // @Where 条件对象恒动态（字段运行时判断）——存在即走动态形态。
-        // Optional 条件(isPresent/IS NULL 运行时分支)即使 dynamic=false 也走动态形态。
+        // 静态形态 = 全部条件无 null 守卫(optional 可进静态——非空契约 opt.get()
+        // 绑定;IS NULL 只在可空 Optional 下生成)。
         boolean allStatic = criteriaUnits.isEmpty()
-                && conditions.stream().noneMatch(c -> c.dynamic() || c.optional());
+                && conditions.stream().allMatch(WhereCondition::staticCompatible);
         if (allStatic) {
             // 全静态条件（无 @Nullable 参数）：WHERE 子句与绑定索引均编译期确定——
             // 生成完整 SQL 常量字段 + 静态索引绑定（与 @Query 同一形态，运行时零拼接）。

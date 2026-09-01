@@ -81,6 +81,16 @@ record WhereCondition(String columnName, String op, String paramName, String typ
     }
 
     /**
+     * 条件是否兼容静态 SQL 常量形态（编译期确定 WHERE 子句与绑定索引）：
+     * 无 {@code dynamic()} null 守卫且无 {@code optional()} IS NULL 运行时分支。
+     * 注意 Optional 条件不一定"动态"（可能无 null 守卫），但 IS NULL 分支
+     * 本身需要运行时判断——同样不兼容静态常量。
+     */
+    boolean staticCompatible() {
+        return !dynamic();
+    }
+
+    /**
      * 生成一个条件的动态 SQL 拼接代码。
      */
     static void appendSql(MethodSpec.Builder spec, WhereCondition condition) {
@@ -160,7 +170,9 @@ record WhereCondition(String columnName, String op, String paramName, String typ
             if (condition.rawSql != null && !condition.rawSql.contains("?")) {
                 continue;
             }
-            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName,
+            // Optional 条件(非空契约,静态形态):绑定 valueExpr(opt.get());普通条件绑参数。
+            spec.addCode(SqlCodegen.bindParam(condition.typeName,
+                    condition.valueExpr != null ? condition.valueExpr : condition.paramName,
                     index++, false, false, condition.converterField));
             spec.addCode("\n");
         }

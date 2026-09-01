@@ -14,6 +14,7 @@ import io.github.erdsgfc.jforge.core.BaseRepository;
 import org.jspecify.annotations.Nullable;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 真 PostgreSQL 集成测试仓库：继承 {@link BaseRepository} 的 CRUD（save 走
@@ -51,7 +52,7 @@ public interface PgUserRepository extends BaseRepository<PgUser, Long> {
 
     /** Optional 参数：空 → IS NULL，有值 → 等于条件。 */
     @Select
-    List<PgUser> findByNickname(@Condition(value = "userName") java.util.Optional<String> nickname);
+    List<PgUser> findByNickname(@Condition(value = "userName") @Nullable Optional<String> nickname);
 
     // ---- @Update / @Delete 声明式写操作 ----
 
@@ -66,7 +67,7 @@ public interface PgUserRepository extends BaseRepository<PgUser, Long> {
 
     /** Optional SET：空 → SET {@code "user_name"} = NULL。 */
     @Update
-    int updateNickname(@UpdateSet(value = "userName") java.util.Optional<String> nickname,
+    int updateNickname(@UpdateSet(value = "userName") @Nullable Optional<String> nickname,
             @Condition Long id);
 
     /** 条件对象删除。 */
