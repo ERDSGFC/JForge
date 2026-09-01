@@ -7,9 +7,6 @@ import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 
-import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
-import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.List;

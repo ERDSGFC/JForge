@@ -138,7 +138,7 @@ public final class SelectGenerator {
                         method);
                 return null;
             }
-            elementType = typeArguments.get(0);
+            elementType = typeArguments.getFirst();
         }
 
         // SELECT 列部分与结果映射分支：实体（限宿主）/ record / 标量 COUNT(*)。
@@ -214,7 +214,7 @@ public final class SelectGenerator {
         boolean logSql = configHelper.logSql(info.element);
         // @Where 条件对象恒动态（字段运行时判断）——存在即走动态形态。
         boolean allStatic = criteriaUnits.isEmpty()
-                && conditions.stream().allMatch(condition -> !condition.dynamic());
+                && conditions.stream().noneMatch(WhereCondition::dynamic);
         if (allStatic) {
             // 全静态条件（无 @Nullable 参数）：WHERE 子句与绑定索引均编译期确定——
             // 生成完整 SQL 常量字段 + 静态索引绑定（与 @Query 同一形态，运行时零拼接）。
