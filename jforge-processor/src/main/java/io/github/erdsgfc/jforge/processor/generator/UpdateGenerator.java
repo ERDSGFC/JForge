@@ -175,16 +175,16 @@ public final class UpdateGenerator {
                 if (unit.rawSql != null && !unit.rawSql.contains("?")) {
                     continue;
                 }
-                spec.addCode(SqlCodegen.bindCondition(unit.bindType, unit.paramName,
-                        index++, unit.converterField));
+                spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.paramName,
+                        index++, false, false, unit.converterField));
                 spec.addCode("\n");
             }
             for (WhereCondition condition : conditions) {
                 if (condition.rawSql != null && !condition.rawSql.contains("?")) {
                     continue;
                 }
-                spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.paramName,
-                        index++, condition.converterField));
+                spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName,
+                        index++, false, false, condition.converterField));
                 spec.addCode("\n");
             }
             spec.addStatement("return ps.executeUpdate()");
@@ -314,12 +314,12 @@ public final class UpdateGenerator {
             // 纯常量 SET 表达式（无 ?）不绑定参数。
         } else if (unit.optional) {
             spec.beginControlFlow("if ($N.isPresent())", unit.paramName);
-            spec.addCode(SqlCodegen.bindCondition(unit.bindType, unit.valueExpr, "i++",
+            spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.valueExpr, "i++", false, false,
                     unit.converterField));
             spec.addCode("\n");
             spec.endControlFlow();
         } else {
-            spec.addCode(SqlCodegen.bindCondition(unit.bindType, unit.paramName, "i++",
+            spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.paramName, "i++", false, false,
                     unit.converterField));
             spec.addCode("\n");
         }
@@ -443,12 +443,12 @@ public final class UpdateGenerator {
             // 纯常量条件（无 ?）不绑定参数。
         } else if (condition.optional) {
             spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
-            spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.valueExpr, "i++",
+            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.valueExpr, "i++", false, false,
                     condition.converterField));
             spec.addCode("\n");
             spec.endControlFlow();
         } else {
-            spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.paramName, "i++",
+            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName, "i++", false, false,
                     condition.converterField));
             spec.addCode("\n");
         }

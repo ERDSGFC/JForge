@@ -94,8 +94,6 @@ public final class SelectGenerator {
                         "@Select and @Query are mutually exclusive on the same method", method);
                 continue;
             }
-            // selectMethod 校验失败时返回 null（已报错）——跳过而非 addMethod(null)，
-            // 否则 javapoet 抛 NPE 掩盖真实编译错误。
             MethodSpec impl = selectMethod(info, method, builder, embedded, connection,
                     preparedStatement, resultSet, sqlException);
             if (impl != null) {
@@ -248,8 +246,8 @@ public final class SelectGenerator {
                 if (condition.rawSql != null && !condition.rawSql.contains("?")) {
                     continue;
                 }
-                spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.paramName,
-                        index++, condition.converterField));
+                spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName,
+                        index++, false, false, condition.converterField));
                 spec.addCode("\n");
             }
             spec.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
@@ -336,8 +334,9 @@ public final class SelectGenerator {
                 if (condition.optional) {
                     spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
                 }
-                spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.valueExpr != null
-                        ? condition.valueExpr : condition.paramName, "i++", condition.converterField));
+                spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.valueExpr != null
+                        ? condition.valueExpr : condition.paramName, "i++", false, false,
+                        condition.converterField));
                 spec.addCode("\n");
                 if (condition.optional) {
                     spec.endControlFlow();
@@ -346,12 +345,12 @@ public final class SelectGenerator {
         } else if (condition.optional) {
             // 有值分支绑定（IS NULL 无占位符）。
             spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
-            spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.valueExpr, "i++",
+            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.valueExpr, "i++", false, false,
                     condition.converterField));
             spec.addCode("\n");
             spec.endControlFlow();
         } else {
-            spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.paramName, "i++",
+            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName, "i++", false, false,
                     condition.converterField));
             spec.addCode("\n");
         }

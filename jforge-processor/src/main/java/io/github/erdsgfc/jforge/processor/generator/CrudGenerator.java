@@ -1,6 +1,7 @@
 package io.github.erdsgfc.jforge.processor.generator;
 
 import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
@@ -267,6 +268,22 @@ public final class CrudGenerator {
     }
 
     /**
+     * 绑定主键参数并复用主键列的枚举/可空/转换器元数据，避免 ID CRUD 路径绕过
+     * {@code @Convert} 或对可空包装类型错误地调用 setXxx(null)。
+     */
+    private static CodeBlock idBindParam(JForgeProcessor.DaoInfo info,
+            String expr, int index) {
+        return idBindParam(info, expr, String.valueOf(index));
+    }
+
+    private static CodeBlock idBindParam(JForgeProcessor.DaoInfo info,
+            String expr, String indexExpr) {
+        EntityModel.ColumnModel id = info.model.idColumn();
+        return SqlCodegen.bindParam(id.typeName, expr, indexExpr, id.nullable, id.isEnum,
+                id.converter != null ? SqlCodegen.converterFieldName(info.model, id) : null);
+    }
+
+    /**
      * 为一个已冲刷的批次块追加生成键回写：遍历该块的 keys 结果集，把每个键赋给块中对应的
      * 实体（键按插入顺序返回），起始位置为块内相对索引表达式 {@code startExpr}。
      * 实体没有生成主键时不生成任何代码。
@@ -410,7 +427,7 @@ public final class CrudGenerator {
                 .returns(TypeName.BOOLEAN)
                 .addParameter(info.idType, "id");
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "deleteByIdSql", false, configHelper.logSql(info.element));
-        method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
+        method.addCode(idBindParam(info, "id", 1));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
         SqlCodegen.endTxBlock(method, sqlException, "deleteById", info.model.tableName(), SqlFieldGenerator.deleteByIdSql(info), configHelper.logSql(info.element));
@@ -452,7 +469,7 @@ public final class CrudGenerator {
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "sql.toString()", false, configHelper.logSql(info.element));
         method.addStatement("int i = 1");
         method.beginControlFlow("for ($T id : ids)", info.idType);
-        method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", "i"));
+        method.addCode(idBindParam(info, "id", "i"));
         method.addCode("\n");
         method.addStatement("i++");
         method.endControlFlow();
@@ -496,8 +513,7 @@ public final class CrudGenerator {
                     column.converter != null ? SqlCodegen.converterFieldName(model, column) : null));
             method.addCode("\n");
         }
-        method.addCode(SqlCodegen.bindParam(model.idColumn().typeName,
-                "entity." + model.idColumn().getterName + "()", index, model.idColumn().nullable, false, null));
+        method.addCode(idBindParam(info, "entity." + model.idColumn().getterName + "()", index));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
         SqlCodegen.endTxBlock(method, sqlException, "update", info.model.tableName(), SqlFieldGenerator.updateSql(info), configHelper.logSql(info.element));
@@ -523,7 +539,7 @@ public final class CrudGenerator {
                 .returns(info.entityType)
                 .addParameter(info.idType, "id");
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "findByIdSql", false, configHelper.logSql(info.element));
-        method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
+        method.addCode(idBindParam(info, "id", 1));
         method.addCode("\n");
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
         method.beginControlFlow("if (!rs.next())");
@@ -571,7 +587,7 @@ public final class CrudGenerator {
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "sql.toString()", false, configHelper.logSql(info.element));
         method.addStatement("int i = 1");
         method.beginControlFlow("for ($T id : ids)", info.idType);
-        method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", "i"));
+        method.addCode(idBindParam(info, "id", "i"));
         method.addCode("\n");
         method.addStatement("i++");
         method.endControlFlow();
@@ -676,7 +692,7 @@ public final class CrudGenerator {
                 .addParameter(info.idType, "id");
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "countByIdSql", false,
                 configHelper.logSql(info.element));
-        method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
+        method.addCode(idBindParam(info, "id", 1));
         method.addCode("\n");
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
         method.addStatement("rs.next()");

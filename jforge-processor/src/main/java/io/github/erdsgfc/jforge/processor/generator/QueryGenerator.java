@@ -211,7 +211,7 @@ public final class QueryGenerator {
                     ? SqlCodegen.bindParam(parameter.asType().toString(),
                             parameter.getSimpleName().toString(), i + 1, false, false, converterField)
                     : SqlCodegen.bindParam(parameter.asType().toString(),
-                            parameter.getSimpleName().toString(), i + 1));
+                            parameter.getSimpleName().toString(), i + 1, false, false, null));
             spec.addCode("\n");
         }
 
@@ -375,7 +375,7 @@ public final class QueryGenerator {
                         ? SqlCodegen.bindParam(processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString(),
                                 parameter.getSimpleName().toString(), "i++", false, false, converterField)
                         : SqlCodegen.bindParam(processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString(),
-                                parameter.getSimpleName().toString(), "i++"));
+                                parameter.getSimpleName().toString(), "i++", false, false, null));
                 spec.addCode("\n");
             }
             if (dynamics.get(f)) {

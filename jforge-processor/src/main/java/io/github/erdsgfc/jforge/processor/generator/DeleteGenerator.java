@@ -156,8 +156,8 @@ public final class DeleteGenerator {
                 if (condition.rawSql != null && !condition.rawSql.contains("?")) {
                     continue;
                 }
-                spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.paramName,
-                        index++, condition.converterField));
+                spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName,
+                        index++, false, false, condition.converterField));
                 spec.addCode("\n");
             }
             spec.addStatement("return ps.executeUpdate()");
@@ -283,12 +283,12 @@ public final class DeleteGenerator {
             // 纯常量条件（无 ?）不绑定参数。
         } else if (condition.optional) {
             spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
-            spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.valueExpr, "i++",
+            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.valueExpr, "i++", false, false,
                     condition.converterField));
             spec.addCode("\n");
             spec.endControlFlow();
         } else {
-            spec.addCode(SqlCodegen.bindCondition(condition.typeName, condition.paramName, "i++",
+            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName, "i++", false, false,
                     condition.converterField));
             spec.addCode("\n");
         }

@@ -12,25 +12,12 @@ import static io.github.erdsgfc.jforge.processor.ClassEnum.JDBC_STATEMENT;
 import static io.github.erdsgfc.jforge.processor.ClassEnum.ORM_EXCEPTION;
 
 /**
-     * 构建各生成仓库实现共享的 JDBC 代码片段（参数绑定、行映射）。所有类型决策都在编译期
-     * 完成——生成的代码直接调用类型精确的 setter/getter。
-     */
+ * 构建各生成仓库实现共享的 JDBC 代码片段（参数绑定、行映射）。所有类型决策都在编译期
+ * 完成——生成的代码直接调用类型精确的 setter/getter。
+ */
 public final class SqlCodegen {
 
     private SqlCodegen() {
-    }
-
-    /**
-     * 构建带常量索引的类型精确参数绑定语句：{@code ps.setXxx(index, expr);}。
-     *
-     * @param typeName 参数的声明类型（如 {@code "int"}、{@code "java.lang.String"}）
-     * @param expr     值表达式（如 {@code "id"}、{@code "entity.age()"}）
-     * @param index    基于 1 的占位符索引（编译期常量）
-     * @return 绑定代码块
-     */
-    public static CodeBlock bindParam(String typeName, String expr, int index) {
-        return CodeBlock.of("$L.$L($L, $L);",
-                "ps", TypeNameUtils.jdbcSetter(typeName), index, expr);
     }
 
     /**
@@ -85,40 +72,6 @@ public final class SqlCodegen {
         if (nullable) {
             return CodeBlock.of("$L.setObject($L, $L);", "ps", indexExpr, expr);
         }
-        return bindParam(typeName, expr, indexExpr);
-    }
-
-    /**
-     * 条件/参数绑定：转换器列（{@code converterField} 非 null）经 {@code CONV.toDatabase(expr)
-     * + CONV.sqlType()} 绑定（值须与列存同表示），否则按声明类型选 setXxx——供
-     * {@code @Condition}/{@code @UpdateSet} 参数复用实体列 {@code @Convert} 转换器。
-     *
-     * @param typeName       字段类型字符串
-     * @param expr           值表达式
-     * @param indexExpr      基于 1 的索引表达式（编译期常量或运行时表达式）
-     * @param converterField 转换器静态字段名（{@code null} = 无转换器）
-     * @return 绑定代码块
-     */
-    public static CodeBlock bindCondition(String typeName, String expr, String indexExpr, String converterField) {
-        return converterField != null
-                ? bindParam(typeName, expr, indexExpr, false, false, converterField)
-                : bindParam(typeName, expr, indexExpr);
-    }
-
-    /** int 索引版的 {@link #bindCondition(String, String, String, String)}。 */
-    public static CodeBlock bindCondition(String typeName, String expr, int index, String converterField) {
-        return bindCondition(typeName, expr, String.valueOf(index), converterField);
-    }
-
-    /**
-     * 构建带运行时索引表达式的类型精确参数绑定语句，用于遍历变长参数列表的循环内部。
-     *
-     * @param typeName  参数的声明类型
-     * @param expr      值表达式
-     * @param indexExpr 运行时索引表达式（如循环变量 {@code "i"}）
-     * @return 绑定代码块
-     */
-    public static CodeBlock bindParam(String typeName, String expr, String indexExpr) {
         return CodeBlock.of("$L.$L($L, $L);",
                 "ps", TypeNameUtils.jdbcSetter(typeName), indexExpr, expr);
     }

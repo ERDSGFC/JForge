@@ -321,7 +321,8 @@ public final class CriteriaGenerator {
             // 含 ? 才绑定字段值；纯常量条件不绑定。
             if (unit.rawSql.contains("?")) {
                 beginGuard(spec, unit.guard);
-                spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.readExpr, indexVar));
+                spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.readExpr, indexVar,
+                        false, false, null));
                 spec.addCode("\n");
                 endGuard(spec, unit.guard);
             }
@@ -337,13 +338,16 @@ public final class CriteriaGenerator {
             // 有值分支绑定（IS NULL 无占位符）。
             beginGuard(spec, unit.guard);
             spec.beginControlFlow("if ($L.isPresent())", unit.readExpr);
-            spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.valueExpr, indexVar));
+            spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.valueExpr, indexVar,
+                    false, false, null));
             spec.addCode("\n");
             spec.endControlFlow();
             endGuard(spec, unit.guard);
         } else {
             beginGuard(spec, unit.guard);
-            spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.valueExpr != null ? unit.valueExpr : unit.readExpr, indexVar));
+            spec.addCode(SqlCodegen.bindParam(unit.bindType,
+                    unit.valueExpr != null ? unit.valueExpr : unit.readExpr, indexVar,
+                    false, false, null));
             spec.addCode("\n");
             endGuard(spec, unit.guard);
         }
