@@ -102,32 +102,6 @@ public final class SelectGenerator {
         }
     }
 
-    /** 一个已解析的 WHERE 条件。 */
-    private static final class WhereCondition {
-        final String columnName;   // WHERE 中使用的列名
-        final String op;           // 操作符 SQL 片段（"="/">"/"LIKE"…）
-        final String paramName;    // 参数名（绑定表达式）
-        final String typeName;     // 参数类型（绑定 API 选择）
-        final boolean dynamic;     // @Nullable → 运行时为 null 时跳过
-        final boolean optional;    // Optional 参数：isPresent → 条件；isEmpty → IS NULL
-        final String valueExpr;    // Optional 的绑定值表达式（param.get()/getAsInt()…）
-        final String rawSql;       // 原生 SQL 片段（非 null = 替代 column/op 拼装；含 ? 绑定参数）
-        final String converterField; // 宿主列 @Convert 转换器字段（非 null = 值经转换器绑定）
-
-        WhereCondition(String columnName, String op, String paramName, String typeName, boolean dynamic,
-                boolean optional, String valueExpr, String rawSql, String converterField) {
-            this.columnName = columnName;
-            this.op = op;
-            this.paramName = paramName;
-            this.typeName = typeName;
-            this.dynamic = dynamic;
-            this.optional = optional;
-            this.valueExpr = valueExpr;
-            this.rawSql = rawSql;
-            this.converterField = converterField;
-        }
-    }
-
     /**
      * 构建一个 {@code @Select} 方法：SELECT 列部分按返回类型分派（实体全列 /
      * record 组件列 / COUNT(*)，FROM 恒为宿主实体表），WHERE 条件按参数解析，
@@ -196,7 +170,8 @@ public final class SelectGenerator {
                 criteriaUnits.addAll(units);
                 continue;
             }
-            WhereCondition condition = resolveCondition(info, method, parameter);
+            WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
+                    processingEnv, "@Select");
             if (condition == null) {
                 return null;
             }
@@ -217,7 +192,7 @@ public final class SelectGenerator {
         boolean logSql = configHelper.logSql(info.element);
         // @Where 条件对象恒动态（字段运行时判断）——存在即走动态形态。
         boolean allStatic = criteriaUnits.isEmpty()
-                && conditions.stream().allMatch(condition -> !condition.dynamic);
+                && conditions.stream().allMatch(condition -> !condition.dynamic());
         if (allStatic) {
             // 全静态条件（无 @Nullable 参数）：WHERE 子句与绑定索引均编译期确定——
             // 生成完整 SQL 常量字段 + 静态索引绑定（与 @Query 同一形态，运行时零拼接）。
@@ -229,10 +204,10 @@ public final class SelectGenerator {
                         where.append(" AND ");
                     }
                     WhereCondition condition = conditions.get(i);
-                    if (condition.rawSql != null) {
-                        where.append(condition.rawSql);
+                    if (condition.rawSql() != null) {
+                        where.append(condition.rawSql());
                     } else {
-                        where.append(condition.columnName).append(' ').append(condition.op).append(" ?");
+                        where.append(condition.columnName()).append(' ').append(condition.op()).append(" ?");
                     }
                 }
                 fullSql = baseSql + where;
@@ -243,11 +218,11 @@ public final class SelectGenerator {
             int index = 1;
             for (WhereCondition condition : conditions) {
                 // rawSql 无 ? 的纯常量条件不绑定参数。
-                if (condition.rawSql != null && !condition.rawSql.contains("?")) {
+                if (condition.rawSql() != null && !condition.rawSql().contains("?")) {
                     continue;
                 }
-                spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName,
-                        index++, false, false, condition.converterField));
+                spec.addCode(SqlCodegen.bindParam(condition.typeName(), condition.paramName(),
+                        index++, false, false, condition.converterField()));
                 spec.addCode("\n");
             }
             spec.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
@@ -268,7 +243,7 @@ public final class SelectGenerator {
             spec.addStatement("$T where = $S", ClassName.get(String.class), " WHERE ");
         }
         for (WhereCondition condition : conditions) {
-            appendCondition(spec, condition, true);
+            WhereCondition.appendSql(spec, condition);
         }
         criteriaGenerator.emitAppend(spec, criteriaUnits, "where", " AND ");
         if (logSql) {
@@ -280,7 +255,7 @@ public final class SelectGenerator {
         // 绑定阶段：与拼接同条件展开，运行时索引 i 递增，类型精确 setXxx。
         spec.addStatement("int i = 1");
         for (WhereCondition condition : conditions) {
-            appendCondition(spec, condition, false);
+            WhereCondition.appendBind(spec, condition);
         }
         criteriaGenerator.emitBind(spec, criteriaUnits, "i++");
 
@@ -294,168 +269,4 @@ public final class SelectGenerator {
         return spec.build();
     }
 
-    /**
-     * 展开一个条件的拼接（{@code bind=false}）或绑定（{@code bind=true}）代码。
-     * 动态条件包在 {@code if (param != null)} 内——拼接与绑定两阶段各自展开一次，
-     * 保证占位符与绑定参数严格一一对应。
-     */
-    private void appendCondition(MethodSpec.Builder spec, WhereCondition condition, boolean bind) {
-        if (condition.dynamic) {
-            spec.beginControlFlow("if ($N != null)", condition.paramName);
-        }
-        if (bind) {
-            if (condition.rawSql != null) {
-                // 原生 SQL 片段：Optional 有值才拼（空跳过，rawSql 不生成 IS NULL）。
-                if (condition.optional) {
-                    spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
-                }
-                spec.addStatement("sql.append(where).append($S)", " " + condition.rawSql);
-                if (condition.optional) {
-                    spec.endControlFlow();
-                }
-            } else if (condition.optional) {
-                // Optional 参数：有值 → 条件；空 → IS NULL（两者都拼接，连接符仅其后置一次）。
-                spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
-                spec.addStatement("sql.append(where).append($S)",
-                        " " + condition.columnName + " " + condition.op + " ?");
-                spec.nextControlFlow("else");
-                spec.addStatement("sql.append(where).append($S)",
-                        " " + condition.columnName + " IS NULL");
-                spec.endControlFlow();
-            } else {
-                // 前缀由 where 变量运行时维护（首个条件 " WHERE "，其后 " AND "）。
-                spec.addStatement("sql.append(where).append($S)",
-                        " " + condition.columnName + " " + condition.op + " ?");
-            }
-            spec.addStatement("where = $S", " AND ");
-        } else if (condition.rawSql != null) {
-            // rawSql 含 ? 才绑定（无 ? 为纯常量条件）。
-            if (condition.rawSql.contains("?")) {
-                if (condition.optional) {
-                    spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
-                }
-                spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.valueExpr != null
-                        ? condition.valueExpr : condition.paramName, "i++", false, false,
-                        condition.converterField));
-                spec.addCode("\n");
-                if (condition.optional) {
-                    spec.endControlFlow();
-                }
-            }
-        } else if (condition.optional) {
-            // 有值分支绑定（IS NULL 无占位符）。
-            spec.beginControlFlow("if ($N.isPresent())", condition.paramName);
-            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.valueExpr, "i++", false, false,
-                    condition.converterField));
-            spec.addCode("\n");
-            spec.endControlFlow();
-        } else {
-            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName, "i++", false, false,
-                    condition.converterField));
-            spec.addCode("\n");
-        }
-        if (condition.dynamic) {
-            spec.endControlFlow();
-        }
-    }
-
-    /**
-     * 解析一个方法参数为 WHERE 条件：字段名取 {@link Condition#value()}（缺省按参数名）、
-     * 操作符取 {@link Condition#op()}、动态判定看 JSpecify {@code @Nullable}。
-     * 校验字段存在并映射为列名：实体/标量场景匹配宿主实体字段；record 场景匹配
-     * record 组件名（此时列名经命名策略推断）。
-     *
-     * @return 解析结果；校验失败已报错并返回 {@code null}
-     */
-    private WhereCondition resolveCondition(JForgeProcessor.DaoInfo info, ExecutableElement method,
-            VariableElement parameter) {
-        String paramName = parameter.getSimpleName().toString();
-        Condition where = parameter.getAnnotation(Condition.class);
-        String fieldName = where != null && !where.value().isEmpty() ? where.value() : paramName;
-        String op = where != null ? where.op().sql() : io.github.erdsgfc.jforge.annotation.Op.EQ.sql();
-        // Optional 参数：恒动态——isPresent → 条件；isEmpty → IS NULL（显式空值查询）。
-        boolean optional = CriteriaGenerator.isOptional(parameter.asType());
-        // JSpecify @Nullable 是 TYPE_USE 注解——标注在类型位置（@Nullable Integer age），
-        // 必须从 TypeMirror 读取（参数声明的 getAnnotation 读不到）。
-        boolean dynamic = optional
-                || parameter.asType().getAnnotation(org.jspecify.annotations.Nullable.class) != null;
-
-        // 原生 SQL 条件：rawSql 非空时直接作为条件片段（跳过列映射与操作符拼装），
-        // 含 ? 时绑定参数、无 ? 时纯常量（参数仅用于动态跳过控制）。
-        String rawSql = where != null ? where.rawSql() : "";
-        if (!rawSql.isEmpty()) {
-            String bindType = optional
-                    ? CriteriaGenerator.optionalValueType(parameter.asType(), processingEnv.getTypeUtils())
-                    : processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString();
-            String valueExpr = optional
-                    ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
-                    : null;
-            return new WhereCondition(null, null, paramName, bindType, dynamic, optional, valueExpr,
-                    rawSql, null);
-        }
-
-        String columnName;
-        String converterField = null;   // 宿主列 @Convert 转换器字段;record 组件无转换器
-        TypeMirror returnType = method.getReturnType();
-        boolean isList = returnType.getKind() == TypeKind.DECLARED
-                && ((DeclaredType) returnType).asElement().getSimpleName().contentEquals("List");
-        TypeMirror elementType = isList ? ((DeclaredType) returnType).getTypeArguments().get(0) : returnType;
-        if (elementType.getKind() == TypeKind.DECLARED) {
-            TypeElement element = (TypeElement) ((DeclaredType) elementType).asElement();
-            if (element.getAnnotation(Table.class) != null || element.getKind() == ElementKind.RECORD) {
-                // 实体/record：条件字段匹配返回类型的字段/组件。
-                if (element.getKind() == ElementKind.RECORD) {
-                    columnName = findRecordColumn(info, element, fieldName, method);
-                } else {
-                    columnName = findHostColumn(info, fieldName, method);
-                    // 条件字段映射宿主实体列 → 复用该列 @Convert 转换器（无需注解）。
-                    converterField = SqlCodegen.converterFieldForField(info.model, fieldName);
-                }
-            } else {
-                return null; // 返回类型错误已在 selectMethod 报过
-            }
-        } else {
-            columnName = findHostColumn(info, fieldName, method);
-            converterField = SqlCodegen.converterFieldForField(info.model, fieldName);
-        }
-        if (columnName == null) {
-            return null;
-        }
-        String bindType = optional
-                ? CriteriaGenerator.optionalValueType(parameter.asType(), processingEnv.getTypeUtils())
-                : processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString();
-        String valueExpr = optional
-                ? paramName + CriteriaGenerator.optionalValueMethod(parameter.asType())
-                : null;
-        return new WhereCondition(columnName, op, paramName, bindType, dynamic, optional, valueExpr,
-                null, converterField);
-    }
-
-    /** 在宿主实体字段集合中查找字段并返回其列名（按宿主方言包裹）；找不到则报错。 */
-    private String findHostColumn(JForgeProcessor.DaoInfo info, String fieldName, ExecutableElement method) {
-        for (EntityModel.ColumnModel column : info.model.columns()) {
-            if (column.fieldName.equals(fieldName)) {
-                return SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column.columnName);
-            }
-        }
-        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                "@Select parameter field '" + fieldName + "' does not match any field of entity "
-                        + info.model.entityQualifiedName(), method);
-        return null;
-    }
-
-    /** 在 record 组件中查找字段并返回其列名（组件名经命名策略，按宿主方言包裹）；找不到则报错。 */
-    private String findRecordColumn(JForgeProcessor.DaoInfo info, TypeElement record, String fieldName,
-            ExecutableElement method) {
-        for (Element component : record.getRecordComponents()) {
-            if (component.getSimpleName().contentEquals(fieldName)) {
-                return SqlCodegen.quoteIdentifier(info.model.dialectSupport(),
-                        configHelper.columnName(record, fieldName));
-            }
-        }
-        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                "@Select parameter field '" + fieldName + "' does not match any component of record "
-                        + record.getQualifiedName(), method);
-        return null;
-    }
 }
