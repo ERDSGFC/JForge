@@ -8,6 +8,7 @@ import io.github.erdsgfc.jforge.annotation.*;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
+import io.github.erdsgfc.jforge.processor.utils.Nullability;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
@@ -113,7 +114,7 @@ public final class UpdateGenerator {
                 criteriaUnits.addAll(units);
             } else {
             WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
-                    processingEnv, "@Condition");
+                    processingEnv, "@Condition", configHelper);
                 if (condition == null) {
                     return null;
                 }
@@ -139,9 +140,10 @@ public final class UpdateGenerator {
         boolean logSql = configHelper.logSql(info.element);
 
         // 全静态：SET 无动态 + WHERE 无动态 + 无 @Where 条件对象 → SQL 常量 + 静态绑定。
+        // Optional SET/条件(isPresent/IS NULL 运行时分支)即使 dynamic=false 也走动态形态。
         boolean allStatic = criteriaUnits.isEmpty()
                 && sets.stream().noneMatch(s -> s.dynamic || s.optional)
-                && conditions.stream().noneMatch(c -> c.dynamic());
+                && conditions.stream().noneMatch(c -> c.dynamic() || c.optional());
         if (allStatic) {
             StringBuilder sql = new StringBuilder(baseSql + " SET ");
             for (int i = 0; i < sets.size(); i++) {
@@ -221,8 +223,11 @@ public final class UpdateGenerator {
         UpdateSet set = parameter.getAnnotation(UpdateSet.class);
         String paramName = parameter.getSimpleName().toString();
         boolean optional = CriteriaGenerator.isOptional(parameter.asType());
-        boolean dynamic = optional
-                || parameter.asType().getAnnotation(org.jspecify.annotations.Nullable.class) != null;
+        // 动态判定与 WhereCondition.resolveHost 同规则:基本类型恒固定;
+        // 非基本类型(含 Optional)@Nullable 标注或 columnsNullable 默认可空时动态。
+        boolean primitive = parameter.asType().getKind().isPrimitive();
+        boolean dynamic = !primitive && (Nullability.isNullableParameter(parameter)
+                || configHelper.columnsNullable(info.element));
         String bindType = optional
                 ? CriteriaGenerator.optionalValueType(parameter.asType(), processingEnv.getTypeUtils())
                 : processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString();

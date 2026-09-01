@@ -58,6 +58,16 @@ class NullableColumnTest {
     }
 
     /** 非 NULL 行：可空列正常读回，wasNull 分支不影响非 null 值。 */
+    /** columnsNullable=true 包:未标 @Nullable 的 boxed 参数默认动态(null 跳过查全表)。 */
+    @Test
+    void unannotatedBoxedParameterIsDynamicByConfig() {
+        repo.save(repo.createEntity().name("a").nickname("n1").age(10).score(90));
+        repo.save(repo.createEntity().name("b").nickname("n2").age(20).score(80));
+
+        assertEquals(1, repo.findByScore(90).size(), "non-null value must filter");
+        assertEquals(2, repo.findByScore(null).size(), "null must skip the condition (dynamic by columnsNullable)");
+    }
+
     @Test
     void nonNullRowReadsValuesNormally() {
         NullableUser user = repo.createEntity();

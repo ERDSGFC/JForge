@@ -80,7 +80,7 @@ public final class DeleteGenerator {
                 criteriaUnits.addAll(units);
             } else {
                 WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
-                    processingEnv, "@Condition");
+                    processingEnv, "@Condition", configHelper);
                 if (condition == null) {
                     return null;
                 }
@@ -101,8 +101,9 @@ public final class DeleteGenerator {
         boolean logSql = configHelper.logSql(info.element);
 
         // 全静态：WHERE 无动态 + 无 @Where 条件对象 → SQL 常量 + 静态绑定。
+        // Optional 条件(isPresent/IS NULL 运行时分支)即使 dynamic=false 也走动态形态。
         boolean allStatic = criteriaUnits.isEmpty()
-                && conditions.stream().noneMatch(WhereCondition::dynamic);
+                && conditions.stream().noneMatch(c -> c.dynamic() || c.optional());
         if (allStatic) {
             StringBuilder sql = new StringBuilder(baseSql);
             WhereCondition.appendStaticWhereSql(sql, conditions);

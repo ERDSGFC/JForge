@@ -3,9 +3,10 @@ package io.github.erdsgfc.jforge.processor.generator;
 import com.palantir.javapoet.MethodSpec;
 import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.processor.EntityModel;
+import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
+import io.github.erdsgfc.jforge.processor.utils.Nullability;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
-import org.jspecify.annotations.Nullable;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.ExecutableElement;
@@ -15,15 +16,28 @@ import java.util.List;
 
 /**
  * 已解析的 WHERE 条件，供 {@code @Select}、{@code @Update} 和 {@code @Delete} 生成器复用。
+ *
+ * @param columnName     WHERE 中使用的列名（已按方言引用符包裹；{@code null} = rawSql 条件）
+ * @param op             操作符 SQL 片段（{@code "="}/{@code ">"}/{@code "LIKE"}…）
+ * @param paramName      参数名（绑定表达式）
+ * @param typeName       参数类型（绑定 API 选择；Optional 剥离类型实参后）
+ * @param dynamic        {@code @Nullable} → 运行时为 {@code null} 时跳过
+ * @param optional       {@code Optional} 参数：{@code isPresent} → 条件；{@code isEmpty} → IS NULL
+ * @param valueExpr      Optional 的绑定值表达式（{@code param.get()}/{@code getAsInt()}…）
+ * @param rawSql         原生 SQL 条件片段（非 null 替代 column/op 拼装；含 {@code ?} 绑定参数）
+ * @param converterField 宿主列 {@code @Convert} 转换器静态字段名（{@code null} = 无转换器）
  */
 record WhereCondition(String columnName, String op, String paramName, String typeName, boolean dynamic,
                       boolean optional, String valueExpr, String rawSql, String converterField) {
 
     /**
      * 解析绑定到宿主实体列的 {@code @Condition} 参数。
+     *
+     * @param configHelper 配置 helper（动态判定的 columnsNullable 默认值）
      */
     static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
-                                      VariableElement parameter, ProcessingEnvironment processingEnv, String diagnosticPrefix) {
+                                      VariableElement parameter, ProcessingEnvironment processingEnv,
+                                      String diagnosticPrefix, JForgeConfigHelper configHelper) {
         String paramName = parameter.getSimpleName().toString();
         Condition condition = parameter.getAnnotation(Condition.class);
         String fieldName = condition != null && !condition.value().isEmpty()
@@ -31,8 +45,14 @@ record WhereCondition(String columnName, String op, String paramName, String typ
         String op = condition != null ? condition.op().sql() : "=";
         String rawSql = condition != null ? condition.rawSql() : "";
         boolean optional = CriteriaGenerator.isOptional(parameter.asType());
-        boolean dynamic = optional
-                || parameter.asType().getAnnotation(Nullable.class) != null;
+        // 动态判定（与实体列空性同规则,Optional 不特殊——它也是非基本类型）:
+        // 基本类型恒固定(不可能为 null,即使标 @Nullable 守卫也恒真,静态拼接);
+        // 非基本类型(含 Optional)@Nullable 标注(类型 + 声明镜像双查,裸读
+        // asType().getAnnotation 在注解混排时可能漏判)或 columnsNullable 默认可空时
+        // 动态——null 守卫与 Optional 的 IS NULL 语义(optional 维度)相互独立。
+        boolean primitive = parameter.asType().getKind().isPrimitive();
+        boolean dynamic = !primitive && (Nullability.isNullableParameter(parameter)
+                || configHelper.columnsNullable(info.element));
         String bindType = optional
                 ? CriteriaGenerator.optionalValueType(parameter.asType(), processingEnv.getTypeUtils())
                 : processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString();
@@ -45,7 +65,10 @@ record WhereCondition(String columnName, String op, String paramName, String typ
         }
         for (EntityModel.ColumnModel column : info.model.columns()) {
             if (column.fieldName.equals(fieldName)) {
-                String converterField = SqlCodegen.converterFieldForField(info.model, fieldName);
+                // 转换器字段直接取自已命中的列——避免 converterFieldForField 的二次遍历。
+                String converterField = column.converter != null
+                        ? SqlCodegen.converterFieldName(info.model, column)
+                        : null;
                 return new WhereCondition(
                         SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column.columnName),
                         op, paramName, bindType, dynamic, optional, valueExpr, null, converterField);
