@@ -9,14 +9,13 @@ import io.github.erdsgfc.jforge.processor.utils.Nullability;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 
 import javax.lang.model.element.*;
-import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.ExecutableType;
-import javax.lang.model.type.MirroredTypeException;
-import javax.lang.model.type.TypeKind;
-import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.*;
 import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * {@code @Table} 实体<em>接口</em>的解析模型:属性方法(getter)与 builder 风格 setter

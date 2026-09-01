@@ -1,14 +1,9 @@
 package io.github.erdsgfc.jforge.processor.generator.core;
 
-import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.CodeBlock;
-import com.palantir.javapoet.FieldSpec;
-import com.palantir.javapoet.MethodSpec;
-import javax.lang.model.element.Modifier;
-import com.palantir.javapoet.TypeName;
-import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.*;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 
+import javax.lang.model.element.Modifier;
 import java.io.Serializable;
 import java.util.List;
 import java.util.Objects;

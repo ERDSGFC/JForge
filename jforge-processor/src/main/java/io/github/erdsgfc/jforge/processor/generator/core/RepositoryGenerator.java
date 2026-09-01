@@ -1,12 +1,6 @@
 package io.github.erdsgfc.jforge.processor.generator.core;
 
-import com.palantir.javapoet.AnnotationSpec;
-import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.FieldSpec;
-import com.palantir.javapoet.JavaFile;
-import com.palantir.javapoet.MethodSpec;
-import javax.lang.model.element.Modifier;
-import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.*;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
@@ -15,6 +9,7 @@ import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.Modifier;
 import javax.tools.Diagnostic;
 import java.io.IOException;
 import java.util.HashMap;
