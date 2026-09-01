@@ -140,6 +140,7 @@ public final class QueryGenerator {
             TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded, ClassName connection,
             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         String methodName = method.getSimpleName().toString();
+        String sqlField = SqlFieldGenerator.methodSqlFieldName(method);
         ParsedWhere parsed = parseWhere(query.value());
         Map<String, VariableElement> binds = bindsOf(method);
         // @Condition 参数 → 追加条件片段（伪占位符 = 参数名，复用占位符绑定与 @Nullable 动态机制）。
@@ -169,10 +170,9 @@ public final class QueryGenerator {
         }
         // 静态查询的 SQL 只计算一次：同时用于常量字段和异常信息，避免重复解析占位符/@Condition。
         String staticSql = querySql(info, method, query, parsed);
-        builder.addField(SqlFieldGenerator.sqlField(methodName + "Sql", staticSql));
+        builder.addField(SqlFieldGenerator.sqlField(sqlField, staticSql));
         // 静态路径：SQL 常量由 querySql 统一生成（含静态 @Condition 追加），
         // 这里只需收集绑定占位符（含追加片段的伪占位符）。
-        String sqlField = methodName + "Sql";
         List<String> placeholders = new ArrayList<>();
         SqlCodegen.convertPlaceholders(query.value(), placeholders);
         for (WhereFragment fragment : appended) {
@@ -389,7 +389,8 @@ public final class QueryGenerator {
             appendResultMapping(spec, info, method, builder, embedded, returnType, selectPart);
             spec.endControlFlow();
         }
-        SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(), selectPart, logSql);
+        SqlCodegen.endTxBlockDynamic(spec, sqlException, methodName, info.model.tableName(),
+                "sql.toString()", logSql);
         return spec.build();
     }
 

@@ -411,6 +411,29 @@ public final class SqlCodegen {
     }
 
     /**
+     * 关闭 SQL 动态构建的事务代码块。与 {@link #endTxBlock(MethodSpec.Builder,
+     * ClassName, String, String, String, boolean)} 不同，{@code sqlExpr} 是生成代码中的
+     * 表达式（例如 {@code sql.toString()}），因此异常消息和失败日志包含运行时完整 SQL。
+     */
+    public static void endTxBlockDynamic(MethodSpec.Builder method, ClassName sqlException,
+            String operation, String tableName, String sqlExpr, boolean logSql) {
+        String prefix = operation + " on table '" + tableName + "' [";
+        String suffix = "]: ";
+        method.nextControlFlow("catch ($T e)", sqlException);
+        if (logSql) {
+            method.beginControlFlow("if (log.isWarnEnabled())");
+            method.addStatement("log.warn($S, $L, e)", "SQL failed: {}", sqlExpr);
+            method.endControlFlow();
+        }
+        method.addStatement("throw new $T($T.Code.SQL, $S + $L + $S + e.getMessage(), $L, e)",
+                ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(),
+                prefix, sqlExpr, suffix, sqlExpr)
+                .nextControlFlow("finally")
+                .addStatement("releaseConnection(conn)")
+                .endControlFlow();
+    }
+
+    /**
      * 转换器列的静态字段名：{@code CONVERTER_<实体简单名大写>_<字段名大写>}——字段按列
      * 唯一（同实体两列不可能同字段名），宿主实体与 {@code @Query} 嵌入实体各自生成
      * 字段时因实体名不同不会冲突。

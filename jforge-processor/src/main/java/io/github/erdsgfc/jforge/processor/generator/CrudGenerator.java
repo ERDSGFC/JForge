@@ -268,6 +268,34 @@ public final class CrudGenerator {
     }
 
     /**
+     * 生成基于固定 SQL 前缀的 IN 占位符列表。调用方须先处理空列表，
+     * 以避免生成没有任何占位符的 IN () 语句。
+     */
+    private static void appendInSql(MethodSpec.Builder method, String baseSqlField) {
+        // 预分配精确容量：baseSql.length() + ids.size()*2（每个 "?," + 末尾 ")"），避免扩容拷贝。
+        method.addStatement("$T sql = new $T($N.length() + ids.size() * 2)",
+                ClassName.get(StringBuilder.class), ClassName.get(StringBuilder.class), baseSqlField);
+        method.addStatement("sql.append($N)", baseSqlField);
+        method.beginControlFlow("for (int i = 0; i < ids.size(); i++)");
+        method.beginControlFlow("if (i > 0)");
+        method.addStatement("sql.append($S)", ",");
+        method.endControlFlow();
+        method.addStatement("sql.append($S)", "?");
+        method.endControlFlow();
+        method.addStatement("sql.append($S)", ")");
+    }
+
+    /** 生成 IN 参数绑定代码；索引变量与占位符数量严格一致。 */
+    private static void appendInBindings(MethodSpec.Builder method, JForgeProcessor.DaoInfo info) {
+        method.addStatement("int i = 1");
+        method.beginControlFlow("for ($T id : ids)", info.idType);
+        method.addCode(idBindParam(info, "id", "i"));
+        method.addCode("\n");
+        method.addStatement("i++");
+        method.endControlFlow();
+    }
+
+    /**
      * 绑定主键参数并复用主键列的枚举/可空/转换器元数据，避免 ID CRUD 路径绕过
      * {@code @Convert} 或对可空包装类型错误地调用 setXxx(null)。
      */
@@ -454,27 +482,12 @@ public final class CrudGenerator {
         method.beginControlFlow("if (ids.isEmpty())");
         method.addStatement("return 0");
         method.endControlFlow();
-        // 预分配精确容量：baseSql.length() + ids.size()*2（每个 id 的 "?," + 末尾 ")"），避免扩容拷贝。
-        method.addStatement("$T sql = new $T($N.length() + ids.size() * 2)",
-                ClassName.get(StringBuilder.class),
-                ClassName.get(StringBuilder.class), "deleteByIdsBaseSql");
-        method.addStatement("sql.append($N)", "deleteByIdsBaseSql");
-        method.beginControlFlow("for (int i = 0; i < ids.size(); i++)");
-        method.beginControlFlow("if (i > 0)");
-        method.addStatement("sql.append($S)", ",");
-        method.endControlFlow();
-        method.addStatement("sql.append($S)", "?");
-        method.endControlFlow();
-        method.addStatement("sql.append($S)", ")");
+        appendInSql(method, "deleteByIdsBaseSql");
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "sql.toString()", false, configHelper.logSql(info.element));
-        method.addStatement("int i = 1");
-        method.beginControlFlow("for ($T id : ids)", info.idType);
-        method.addCode(idBindParam(info, "id", "i"));
-        method.addCode("\n");
-        method.addStatement("i++");
-        method.endControlFlow();
+        appendInBindings(method, info);
         method.addStatement("return ps.executeUpdate()");
-        SqlCodegen.endTxBlock(method, sqlException, "deleteByIds", info.model.tableName(), SqlFieldGenerator.deleteByIdsBaseSql(info), configHelper.logSql(info.element));
+        SqlCodegen.endTxBlockDynamic(method, sqlException, "deleteByIds", info.model.tableName(),
+                "sql.toString()", configHelper.logSql(info.element));
         return method.build();
     }
 
@@ -572,25 +585,9 @@ public final class CrudGenerator {
         method.beginControlFlow("if (ids.isEmpty())");
         method.addStatement("return $T.of()", ClassName.get(List.class));
         method.endControlFlow();
-        // 预分配精确容量：baseSql.length() + ids.size()*2（每个 id 的 "?," + 末尾 ")"），避免扩容拷贝。
-        method.addStatement("$T sql = new $T($N.length() + ids.size() * 2)",
-                ClassName.get(StringBuilder.class),
-                ClassName.get(StringBuilder.class), "findByIdsBaseSql");
-        method.addStatement("sql.append($N)", "findByIdsBaseSql");
-        method.beginControlFlow("for (int i = 0; i < ids.size(); i++)");
-        method.beginControlFlow("if (i > 0)");
-        method.addStatement("sql.append($S)", ",");
-        method.endControlFlow();
-        method.addStatement("sql.append($S)", "?");
-        method.endControlFlow();
-        method.addStatement("sql.append($S)", ")");
+        appendInSql(method, "findByIdsBaseSql");
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "sql.toString()", false, configHelper.logSql(info.element));
-        method.addStatement("int i = 1");
-        method.beginControlFlow("for ($T id : ids)", info.idType);
-        method.addCode(idBindParam(info, "id", "i"));
-        method.addCode("\n");
-        method.addStatement("i++");
-        method.endControlFlow();
+        appendInBindings(method, info);
         method.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class), info.entityType,
                 ClassName.get(ArrayList.class));
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
@@ -599,7 +596,8 @@ public final class CrudGenerator {
         method.endControlFlow();
         method.endControlFlow();
         method.addStatement("return result");
-        SqlCodegen.endTxBlock(method, sqlException, "findByIds", info.model.tableName(), SqlFieldGenerator.findByIdsBaseSql(info), configHelper.logSql(info.element));
+        SqlCodegen.endTxBlockDynamic(method, sqlException, "findByIds", info.model.tableName(),
+                "sql.toString()", configHelper.logSql(info.element));
         return method.build();
     }
 

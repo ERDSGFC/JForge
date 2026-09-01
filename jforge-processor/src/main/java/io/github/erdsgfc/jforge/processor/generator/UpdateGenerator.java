@@ -156,20 +156,11 @@ public final class UpdateGenerator {
                 SetUnit unit = sets.get(i);
                 sql.append(unit.rawSql != null ? unit.rawSql : unit.column + " = ?");
             }
-            if (!conditions.isEmpty()) {
-                sql.append(" WHERE ");
-                for (int i = 0; i < conditions.size(); i++) {
-                    if (i > 0) {
-                        sql.append(" AND ");
-                    }
-                    WhereCondition condition = conditions.get(i);
-                    sql.append(condition.rawSql() != null ? condition.rawSql()
-                            : condition.columnName() + " " + condition.op() + " ?");
-                }
-            }
-            builder.addField(FieldSpec.builder(String.class, methodName + "Sql",
-                    Modifier.PRIVATE, Modifier.FINAL).initializer("$S", sql.toString()).build());
-            SqlCodegen.beginTxBlock(spec, connection, preparedStatement, methodName + "Sql", false, logSql);
+            WhereCondition.appendStaticWhereSql(sql, conditions);
+            String sqlField = SqlFieldGenerator.methodSqlFieldName(method);
+            builder.addField(FieldSpec.builder(String.class, sqlField,
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL).initializer("$S", sql.toString()).build());
+            SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, false, logSql);
             int index = 1;
             for (SetUnit unit : sets) {
                 // rawSql 无 ? 的纯常量 SET 不绑定参数。
@@ -180,14 +171,7 @@ public final class UpdateGenerator {
                         index++, false, false, unit.converterField));
                 spec.addCode("\n");
             }
-            for (WhereCondition condition : conditions) {
-                if (condition.rawSql() != null && !condition.rawSql().contains("?")) {
-                    continue;
-                }
-                spec.addCode(SqlCodegen.bindParam(condition.typeName(), condition.paramName(),
-                        index++, false, false, condition.converterField()));
-                spec.addCode("\n");
-            }
+            WhereCondition.appendStaticBinds(spec, conditions, index);
             spec.addStatement("return ps.executeUpdate()");
             SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(),
                     sql.toString(), logSql);
@@ -230,8 +214,8 @@ public final class UpdateGenerator {
         }
         criteriaGenerator.emitBind(spec, criteriaUnits, "i++");
         spec.addStatement("return ps.executeUpdate()");
-        SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(),
-                baseSql, logSql);
+        SqlCodegen.endTxBlockDynamic(spec, sqlException, methodName, info.model.tableName(),
+                "sql.toString()", logSql);
         return spec.build();
     }
 

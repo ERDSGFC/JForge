@@ -84,7 +84,7 @@ public final class DeleteGenerator {
                 }
                 criteriaUnits.addAll(units);
             } else {
-            WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
+                WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
                     processingEnv, "@Condition");
                 if (condition == null) {
                     return null;
@@ -107,33 +107,15 @@ public final class DeleteGenerator {
 
         // 全静态：WHERE 无动态 + 无 @Where 条件对象 → SQL 常量 + 静态绑定。
         boolean allStatic = criteriaUnits.isEmpty()
-                && conditions.stream().noneMatch(c -> c.dynamic());
+                && conditions.stream().noneMatch(WhereCondition::dynamic);
         if (allStatic) {
             StringBuilder sql = new StringBuilder(baseSql);
-            if (!conditions.isEmpty()) {
-                sql.append(" WHERE ");
-                for (int i = 0; i < conditions.size(); i++) {
-                    if (i > 0) {
-                        sql.append(" AND ");
-                    }
-                    WhereCondition condition = conditions.get(i);
-                    sql.append(condition.rawSql() != null ? condition.rawSql()
-                            : condition.columnName() + " " + condition.op() + " ?");
-                }
-            }
-            builder.addField(FieldSpec.builder(String.class, methodName + "Sql",
-                    Modifier.PRIVATE, Modifier.FINAL).initializer("$S", sql.toString()).build());
-            SqlCodegen.beginTxBlock(spec, connection, preparedStatement, methodName + "Sql", false, logSql);
-            int index = 1;
-            for (WhereCondition condition : conditions) {
-                // rawSql 无 ? 的纯常量条件不绑定参数。
-                if (condition.rawSql() != null && !condition.rawSql().contains("?")) {
-                    continue;
-                }
-                spec.addCode(SqlCodegen.bindParam(condition.typeName(), condition.paramName(),
-                        index++, false, false, condition.converterField()));
-                spec.addCode("\n");
-            }
+            WhereCondition.appendStaticWhereSql(sql, conditions);
+            String sqlField = SqlFieldGenerator.methodSqlFieldName(method);
+            builder.addField(FieldSpec.builder(String.class, sqlField,
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL).initializer("$S", sql.toString()).build());
+            SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, false, logSql);
+            WhereCondition.appendStaticBinds(spec, conditions, 1);
             spec.addStatement("return ps.executeUpdate()");
             SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(),
                     sql.toString(), logSql);
@@ -164,8 +146,8 @@ public final class DeleteGenerator {
         }
         criteriaGenerator.emitBind(spec, criteriaUnits, "i++");
         spec.addStatement("return ps.executeUpdate()");
-        SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(),
-                baseSql, logSql);
+        SqlCodegen.endTxBlockDynamic(spec, sqlException, methodName, info.model.tableName(),
+                "sql.toString()", logSql);
         return spec.build();
     }
 

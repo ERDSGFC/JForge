@@ -11,6 +11,7 @@ import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.VariableElement;
 import javax.tools.Diagnostic;
+import java.util.List;
 
 /**
  * 已解析的 WHERE 条件，供 {@code @Select}、{@code @Update} 和 {@code @Delete} 生成器复用。
@@ -112,5 +113,34 @@ record WhereCondition(String columnName, String op, String paramName, String typ
         if (condition.dynamic) {
             spec.endControlFlow();
         }
+    }
+
+    /** 将静态 WHERE 条件追加到 SQL。条件为空时不追加任何内容。 */
+    static void appendStaticWhereSql(StringBuilder sql, List<WhereCondition> conditions) {
+        if (conditions.isEmpty()) {
+            return;
+        }
+        sql.append(" WHERE ");
+        for (int i = 0; i < conditions.size(); i++) {
+            if (i > 0) {
+                sql.append(" AND ");
+            }
+            WhereCondition condition = conditions.get(i);
+            sql.append(condition.rawSql != null ? condition.rawSql
+                    : condition.columnName + " " + condition.op + " ?");
+        }
+    }
+
+    /** 生成静态 WHERE 参数绑定代码，并返回下一个可用的 JDBC 参数索引。 */
+    static int appendStaticBinds(MethodSpec.Builder spec, List<WhereCondition> conditions, int index) {
+        for (WhereCondition condition : conditions) {
+            if (condition.rawSql != null && !condition.rawSql.contains("?")) {
+                continue;
+            }
+            spec.addCode(SqlCodegen.bindParam(condition.typeName, condition.paramName,
+                    index++, false, false, condition.converterField));
+            spec.addCode("\n");
+        }
+        return index;
     }
 }

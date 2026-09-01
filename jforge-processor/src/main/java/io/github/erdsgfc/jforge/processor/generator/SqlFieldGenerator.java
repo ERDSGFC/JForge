@@ -7,12 +7,15 @@ import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 生成仓库 impl 类的固定 SQL 常量字段（{@code private final String xxxSql = "..."}）。
+ * 生成仓库 impl 类的固定 SQL 常量字段（{@code private static final String xxxSql = "..."}）。
  *
  * <p>纯静态、无状态，只负责 CRUD 各方法的 SQL。{@code @Query} 方法的 SQL
  * 由 {@link QueryGenerator} 在生成查询实现时统一处理。IN 查询
@@ -44,11 +47,40 @@ public final class SqlFieldGenerator {
         return fields;
     }
 
-    /** 构造一个 {@code private final String name = "sql";} 字段。 */
+    /** 构造一个 {@code private static final String name = "sql";} 字段。 */
     static FieldSpec sqlField(String name, String sql) {
-        return FieldSpec.builder(String.class, name, Modifier.PRIVATE, Modifier.FINAL)
+        return FieldSpec.builder(String.class, name, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                 .initializer("$S", sql)
                 .build();
+    }
+
+    /**
+     * 计算注解方法对应的 SQL 字段名。普通方法保持 {@code methodSql}；同名重载按声明顺序
+     * 追加 {@code _1}, {@code _2} 等后缀。内置 CRUD 方法名保留给固定 SQL 字段，因此
+     * 同名的自定义静态查询从 {@code _1} 开始，避免字段冲突。
+     */
+    static String methodSqlFieldName(ExecutableElement method) {
+        String methodName = method.getSimpleName().toString();
+        String baseName = methodName + "Sql";
+        int overloadIndex = 0;
+        for (Element enclosed : method.getEnclosingElement().getEnclosedElements()) {
+            if (enclosed.getKind() == ElementKind.METHOD
+                    && ((ExecutableElement) enclosed).getSimpleName().contentEquals(methodName)) {
+                if (enclosed == method) {
+                    break;
+                }
+                overloadIndex++;
+            }
+        }
+        boolean reserved = switch (methodName) {
+            case "save", "saveAll", "deleteById", "deleteByIds", "update", "findById",
+                    "findByIds", "findAll", "count", "countById" -> true;
+            default -> false;
+        };
+        if (overloadIndex == 0 && !reserved) {
+            return baseName;
+        }
+        return baseName + "_" + (overloadIndex + (reserved ? 1 : 0));
     }
 
     static String saveSql(JForgeProcessor.DaoInfo info, JForgeConfigHelper configHelper) {

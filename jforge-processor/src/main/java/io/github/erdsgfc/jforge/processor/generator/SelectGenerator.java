@@ -102,6 +102,18 @@ public final class SelectGenerator {
         }
     }
 
+    /** 只把 java.util.List 视为集合返回类型，避免按简单类名误判自定义 List 类型。 */
+    private boolean isJavaUtilList(TypeMirror type) {
+        if (type.getKind() != TypeKind.DECLARED) {
+            return false;
+        }
+        TypeElement listElement = processingEnv.getElementUtils().getTypeElement("java.util.List");
+        return listElement != null
+                && processingEnv.getTypeUtils().isSameType(
+                        processingEnv.getTypeUtils().erasure(type),
+                        processingEnv.getTypeUtils().erasure(listElement.asType()));
+    }
+
     /**
      * 构建一个 {@code @Select} 方法：SELECT 列部分按返回类型分派（实体全列 /
      * record 组件列 / COUNT(*)，FROM 恒为宿主实体表），WHERE 条件按参数解析，
@@ -113,11 +125,18 @@ public final class SelectGenerator {
             ClassName sqlException) {
         String methodName = method.getSimpleName().toString();
         TypeMirror returnType = method.getReturnType();
-        boolean isList = returnType.getKind() == TypeKind.DECLARED
-                && ((DeclaredType) returnType).asElement().getSimpleName().contentEquals("List");
-        TypeMirror elementType = isList
-                ? ((DeclaredType) returnType).getTypeArguments().get(0)
-                : returnType;
+        boolean isList = isJavaUtilList(returnType);
+        TypeMirror elementType = returnType;
+        if (isList) {
+            List<? extends TypeMirror> typeArguments = ((DeclaredType) returnType).getTypeArguments();
+            if (typeArguments.size() != 1) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "@Select List return type must declare exactly one element type: " + returnType,
+                        method);
+                return null;
+            }
+            elementType = typeArguments.get(0);
+        }
 
         // SELECT 列部分与结果映射分支：实体（限宿主）/ record / 标量 COUNT(*)。
         String columns;
@@ -196,39 +215,18 @@ public final class SelectGenerator {
         if (allStatic) {
             // 全静态条件（无 @Nullable 参数）：WHERE 子句与绑定索引均编译期确定——
             // 生成完整 SQL 常量字段 + 静态索引绑定（与 @Query 同一形态，运行时零拼接）。
-            String fullSql = baseSql;
-            if (!conditions.isEmpty()) {
-                StringBuilder where = new StringBuilder(" WHERE ");
-                for (int i = 0; i < conditions.size(); i++) {
-                    if (i > 0) {
-                        where.append(" AND ");
-                    }
-                    WhereCondition condition = conditions.get(i);
-                    if (condition.rawSql() != null) {
-                        where.append(condition.rawSql());
-                    } else {
-                        where.append(condition.columnName()).append(' ').append(condition.op()).append(" ?");
-                    }
-                }
-                fullSql = baseSql + where;
-            }
-            builder.addField(FieldSpec.builder(String.class, methodName + "Sql",
-                    Modifier.PRIVATE, Modifier.FINAL).initializer("$S", fullSql).build());
-            SqlCodegen.beginTxBlock(spec, connection, preparedStatement, methodName + "Sql", false, logSql);
-            int index = 1;
-            for (WhereCondition condition : conditions) {
-                // rawSql 无 ? 的纯常量条件不绑定参数。
-                if (condition.rawSql() != null && !condition.rawSql().contains("?")) {
-                    continue;
-                }
-                spec.addCode(SqlCodegen.bindParam(condition.typeName(), condition.paramName(),
-                        index++, false, false, condition.converterField()));
-                spec.addCode("\n");
-            }
+            StringBuilder fullSqlBuilder = new StringBuilder(baseSql);
+            WhereCondition.appendStaticWhereSql(fullSqlBuilder, conditions);
+            String fullSql = fullSqlBuilder.toString();
+            String sqlField = SqlFieldGenerator.methodSqlFieldName(method);
+            builder.addField(FieldSpec.builder(String.class, sqlField,
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL).initializer("$S", fullSql).build());
+            SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, false, logSql);
+            WhereCondition.appendStaticBinds(spec, conditions, 1);
             spec.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
             queryGenerator.appendResultMapping(spec, info, method, builder, embedded, returnType, baseSql);
             spec.endControlFlow();
-            SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(), baseSql, logSql);
+            SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(), fullSql, logSql);
             return spec.build();
         }
 
@@ -264,8 +262,8 @@ public final class SelectGenerator {
         queryGenerator.appendResultMapping(spec, info, method, builder, embedded, returnType, baseSql);
         spec.endControlFlow();
 
-        SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(), baseSql,
-                configHelper.logSql(info.element));
+        SqlCodegen.endTxBlockDynamic(spec, sqlException, methodName, info.model.tableName(),
+                "sql.toString()", configHelper.logSql(info.element));
         return spec.build();
     }
 
