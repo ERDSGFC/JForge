@@ -42,8 +42,10 @@ public final class SqlCodegen {
      * 对 {@code null} 值自动拆箱抛 NPE（如 {@code setInt} 接收 {@code Integer} null），
      * 而 setObject 天然把 null 绑定为 SQL NULL、非 null 值由驱动按参数推断类型；
      * 枚举列走 {@code setObject(index, expr, Types.OTHER)}——pgjdbc 对无显式类型的
-     * 枚举对象无法推断 SQL 类型；转换器列走 {@code setObject(i, CONV.toDatabase(expr))}；
-     * 非可空列与 {@link #bindParam(String, String, int)} 相同（类型精确 setXxx）。
+     * 枚举对象无法推断 SQL 类型；转换器列走 {@code setObject(i, CONV.toDatabase(expr),
+     * CONV.sqlType())}——SQL 类型由转换器决定（默认 JDBCType.OTHER = unknown，让
+     * 服务端按目标列推断）；非可空列与 {@link #bindParam(String, String, int)} 相同
+     * （类型精确 setXxx）。
      *
      * @param typeName      字段类型字符串
      * @param expr          值表达式（实体 getter 调用）
@@ -56,10 +58,11 @@ public final class SqlCodegen {
     public static CodeBlock bindParam(String typeName, String expr, int index, boolean nullable, boolean isEnum,
             String converterField) {
         if (converterField != null) {
-            // 转换器列:setObject(i, v, Types.OTHER)——转换结果以 unknown 类型发送,
-            // 由 PG/H2 按目标列推断(jsonb 等不接受 varchar 隐式转换的类型也能绑定)。
-            return CodeBlock.of("$L.setObject($L, $L.toDatabase($L), $T.OTHER);", "ps", index,
-                    converterField, expr, ClassName.get("java.sql", "Types"));
+            // 转换器列:setObject(i, v, CONV.sqlType())——按转换器声明的 SQL 类型发送;
+            // 默认 JDBCType.OTHER(unknown),由 PG/H2 按目标列推断(jsonb 等不接受
+            // varchar 隐式转换的类型也能绑定);用户覆盖 sqlType() 时钉死具体类型。
+            return CodeBlock.of("$L.setObject($L, $L.toDatabase($L), $L.sqlType());", "ps", index,
+                    converterField, expr, converterField);
         }
         if (isEnum) {
             return CodeBlock.of("$L.setObject($L, $L, $T.OTHER);", "ps", index, expr,

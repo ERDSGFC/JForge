@@ -74,9 +74,9 @@ public final class EntityModel {
          *  {@code setObject(i, v, Types.OTHER)}(无显式类型时驱动无法推断枚举的 SQL 类型)。 */
         public final boolean isEnum;
         /** 自定义类型转换器(@Convert 标注)——非 null 时绑定/读取经
-         *  {@code converter.toDatabase/toEntity} 转换(setObject(Object)/裸 getObject
-         *  路径,适配任意数据库类型;null 透传给转换器);与 nullable/isEnum 互斥
-         *  (converter 优先)。 */
+         *  {@code converter.toDatabase/toEntity} 转换(setObject(i, v, CONV.sqlType())/
+         *  裸 getObject 路径,适配任意数据库类型;null 透传给转换器);与 nullable/isEnum
+         *  互斥(converter 优先)。 */
         public final ClassName converter;
 
         ColumnModel(String fieldName, String columnName, TypeMirror returnType, boolean isId, boolean generated,

@@ -130,10 +130,13 @@ public interface UserEntity {
 ```java
 // 转换器:实现 JForgeConverter<X>(X = 实体字段类型),公开无参构造器;
 // 两个方向都以 Object 传递数据库侧值——适配任意数据库类型;
-// toDatabase/toEntity 必须接受并透传 null。
+// toDatabase/toEntity 必须接受并透传 null;
+// sqlType() 可选覆盖——默认 JDBCType.OTHER(unknown,由数据库按目标列推断);
+// 需钉死绑定 SQL 类型时返回 JDBCType.VARCHAR 等(或驱动自定义 SQLType 如 PGType)。
 public final class UuidStringConverter implements JForgeConverter<UUID> {
     @Override public Object toDatabase(UUID attribute) { return attribute == null ? null : attribute.toString(); }
     @Override public UUID toEntity(Object dbData) { return dbData == null ? null : UUID.fromString((String) dbData); }
+    @Override public SQLType sqlType() { return JDBCType.VARCHAR; }   // 可选
 }
 
 // 实体:getter 标 @Convert,处理器编译期把转换调用生成进 JDBC 代码。
@@ -144,8 +147,10 @@ public interface User {
 }
 ```
 
-- 绑定:`ps.setObject(i, CONVERTER_X.toDatabase(entity.getter()), Types.OTHER)`——转换结果
-  以 unknown 类型发送,由数据库按目标列推断(jsonb 等不接受 varchar 隐式转换的类型也能绑定);
+- 绑定:`ps.setObject(i, CONVERTER_X.toDatabase(entity.getter()), CONVERTER_X.sqlType())`——
+  SQL 类型由转换器 `sqlType()` 决定,默认 `JDBCType.OTHER`(unknown)由数据库按目标列推断
+  (jsonb 等不接受 varchar 隐式转换的类型也能绑定);返回 DB 原生对象(如 jsonb → `PGobject`)
+  的转换器保持默认 `OTHER` 最稳妥,输出确定作为某具体类型发送时才覆盖 `sqlType()`;
   读取:`setter(CONVERTER_X.toEntity(rs.getObject(i)))`——裸 `getObject` 取驱动的默认表示
   (如 PG jsonb → `PGobject`),转换器内部强转——**任意数据库类型均可转换**;
   转换器以 `private static final` 字段嵌入生成的仓库 impl,运行时零反射

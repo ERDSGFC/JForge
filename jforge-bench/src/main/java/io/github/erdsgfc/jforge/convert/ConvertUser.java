@@ -10,8 +10,10 @@ import java.time.LocalDate;
 
 /**
  * 自定义类型转换实体：{@code birthDate} 列（VARCHAR）经 {@link StringDateConverter}
- * 在 Java {@code LocalDate} 与数据库字符串之间转换——验证 {@code @Convert} 在
- * save/批量 save/update/行映射（CRUD 与 {@code @Query}）全路径的生成代码。
+ * 在 Java {@code LocalDate} 与数据库字符串之间转换（绑定走默认 {@code JDBCType.OTHER}）；
+ * {@code hireDate} 经 {@link VarcharDateConverter}（覆盖 {@code sqlType()} 为
+ * VARCHAR）——验证 {@code @Convert} 在 save/批量 save/update/行映射（CRUD 与
+ * {@code @Query}）全路径的生成代码，及用户自定义绑定 SQL 类型路径。
  */
 @Table(name = "convert_users")
 public interface ConvertUser {
@@ -35,9 +37,9 @@ public interface ConvertUser {
 
     ConvertUser birthDate(LocalDate birthDate);
 
-    /** 显式列名的转换列（命名策略之外）。 */
+    /** 显式列名的转换列（命名策略之外）——用覆盖 {@code sqlType()}（VARCHAR）的转换器。 */
     @Column(name = "hire_date")
-    @Convert(converter = StringDateConverter.class)
+    @Convert(converter = VarcharDateConverter.class)
     LocalDate hireDate();
 
     ConvertUser hireDate(LocalDate hireDate);

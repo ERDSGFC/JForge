@@ -13,8 +13,10 @@ import java.lang.annotation.Target;
  * 还原。转换器实现类可为 {@code classpath} 预编译或与实体同批编译（Class 类型属性经
  * {@code MirroredTypeException} 恢复类型镜像，处理器不要求类已加载）。</p>
  *
- * <p>转换列的绑定/读取统一走 {@code setObject/getObject}，不参与 {@code nullable}
- * 判定（null 透传给转换器）；转换器须接受并处理 {@code null}。</p>
+ * <p>转换列的绑定/读取统一走 {@code setObject(i, v, CONV.sqlType())/getObject}，
+ * 不参与 {@code nullable} 判定（null 透传给转换器）；绑定 SQL 类型由转换器
+ * {@link JForgeConverter#sqlType()} 决定（默认 {@code JDBCType.OTHER}），转换器
+ * 须接受并处理 {@code null}。</p>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.METHOD)
