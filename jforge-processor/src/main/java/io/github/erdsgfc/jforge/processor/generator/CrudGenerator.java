@@ -114,6 +114,15 @@ public final class CrudGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(info.entityType)
                 .addParameter(info.entityType, "entity");
+        // 空列守卫:实体无可写列(全只读/策略排除)——编译期已确定,直接抛配置错误,
+        // 避免生成 "INSERT INTO t () VALUES ()" 语法错误(纯只读实体仓库仍可定义)。
+        if (insertColumns.isEmpty()) {
+            method.addStatement("throw new $T($T.Code.CONFIGURATION, $S)",
+                    ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(),
+                    "save on table '" + model.tableName() + "': entity has no writable columns "
+                            + "(all columns are read-only or excluded by write policy)");
+            return method.build();
+        }
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "saveSql",
                 model.idGenerated() && !returning, configHelper.logSql(info.element));
         int index = 1;
@@ -184,16 +193,21 @@ public final class CrudGenerator {
                 .addParameter(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType), "entities")
                 .beginControlFlow("if (entities.isEmpty())")
                 .addStatement("return entities")
-                .endControlFlow()
-                .addStatement("$T conn = getConnection()", connection);
+                .endControlFlow();
+        // 空列守卫:与 save 相同——无可写列时批量插入同样是坏 SQL,直接抛配置错误。
+        if (insertColumns.isEmpty()) {
+            method.addStatement("throw new $T($T.Code.CONFIGURATION, $S)",
+                    ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(),
+                    "save on table '" + model.tableName() + "': entity has no writable columns "
+                            + "(all columns are read-only or excluded by write policy)");
+            return method.build();
+        }
         // 批量走 saveAllSql(永不含 RETURNING)——批量生成键回写统一走 JDBC 标准
         // getGeneratedKeys,带 RETURNING 的批量结果读取跨驱动差异大。
-        if (idGenerated) {
-            method.beginControlFlow("try ($T ps = conn.prepareStatement(saveAllSql, $T.RETURN_GENERATED_KEYS))",
-                    preparedStatement, JDBC_STATEMENT.getJavaPoetClassName());
-        } else {
-            method.beginControlFlow("try ($T ps = conn.prepareStatement(saveAllSql))", preparedStatement);
-        }
+        // beginTxBlock 统一生成连接获取 + logSql 的 DEBUG 日志 + try 资源块
+        // (generatedKeys 参数等价于 prepareStatement(sql, RETURN_GENERATED_KEYS))。
+        SqlCodegen.beginTxBlock(method, connection, preparedStatement, "saveAllSql",
+                idGenerated, configHelper.logSql(info.element));
 
         if (batch) {
             // 分块 addBatch/executeBatch：每 batchSize 行冲刷一次，剩余行再冲刷一次；
@@ -206,12 +220,12 @@ public final class CrudGenerator {
             method.addStatement("batchStart++");
             method.beginControlFlow("if (batchStart % batchSize == 0)");
             method.addStatement("ps.executeBatch()");
-            appendBatchKeysWriteback(method, info, entityImpl, resultSet, "batchStart - batchSize");
+            appendBatchKeysWriteback(method, info, entityImpl, resultSet, "batchStart - batchSize", "batchStart");
             method.endControlFlow();
             method.endControlFlow();
             method.beginControlFlow("if (batchStart % batchSize != 0)");
             method.addStatement("ps.executeBatch()");
-            appendBatchKeysWriteback(method, info, entityImpl, resultSet, "batchStart - batchStart % batchSize");
+            appendBatchKeysWriteback(method, info, entityImpl, resultSet, "batchStart - batchStart % batchSize", "batchStart");
             method.endControlFlow();
         } else {
             // 不批处理：在共享连接上每行执行一次 executeUpdate。
@@ -321,15 +335,18 @@ public final class CrudGenerator {
      * @param entityImpl 生成的实体 impl 嵌套类（只读 id 强转回写用）
      * @param resultSet ResultSet 类
      * @param startExpr 块首实体在列表中的索引
+     * @param endExpr   块尾实体索引（回写上限，防驱动键数与块行数不符时错位）
      */
     private void appendBatchKeysWriteback(MethodSpec.Builder method, JForgeProcessor.DaoInfo info,
-            ClassName entityImpl, ClassName resultSet, String startExpr) {
+            ClassName entityImpl, ClassName resultSet, String startExpr, String endExpr) {
         if (!info.model.idGenerated()) {
             return;
         }
         method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", resultSet);
         method.addStatement("int i = $L", startExpr);
-        method.beginControlFlow("while (keys.next())");
+        // 回写上限 = 本块尾:驱动返回的键数与块行数不符时(驱动差异/失败),防止
+        // 越界把键错位写进下一块实体或静默漏写——宁可少写也不写错。
+        method.beginControlFlow("while (keys.next() && i < $L)", endExpr);
         method.addStatement("$L.$L(keys.$L(1))", idWritebackReceiver(info.model, entityImpl, "entities.get(i)"),
                 info.model.idColumn().setterName,
                 TypeNameUtils.jdbcGetter(info.model.idColumn().typeName));
@@ -518,6 +535,15 @@ public final class CrudGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
                 .addParameter(info.entityType, "entity");
+        // 空列守卫:SET 无列时 "UPDATE t SET WHERE ..." 是语法错误——编译期已确定,
+        // 直接抛配置错误。
+        if (updateColumns.isEmpty()) {
+            method.addStatement("throw new $T($T.Code.CONFIGURATION, $S)",
+                    ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(),
+                    "update on table '" + model.tableName() + "': no updatable columns "
+                            + "(all columns are read-only or excluded by write policy)");
+            return method.build();
+        }
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "updateSql", false, configHelper.logSql(info.element));
         int index = 1;
         for (EntityModel.ColumnModel column : updateColumns) {
