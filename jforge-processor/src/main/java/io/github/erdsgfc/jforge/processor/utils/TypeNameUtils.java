@@ -19,59 +19,30 @@ public final class TypeNameUtils {
      *         （LocalDate 等）返回 {@code "getObject"}
      */
     public static String jdbcGetter(String typeName) {
-        switch (typeName) {
-            case "long":
-            case "java.lang.Long":
-                return "getLong";
-            case "int":
-            case "java.lang.Integer":
-                return "getInt";
-            case "java.lang.String":
-                return "getString";
-            case "boolean":
-            case "java.lang.Boolean":
-                return "getBoolean";
-            case "double":
-            case "java.lang.Double":
-                return "getDouble";
-            case "float":
-            case "java.lang.Float":
-                return "getFloat";
-            case "short":
-            case "java.lang.Short":
-                return "getShort";
-            case "byte":
-            case "java.lang.Byte":
-                return "getByte";
-            case "java.math.BigDecimal":
-                return "getBigDecimal";
-            case "java.sql.Timestamp":
-                return "getTimestamp";
-            case "java.sql.Date":
-                return "getDate";
-            case "java.sql.Time":
-                return "getTime";
-            case "java.sql.Array":
-                return "getArray";
-            case "java.sql.Blob":
-                return "getBlob";
-            case "java.sql.Clob":
-                return "getClob";
-            case "java.sql.NClob":
-                return "getNClob";
-            case "java.sql.Ref":
-                return "getRef";
-            case "java.sql.RowId":
-                return "getRowId";
-            case "java.sql.SQLXML":
-                return "getSQLXML";
-            case "java.net.URL":
-                return "getURL";
-            case "byte[]":
-                return "getBytes";
-            default:
-                return "getObject"; // LocalDate/LocalDateTime/enums 等
-        }
+        return switch (typeName) {
+            case "long", "java.lang.Long" -> "getLong";
+            case "int", "java.lang.Integer" -> "getInt";
+            case "java.lang.String" -> "getString";
+            case "boolean", "java.lang.Boolean" -> "getBoolean";
+            case "double", "java.lang.Double" -> "getDouble";
+            case "float", "java.lang.Float" -> "getFloat";
+            case "short", "java.lang.Short" -> "getShort";
+            case "byte", "java.lang.Byte" -> "getByte";
+            case "java.math.BigDecimal" -> "getBigDecimal";
+            case "java.sql.Timestamp" -> "getTimestamp";
+            case "java.sql.Date" -> "getDate";
+            case "java.sql.Time" -> "getTime";
+            case "java.sql.Array" -> "getArray";
+            case "java.sql.Blob" -> "getBlob";
+            case "java.sql.Clob" -> "getClob";
+            case "java.sql.NClob" -> "getNClob";
+            case "java.sql.Ref" -> "getRef";
+            case "java.sql.RowId" -> "getRowId";
+            case "java.sql.SQLXML" -> "getSQLXML";
+            case "java.net.URL" -> "getURL";
+            case "byte[]" -> "getBytes";
+            default -> "getObject"; // LocalDate/LocalDateTime/enums 等
+        };
     }
 
     /**
@@ -82,59 +53,30 @@ public final class TypeNameUtils {
      *         返回 {@code "setObject"}
      */
     public static String jdbcSetter(String typeName) {
-        switch (typeName) {
-            case "long":
-            case "java.lang.Long":
-                return "setLong";
-            case "int":
-            case "java.lang.Integer":
-                return "setInt";
-            case "java.lang.String":
-                return "setString";
-            case "boolean":
-            case "java.lang.Boolean":
-                return "setBoolean";
-            case "double":
-            case "java.lang.Double":
-                return "setDouble";
-            case "float":
-            case "java.lang.Float":
-                return "setFloat";
-            case "short":
-            case "java.lang.Short":
-                return "setShort";
-            case "byte":
-            case "java.lang.Byte":
-                return "setByte";
-            case "java.math.BigDecimal":
-                return "setBigDecimal";
-            case "java.sql.Timestamp":
-                return "setTimestamp";
-            case "java.sql.Date":
-                return "setDate";
-            case "java.sql.Time":
-                return "setTime";
-            case "java.sql.Array":
-                return "setArray";
-            case "java.sql.Blob":
-                return "setBlob";
-            case "java.sql.Clob":
-                return "setClob";
-            case "java.sql.NClob":
-                return "setNClob";
-            case "java.sql.Ref":
-                return "setRef";
-            case "java.sql.RowId":
-                return "setRowId";
-            case "java.sql.SQLXML":
-                return "setSQLXML";
-            case "java.net.URL":
-                return "setURL";
-            case "byte[]":
-                return "setBytes";
-            default:
-                return "setObject";
-        }
+        return switch (typeName) {
+            case "long", "java.lang.Long" -> "setLong";
+            case "int", "java.lang.Integer" -> "setInt";
+            case "java.lang.String" -> "setString";
+            case "boolean", "java.lang.Boolean" -> "setBoolean";
+            case "double", "java.lang.Double" -> "setDouble";
+            case "float", "java.lang.Float" -> "setFloat";
+            case "short", "java.lang.Short" -> "setShort";
+            case "byte", "java.lang.Byte" -> "setByte";
+            case "java.math.BigDecimal" -> "setBigDecimal";
+            case "java.sql.Timestamp" -> "setTimestamp";
+            case "java.sql.Date" -> "setDate";
+            case "java.sql.Time" -> "setTime";
+            case "java.sql.Array" -> "setArray";
+            case "java.sql.Blob" -> "setBlob";
+            case "java.sql.Clob" -> "setClob";
+            case "java.sql.NClob" -> "setNClob";
+            case "java.sql.Ref" -> "setRef";
+            case "java.sql.RowId" -> "setRowId";
+            case "java.sql.SQLXML" -> "setSQLXML";
+            case "java.net.URL" -> "setURL";
+            case "byte[]" -> "setBytes";
+            default -> "setObject";
+        };
     }
 
     /**

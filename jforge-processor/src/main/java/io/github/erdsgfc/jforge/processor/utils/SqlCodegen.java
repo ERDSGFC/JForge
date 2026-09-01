@@ -365,7 +365,6 @@ public final class SqlCodegen {
      * 在生成的方法中开启感知事务的代码块：获取连接，并把 {@code PreparedStatement} 作为
      * try-with-resources 资源打开，确保始终被关闭——
      * {@code Connection conn = getConnection(); try (PreparedStatement ps = conn.prepareStatement(...)) \{}。
-     *
      * @param method            方法构建器
      * @param connection        Connection 类
      * @param preparedStatement PreparedStatement 类

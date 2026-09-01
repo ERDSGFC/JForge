@@ -391,7 +391,7 @@ public final class EntityModel {
     private boolean isEnum(MethodInfo method) {
         TypeMirror returnType = method.signature.getReturnType();
         return returnType.getKind() == TypeKind.DECLARED
-                && ((TypeElement) ((DeclaredType) returnType).asElement()).getKind() == ElementKind.ENUM;
+                && ((DeclaredType) returnType).asElement().getKind() == ElementKind.ENUM;
     }
 
     /**
