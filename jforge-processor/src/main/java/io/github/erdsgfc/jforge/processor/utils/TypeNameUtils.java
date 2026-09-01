@@ -49,6 +49,24 @@ public final class TypeNameUtils {
                 return "getTimestamp";
             case "java.sql.Date":
                 return "getDate";
+            case "java.sql.Time":
+                return "getTime";
+            case "java.sql.Array":
+                return "getArray";
+            case "java.sql.Blob":
+                return "getBlob";
+            case "java.sql.Clob":
+                return "getClob";
+            case "java.sql.NClob":
+                return "getNClob";
+            case "java.sql.Ref":
+                return "getRef";
+            case "java.sql.RowId":
+                return "getRowId";
+            case "java.sql.SQLXML":
+                return "getSQLXML";
+            case "java.net.URL":
+                return "getURL";
             case "byte[]":
                 return "getBytes";
             default:
@@ -94,6 +112,24 @@ public final class TypeNameUtils {
                 return "setTimestamp";
             case "java.sql.Date":
                 return "setDate";
+            case "java.sql.Time":
+                return "setTime";
+            case "java.sql.Array":
+                return "setArray";
+            case "java.sql.Blob":
+                return "setBlob";
+            case "java.sql.Clob":
+                return "setClob";
+            case "java.sql.NClob":
+                return "setNClob";
+            case "java.sql.Ref":
+                return "setRef";
+            case "java.sql.RowId":
+                return "setRowId";
+            case "java.sql.SQLXML":
+                return "setSQLXML";
+            case "java.net.URL":
+                return "setURL";
             case "byte[]":
                 return "setBytes";
             default:

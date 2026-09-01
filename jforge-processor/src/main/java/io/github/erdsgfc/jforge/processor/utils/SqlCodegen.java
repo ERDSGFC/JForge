@@ -163,8 +163,8 @@ public final class SqlCodegen {
         if (getter.equals("getObject")) {
             // LocalDate/LocalDateTime/enums: getObject(index, Class) 对 NULL 列天然返回 null,
             // 可空与否形态一致——无需 wasNull 分支。
-            return CodeBlock.of("$L.$L(($T) $L.getObject($L, $T.class));",
-                    entityVar, setterName, javaType, "rs", index, javaClassType);
+            return CodeBlock.of("$L.$L($L.getObject($L, $T.class));",
+                    entityVar, setterName, "rs", index, javaClassType);
         }
         if (nullable) {
             // 可空列:基本类型局部变量承接读取值(零装箱),经 rs.wasNull() 三元回退 null——
@@ -213,8 +213,8 @@ public final class SqlCodegen {
         String getter = TypeNameUtils.jdbcGetter(typeName);
         if (getter.equals("getObject")) {
             // getObject 对 NULL 列天然返回 null——可空与否形态一致,无需 wasNull 分支。
-            return CodeBlock.of("$L.$L(($T) $L.getObject($S, $T.class));",
-                    entityVar, setterName, javaType, "rs", column, javaClassType);
+            return CodeBlock.of("$L.$L($L.getObject($S, $T.class));",
+                    entityVar, setterName, "rs", column, javaClassType);
         }
         if (nullable) {
             String var = "v" + setterName;
