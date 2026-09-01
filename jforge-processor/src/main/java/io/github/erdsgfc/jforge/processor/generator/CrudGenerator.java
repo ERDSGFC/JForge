@@ -68,7 +68,7 @@ public final class CrudGenerator {
         methods.add(findByIdsMethod(info, connection, preparedStatement, resultSet, sqlException));
         methods.add(findAllMethod(info, connection, preparedStatement, resultSet, sqlException));
         methods.add(countMethod(info, connection, preparedStatement, resultSet, sqlException));
-        methods.add(existsByIdMethod(info, sqlException));
+        methods.add(existsByIdMethod(info));
         methods.add(createEntityMethod(info, entityImpl));
         return methods;
     }
@@ -645,23 +645,15 @@ public final class CrudGenerator {
      * 构建 {@code existsById(ID)}:委托给私有 {@code countById} helper。
      *
      * @param info         仓库信息
-     * @param sqlException SQLException 类
      * @return existsById 方法规格
      */
-    private MethodSpec existsByIdMethod(JForgeProcessor.DaoInfo info, ClassName sqlException) {
+    private MethodSpec existsByIdMethod(JForgeProcessor.DaoInfo info) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("existsById")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
-                .addParameter(info.idType, "id");
-        method.beginControlFlow("try");
-        method.addStatement("return countById(id) > 0");
-        method.nextControlFlow("catch ($T e)", sqlException);
-        method.addStatement("throw new $T($T.Code.SQL, $S + e.getMessage(), $S, e)",
-                ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(),
-                "existsById on table '" + info.model.tableName() + "' [" + SqlFieldGenerator.countByIdSql(info) + "]: ",
-                SqlFieldGenerator.countByIdSql(info));
-        method.endControlFlow();
+                .addParameter(info.idType, "id")
+                .addStatement("return countById(id) > 0");
         return method.build();
     }
 
@@ -681,26 +673,17 @@ public final class CrudGenerator {
         MethodSpec.Builder method = MethodSpec.methodBuilder("countById")
                 .addModifiers(Modifier.PRIVATE)
                 .returns(TypeName.LONG)
-                .addParameter(info.idType, "id")
-                .addException(sqlException);
-        method.addStatement("$T conn = getConnection()", connection);
-        method.beginControlFlow("try ($T ps = conn.prepareStatement($N))", preparedStatement, "countByIdSql");
-        // todo 是否需要处理 有 Convert 进行转换的情况
+                .addParameter(info.idType, "id");
+        SqlCodegen.beginTxBlock(method, connection, preparedStatement, "countByIdSql", false,
+                configHelper.logSql(info.element));
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
         method.addCode("\n");
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
         method.addStatement("rs.next()");
         method.addStatement("return rs.getLong(1)");
         method.endControlFlow();
-        method.nextControlFlow("catch ($T e)", sqlException);
-        // todo 是否需要优化错误日志
-        method.addStatement("throw new $T($T.Code.SQL, $S + e.getMessage(), $S, e)",
-                ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(),
-                "countById on table '" + info.model.tableName() + "' [" + SqlFieldGenerator.countByIdSql(info) + "]: ",
-                SqlFieldGenerator.countByIdSql(info));
-        method.nextControlFlow("finally");
-        method.addStatement("releaseConnection(conn)");
-        method.endControlFlow();
+        SqlCodegen.endTxBlock(method, sqlException, "countById", info.model.tableName(),
+                SqlFieldGenerator.countByIdSql(info), configHelper.logSql(info.element));
         return method.build();
     }
 
