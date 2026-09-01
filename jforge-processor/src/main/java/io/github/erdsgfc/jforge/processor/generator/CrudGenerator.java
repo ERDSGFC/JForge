@@ -685,6 +685,7 @@ public final class CrudGenerator {
                 .addException(sqlException);
         method.addStatement("$T conn = getConnection()", connection);
         method.beginControlFlow("try ($T ps = conn.prepareStatement($N))", preparedStatement, "countByIdSql");
+        // todo 是否需要处理 有 Convert 进行转换的情况
         method.addCode(SqlCodegen.bindParam(info.idTypeName, "id", 1));
         method.addCode("\n");
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
@@ -692,6 +693,7 @@ public final class CrudGenerator {
         method.addStatement("return rs.getLong(1)");
         method.endControlFlow();
         method.nextControlFlow("catch ($T e)", sqlException);
+        // todo 是否需要优化错误日志
         method.addStatement("throw new $T($T.Code.SQL, $S + e.getMessage(), $S, e)",
                 ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(),
                 "countById on table '" + info.model.tableName() + "' [" + SqlFieldGenerator.countByIdSql(info) + "]: ",

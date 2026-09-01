@@ -166,9 +166,10 @@ public final class SqlCodegen {
             return CodeBlock.of("$L.$L($L.getObject($L, $T.class));",
                     entityVar, setterName, "rs", index, javaClassType);
         }
-        if (nullable) {
-            // 可空列:基本类型局部变量承接读取值(零装箱),经 rs.wasNull() 三元回退 null——
-            // 否则 NULL 列对 getInt/getString 等会读得 0/空串而非 null。
+        if (nullable && javaType.isBoxedPrimitive()) {
+            // 只有包装基本类型的专用 getter（getInt/getLong 等）需要 wasNull();
+            // JDBC 对 String、日期、LOB、数组、URL、byte[] 等引用类型 getter 的 NULL
+            // 已直接返回 null，省去局部变量和一次 wasNull() 调用。
             String var = "v" + setterName;
             return CodeBlock.of("$T $L = rs.$L($L);\n$L.$L(rs.wasNull() ? null : $L);",
                     javaType.isBoxedPrimitive() ? javaType.unbox() : javaType,
@@ -216,7 +217,7 @@ public final class SqlCodegen {
             return CodeBlock.of("$L.$L($L.getObject($S, $T.class));",
                     entityVar, setterName, "rs", column, javaClassType);
         }
-        if (nullable) {
+        if (nullable && javaType.isBoxedPrimitive()) {
             String var = "v" + setterName;
             return CodeBlock.of("$T $L = rs.$L($S);\n$L.$L(rs.wasNull() ? null : $L);",
                     javaType.isBoxedPrimitive() ? javaType.unbox() : javaType,
