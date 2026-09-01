@@ -10,6 +10,7 @@ import io.github.erdsgfc.jforge.core.BaseRepository;
 import org.jspecify.annotations.Nullable;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 测试仓库:继承 {@link BaseRepository} 的 CRUD,并添加
@@ -92,4 +93,27 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
     /** 无参数：查全表。 */
     @Select
     List<UserEntity> findAllUsers();
+
+    // ---- 动态判定矩阵（基本类型恒固定 / boxed 看注解与配置 / Optional 独立 IS NULL）----
+
+    /** 基本类型参数：恒固定（静态 SQL 常量形态）。 */
+    @Select
+    List<UserEntity> findAdults(int age);
+
+    /** boxed 参数未标 @Nullable + 默认配置：固定（静态形态；传 null 属契约违约）。 */
+    @Select
+    List<UserEntity> findByBoxedAge(Integer age);
+
+    /** Optional + @Nullable：null 守卫（null → 跳过整个条件）+ IS NULL 语义（空 → IS NULL）。 */
+    @Select
+    List<UserEntity> findByNicknameNullable(@Condition(value = "name") @Nullable Optional<String> nickname);
+
+    /** 双动态条件组合：两个都为 null → 无 WHERE 查全表。 */
+    @Select
+    List<UserEntity> findByAgeRange(@Condition(value = "age", op = Op.GT) @Nullable Integer minAge,
+            @Condition(value = "age", op = Op.LT) @Nullable Integer maxAge);
+
+    /** 全参数动态：全部 null → 无 WHERE 查全表（where 前缀变量兜底）。 */
+    @Select
+    List<UserEntity> findByAgeOrName(@Nullable Integer age, @Nullable String name);
 }

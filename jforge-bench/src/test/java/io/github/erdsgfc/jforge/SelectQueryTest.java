@@ -11,6 +11,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -136,6 +137,59 @@ class SelectQueryTest {
         List<UserEntity> adults = repo.findByAgeGreaterThan(20);
         assertEquals(2, adults.size());
         assertEquals(1, repo.countByAge(25));
+    }
+
+    // ---- 动态判定矩阵用例 ----
+
+    /** 基本类型参数：静态形态（过滤正确）。 */
+    @Test
+    void primitiveStaticForm() {
+        List<UserEntity> adults = repo.findAdults(25);
+
+        assertEquals(1, adults.size());
+        assertEquals("qin", adults.get(0).name());
+    }
+
+    /** boxed 未标 @Nullable：静态形态（传非 null 过滤）。 */
+    @Test
+    void boxedUnannotatedStaticForm() {
+        List<UserEntity> found = repo.findByBoxedAge(25);
+
+        assertEquals(1, found.size());
+        assertEquals("qin", found.get(0).name());
+    }
+
+    /** Optional + @Nullable 双层：null → 跳过整个条件；empty → IS NULL；有值 → 等于。 */
+    @Test
+    void optionalNullableDoubleGuard() {
+        assertEquals(1, repo.findByNicknameNullable(Optional.of("lu")).size());
+
+        // name 列为 NULL 的行（findByNicknameNullable 映射 name 字段）→ IS NULL 命中。
+        repo.save(repo.createEntity().name(null).age(99));
+        List<UserEntity> nulls = repo.findByNicknameNullable(Optional.empty());
+        assertEquals(1, nulls.size());
+        assertEquals(99, nulls.get(0).age());
+
+        // Optional 参数本身为 null（@Nullable 守卫）→ 跳过整个条件查全表。
+        assertEquals(4, repo.findByNicknameNullable(null).size());
+    }
+
+    /** 双动态条件四组合：双值区间 / 单上限 / 单下限 / 全 null 无 WHERE。 */
+    @Test
+    void dualDynamicRangeCombinations() {
+        assertEquals(1, repo.findByAgeRange(20, 30).size());        // 25
+        assertEquals(2, repo.findByAgeRange(null, 30).size());      // 25, 10
+        assertEquals(2, repo.findByAgeRange(20, null).size());      // 25, 30
+        assertEquals(3, repo.findByAgeRange(null, null).size());    // 全表
+    }
+
+    /** 全参数动态：全部 null → 无 WHERE 查全表；单条件各一。 */
+    @Test
+    void allNullMeansFullScan() {
+        assertEquals(3, repo.findByAgeOrName(null, null).size());
+        assertEquals(1, repo.findByAgeOrName(25, null).size());
+        assertEquals(1, repo.findByAgeOrName(null, "qin").size());
+        assertEquals(0, repo.findByAgeOrName(99, null).size());
     }
 
     /** 动态查询返回的实体 id 完整映射（行映射复用）。 */
