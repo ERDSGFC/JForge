@@ -170,4 +170,21 @@ class ConvertTest {
         assertNull(repo.findById(saved.id()));
         assertEquals(0, repo.deleteByBirthDate(LocalDate.of(2000, 1, 2)));
     }
+
+    /** 条件对象字段命中 @Convert 列：绑定经列转换器生成匹配表示才命中。 */
+    @Test
+    void criteriaFieldReusesColumnConverter() {
+        LocalDate birth = LocalDate.of(2000, 1, 2);
+        repo.save(repo.createEntity().name("qin").birthDate(birth));
+
+        ConvertUserCriteria criteria = new ConvertUserCriteria();
+        criteria.birthDate = birth;
+
+        ConvertUser found = repo.findConvertByCriteria(criteria);
+        assertNotNull(found, "criteria value must be converted to column storage form to match");
+        assertEquals("qin", found.name());
+
+        criteria.birthDate = birth.plusDays(1);
+        assertNull(repo.findConvertByCriteria(criteria));
+    }
 }

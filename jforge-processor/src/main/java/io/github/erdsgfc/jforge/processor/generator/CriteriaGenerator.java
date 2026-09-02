@@ -59,6 +59,7 @@ public final class CriteriaGenerator {
         boolean collection;
         boolean array;
         TypeName elementType;
+        String converterField;   // 命中列 @Convert 的转换器字段名(null = 无转换器)
 
         Unit(String conn, String column, String op, String readExpr, String valueExpr,
                 String bindType, String guard, boolean optional, List<Unit> nested, String rawSql) {
@@ -75,6 +76,7 @@ public final class CriteriaGenerator {
             this.collection = false;
             this.array = false;
             this.elementType = null;
+            this.converterField = null;
         }
 
         Unit(String conn, String column, String op, String readExpr, String valueExpr,
@@ -84,6 +86,7 @@ public final class CriteriaGenerator {
             this.collection = collection;
             this.array = array;
             this.elementType = elementType;
+            this.converterField = null;
         }
     }
 
@@ -244,10 +247,12 @@ public final class CriteriaGenerator {
                 return null;
             }
             String op = condition != null ? condition.op().sql() : "=";
-            return new Unit(conn, column, op, readExpr,
+            Unit optionalUnit = new Unit(conn, column, op, readExpr,
                     readExpr + optionalValueMethod(fieldType), optionalValueType(fieldType, types),
                     Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null,
                     true, null, null);
+            optionalUnit.converterField = converterOf(info, condition, field.getSimpleName().toString());
+            return optionalUnit;
         }
         boolean array = fieldType.getKind() == TypeKind.ARRAY;
         boolean collection = !array && isIterable(fieldType);
@@ -266,9 +271,11 @@ public final class CriteriaGenerator {
                     ? TypeName.get(types.stripAnnotations(
                             ((javax.lang.model.type.ArrayType) fieldType).getComponentType()))
                     : iterableElementType(fieldType);
-            return new Unit(conn, column, "=", readExpr, null, elementType.toString(),
+            Unit collectionUnit = new Unit(conn, column, "=", readExpr, null, elementType.toString(),
                     Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null,
                     false, null, null, collection, array, elementType);
+            collectionUnit.converterField = converterOf(info, condition, field.getSimpleName().toString());
+            return collectionUnit;
         }
         // 嵌套组仅由显式 @Where 触发，避免把普通自定义值类型误判为条件组。
         if (field.getAnnotation(Where.class) != null) {
@@ -297,8 +304,17 @@ public final class CriteriaGenerator {
         }
         String op = condition != null ? condition.op().sql() : "=";
         String guard = Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null;
-        return new Unit(conn, column, op, readExpr, null, types.stripAnnotations(fieldType).toString(),
+        Unit valueUnit = new Unit(conn, column, op, readExpr, null, types.stripAnnotations(fieldType).toString(),
                 guard, false, null, null);
+        valueUnit.converterField = converterOf(info, condition, field.getSimpleName().toString());
+        return valueUnit;
+    }
+
+    /** 命中列(@Condition.value 或字段名映射)的 @Convert 转换器字段名;无转换器返回 null。 */
+    private String converterOf(JForgeProcessor.DaoInfo info, Condition condition, String fieldName) {
+        String entityField = condition != null && !condition.value().isEmpty()
+                ? condition.value() : fieldName;
+        return SqlCodegen.converterFieldForField(info.model, entityField);
     }
 
     private String findColumn(JForgeProcessor.DaoInfo info, ExecutableElement method,
@@ -450,7 +466,7 @@ public final class CriteriaGenerator {
             if (unit.rawSql.contains("?")) {
                 beginGuard(spec, unit.guard);
                 spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.readExpr, indexVar,
-                        false, false, null));
+                        false, false, unit.converterField));
                 spec.addCode("\n");
                 endGuard(spec, unit.guard);
             }
@@ -467,7 +483,8 @@ public final class CriteriaGenerator {
             // 1 = 0 分支一致——无占位符可绑)。
             beginGuard(spec, unit.guard);
             spec.beginControlFlow("for ($T value : $L)", unit.elementType, unit.readExpr);
-            spec.addCode(SqlCodegen.bindParam(unit.bindType, "value", "i++", true, false, null));
+            spec.addCode(SqlCodegen.bindParam(unit.bindType, "value", "i++", true, false,
+                    unit.converterField));
             spec.addCode("\n");
             spec.endControlFlow();
             endGuard(spec, unit.guard);
@@ -478,7 +495,7 @@ public final class CriteriaGenerator {
             beginGuard(spec, unit.guard);
             spec.beginControlFlow("if ($L.isPresent())", unit.readExpr);
             spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.valueExpr, indexVar,
-                    false, false, null));
+                    false, false, unit.converterField));
             spec.addCode("\n");
             spec.endControlFlow();
             endGuard(spec, unit.guard);
@@ -486,7 +503,7 @@ public final class CriteriaGenerator {
             beginGuard(spec, unit.guard);
             spec.addCode(SqlCodegen.bindParam(unit.bindType,
                     unit.valueExpr != null ? unit.valueExpr : unit.readExpr, indexVar,
-                    false, false, null));
+                    false, false, unit.converterField));
             spec.addCode("\n");
             endGuard(spec, unit.guard);
         }

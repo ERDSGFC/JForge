@@ -50,6 +50,10 @@ public interface ConvertUserRepository extends BaseRepository<ConvertUser, Long>
     @Query("SELECT * FROM convert_users WHERE name = :n")
     ConvertUser findByNameAndBirthDate(@Bind("n") String name, @Condition LocalDate birthDate);
 
+    /** 条件对象字段命中 @Convert 列：自动复用列转换器生成匹配表示。 */
+    @Select
+    ConvertUser findConvertByCriteria(@io.github.erdsgfc.jforge.annotation.Where ConvertUserCriteria criteria);
+
     /** {@code @Update}：SET 转换列（值经转换器写库）+ WHERE 主键。 */
     @Update
     int updateBirthDateById(@UpdateSet LocalDate birthDate, @Condition Long id);
