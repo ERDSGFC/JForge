@@ -19,7 +19,7 @@ public interface CriteriaRepository extends BaseRepository<CriteriaUser, Long> {
 
     /** 条件对象：值字段 / @Or / Optional IS NULL / 嵌套括号分组。 */
     @Select
-    List<CriteriaUser> findComplex(@Where UserCriteria criteria);
+    List<CriteriaUser> findComplex(@Where UserCriteria user);
 
     /** Optional 参数：isEmpty → user_name IS NULL；有值 → user_name = ?（列映射 name 字段）。 */
     @Select

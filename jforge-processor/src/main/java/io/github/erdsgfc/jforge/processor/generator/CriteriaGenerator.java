@@ -121,7 +121,7 @@ public final class CriteriaGenerator {
             error(method, "@Where type must be annotated with @JForgeSql: " + type);
             return null;
         }
-        return parseType(info, method, element, "criteria");
+        return parseType(info, method, element, parameter.getSimpleName().toString());
     }
 
     /**
