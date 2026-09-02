@@ -161,6 +161,18 @@ class SelectQueryTest {
         assertEquals(3, repo.findByBoxedAge(null).size());
     }
 
+    @Test
+    void queryAutoParameterWhere() {
+        assertEquals(1, repo.findByAutoQueryParameter("qin").size());
+    }
+
+    @Test
+    void iterableAndArrayConditionsUseIn() {
+        assertEquals(2, repo.findByIdIn(List.of(1L, 2L)).size());
+        assertEquals(2, repo.findByIdArray(new long[]{1L, 2L}).size());
+        assertTrue(repo.findByIdIn(List.of()).isEmpty());
+    }
+
     /** 无 {@code @NullMarked} 时，未标注实体引用类型生成 {@code @Nullable}。 */
     @Test
     void unmarkedEntityTypesAreGeneratedNullable() throws ReflectiveOperationException {

@@ -4,11 +4,13 @@ import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
 import io.github.erdsgfc.jforge.annotation.And;
 import io.github.erdsgfc.jforge.annotation.Condition;
+import io.github.erdsgfc.jforge.annotation.JForgeSql;
 import io.github.erdsgfc.jforge.annotation.Or;
 import io.github.erdsgfc.jforge.annotation.Where;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
+import io.github.erdsgfc.jforge.processor.utils.Nullability;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
@@ -52,6 +54,9 @@ public final class CriteriaGenerator {
         final boolean optional;     // Optional 语义（空 → IS NULL）
         final List<Unit> nested;    // 嵌套组单元（非 null = 括号分组）
         final String rawSql;        // 原生 SQL 片段（非 null 替代 column/op；含 ? 绑定字段值）
+        boolean collection;
+        boolean array;
+        String elementType;
 
         Unit(String conn, String column, String op, String readExpr, String valueExpr,
                 String bindType, String guard, boolean optional, List<Unit> nested, String rawSql) {
@@ -65,6 +70,18 @@ public final class CriteriaGenerator {
             this.optional = optional;
             this.nested = nested;
             this.rawSql = rawSql;
+            this.collection = false;
+            this.array = false;
+            this.elementType = null;
+        }
+
+        Unit(String conn, String column, String op, String readExpr, String valueExpr,
+                String bindType, String guard, boolean optional, List<Unit> nested, String rawSql,
+                boolean collection, boolean array, String elementType) {
+            this(conn, column, op, readExpr, valueExpr, bindType, guard, optional, nested, rawSql);
+            this.collection = collection;
+            this.array = array;
+            this.elementType = elementType;
         }
     }
 
@@ -94,7 +111,17 @@ public final class CriteriaGenerator {
             error(method, "@Where parameter must be a criteria object type: " + type);
             return null;
         }
-        return parseType(info, method, (TypeElement) ((DeclaredType) type).asElement(), "criteria");
+        TypeElement element = (TypeElement) ((DeclaredType) type).asElement();
+        if (element.getKind() != javax.lang.model.element.ElementKind.CLASS
+                && element.getKind() != javax.lang.model.element.ElementKind.RECORD) {
+            error(method, "@Where parameter must be a class or record: " + type);
+            return null;
+        }
+        if (element.getAnnotation(JForgeSql.class) == null) {
+            error(method, "@Where type must be annotated with @JForgeSql: " + type);
+            return null;
+        }
+        return parseType(info, method, element, "criteria");
     }
 
     /**
@@ -150,6 +177,10 @@ public final class CriteriaGenerator {
             VariableElement field, String conn, String readExpr) {
         TypeMirror fieldType = field.asType();
         Condition condition = field.getAnnotation(Condition.class);
+        if (condition != null && field.getAnnotation(Where.class) != null) {
+            error(method, "A @Where field cannot also be annotated with @Condition: " + field.getSimpleName());
+            return null;
+        }
 
         // 原生 SQL 条件：rawSql 非空直接使用（跳过列映射），含 ? 绑定字段值。
         String rawSql = condition != null ? condition.rawSql() : "";
@@ -162,7 +193,8 @@ public final class CriteriaGenerator {
             return new Unit(conn, null, null, readExpr,
                     rawSql.contains("?") ? readExpr : null,
                     rawSql.contains("?") ? types.stripAnnotations(fieldType).toString() : null,
-                    readExpr + " != null", false, null, rawSql);
+                    Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null,
+                    false, null, rawSql);
         }
 
         // Optional 族：空 → IS NULL，有值 → 条件（列名取 @Condition.value 或字段名）。
@@ -174,17 +206,47 @@ public final class CriteriaGenerator {
             String op = condition != null ? condition.op().sql() : "=";
             return new Unit(conn, column, op, readExpr,
                     readExpr + optionalValueMethod(fieldType), optionalValueType(fieldType, types),
-                    readExpr + " != null", true, null, null);
+                    Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null,
+                    true, null, null);
         }
-        // 嵌套组：自定义类字段 → 括号递归。
-        if (isNestedType(fieldType)) {
+        boolean array = fieldType.getKind() == TypeKind.ARRAY;
+        boolean collection = !array && isIterable(fieldType);
+        if (array || collection) {
+            if (array && ((javax.lang.model.type.ArrayType) fieldType).getComponentType().getKind() == TypeKind.ARRAY) {
+                error(method, "Multi-dimensional array @Where fields are not supported");
+                return null;
+            }
+            if (condition != null && condition.op() != io.github.erdsgfc.jforge.annotation.Op.EQ) {
+                error(method, "Iterable/array @Where fields only support @Condition(op = EQ)");
+                return null;
+            }
+            String column = findColumn(info, method, condition, field.getSimpleName().toString());
+            if (column == null) return null;
+            String elementType = array ? ((javax.lang.model.type.ArrayType) fieldType).getComponentType().toString()
+                    : iterableElementType(fieldType);
+            return new Unit(conn, column, "=", readExpr, null, elementType,
+                    Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null,
+                    false, null, null, collection, array, elementType);
+        }
+        // 嵌套组仅由显式 @Where 触发，避免把普通自定义值类型误判为条件组。
+        if (field.getAnnotation(Where.class) != null) {
+            if (fieldType.getKind() != TypeKind.DECLARED) {
+                error(method, "@Where field must be a class or record: " + field.getSimpleName());
+                return null;
+            }
+            TypeElement nestedType = (TypeElement) ((DeclaredType) fieldType).asElement();
+            if (nestedType.getAnnotation(JForgeSql.class) == null) {
+                error(method, "Nested @Where type must be annotated with @JForgeSql: " + fieldType);
+                return null;
+            }
             List<Unit> nested = parseType(info, method,
-                    (TypeElement) ((DeclaredType) fieldType).asElement(), readExpr);
+                    nestedType, readExpr);
             if (nested == null) {
                 return null;
             }
             return new Unit(conn, null, null, readExpr, null, null,
-                    readExpr + " != null", false, nested, null);
+                    Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null,
+                    false, nested, null);
         }
         // 值条件：列名 = @Condition.value 或字段名；null 跳过。
         String column = findColumn(info, method, condition, field.getSimpleName().toString());
@@ -192,7 +254,7 @@ public final class CriteriaGenerator {
             return null;
         }
         String op = condition != null ? condition.op().sql() : "=";
-        String guard = readExpr + " != null";
+        String guard = Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null;
         return new Unit(conn, column, op, readExpr, null, types.stripAnnotations(fieldType).toString(),
                 guard, false, null, null);
     }
@@ -259,23 +321,17 @@ public final class CriteriaGenerator {
         };
     }
 
-    /**
-     * 嵌套组判定：枚举与 JDK 值类型（java./javax. 开头，非 Optional）→ 值条件；
-     * 其余（用户自定义类）→ 括号分组。
-     */
-    private static boolean isNestedType(TypeMirror type) {
-        if (type.getKind() != TypeKind.DECLARED) {
-            return false;
-        }
+    private boolean isIterable(TypeMirror type) {
+        if (type.getKind() != TypeKind.DECLARED) return false;
         TypeElement element = (TypeElement) ((DeclaredType) type).asElement();
-        if (element.getKind() == javax.lang.model.element.ElementKind.ENUM) {
-            return false;
-        }
-        if (isOptional(type)) {
-            return false;
-        }
-        String name = element.getQualifiedName().toString();
-        return !(name.startsWith("java.") || name.startsWith("javax."));
+        if (element.getQualifiedName().contentEquals("java.lang.Iterable")) return true;
+        return types.directSupertypes(type).stream().anyMatch(this::isIterable);
+    }
+
+    private String iterableElementType(TypeMirror type) {
+        if (type.getKind() != TypeKind.DECLARED) return "java.lang.Object";
+        List<? extends TypeMirror> args = ((DeclaredType) type).getTypeArguments();
+        return args.isEmpty() ? "java.lang.Object" : types.stripAnnotations(args.getFirst()).toString();
     }
 
     // ---- 生成 ----------------------------------------------------------------
@@ -302,7 +358,27 @@ public final class CriteriaGenerator {
             return;
         }
         beginGuard(spec, unit.guard);
-        if (unit.optional) {
+        if (unit.collection || unit.array) {
+            String size = unit.array ? unit.readExpr + ".length" : "criteriaValues_" + (++varSeq) + ".size()";
+            String values = unit.array ? null : "criteriaValues_" + varSeq;
+            if (unit.collection) {
+                spec.addStatement("$T<$L> $L = new $T<>()", List.class, unit.elementType, values,
+                        java.util.ArrayList.class);
+                spec.beginControlFlow("for ($L value : $L)", unit.elementType, unit.readExpr);
+                spec.addStatement("$L.add(value)", values);
+                spec.endControlFlow();
+            }
+            spec.beginControlFlow("if ($L == 0)", size);
+            spec.addStatement("sql.append($L).append($S)", whereVar, " 1 = 0");
+            spec.nextControlFlow("else");
+            spec.addStatement("sql.append($L).append($S)", whereVar, " " + unit.column + " IN (");
+            spec.beginControlFlow("for (int j = 0; j < $L; j++)", size);
+            spec.addStatement("if (j > 0) sql.append($S)", ", ");
+            spec.addStatement("sql.append($S)", "?");
+            spec.endControlFlow();
+            spec.addStatement("sql.append($S)", ")");
+            spec.endControlFlow();
+        } else if (unit.optional) {
             // Optional：有值 → 条件；空 → IS NULL（两者都拼接，连接符仅其后置一次）。
             spec.beginControlFlow("if ($L.isPresent())", unit.readExpr);
             spec.addStatement("$L.append($L).append($S)", "sql", whereVar, " " + unit.column + " " + unit.op + " ?");
@@ -331,6 +407,26 @@ public final class CriteriaGenerator {
         if (unit.nested != null) {
             beginGuard(spec, unit.guard);
             emitBind(spec, unit.nested, indexVar);
+            endGuard(spec, unit.guard);
+            return;
+        }
+        if (unit.collection || unit.array) {
+            beginGuard(spec, unit.guard);
+            String index = "i++";
+            String size = unit.array ? unit.readExpr + ".length" : "criteriaBindValues_" + (++varSeq) + ".size()";
+            String values = unit.array ? null : "criteriaBindValues_" + varSeq;
+            if (unit.collection) {
+                spec.addStatement("$T<$L> $L = new $T<>()", List.class, unit.elementType, values,
+                        java.util.ArrayList.class);
+                spec.beginControlFlow("for ($L value : $L)", unit.elementType, unit.readExpr);
+                spec.addStatement("$L.add(value)", values);
+                spec.endControlFlow();
+            }
+            spec.beginControlFlow("for (int j = 0; j < $L; j++)", size);
+            String expr = unit.array ? unit.readExpr + "[j]" : values + ".get(j)";
+            spec.addCode(SqlCodegen.bindParam(unit.bindType, expr, index, true, false, null));
+            spec.addCode("\n");
+            spec.endControlFlow();
             endGuard(spec, unit.guard);
             return;
         }

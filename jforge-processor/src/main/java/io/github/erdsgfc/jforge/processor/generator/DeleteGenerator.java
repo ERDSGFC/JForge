@@ -11,6 +11,7 @@ import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.lang.model.element.*;
+import javax.lang.model.type.TypeKind;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -131,6 +132,14 @@ public final class DeleteGenerator {
             WhereCondition.appendSql(spec, condition);
         }
         criteriaGenerator.emitAppend(spec, criteriaUnits, "where", " AND ");
+        // 所有可空 WHERE 条件都被跳过时，禁止退化成无条件 DELETE。
+        spec.beginControlFlow("if (where.equals($S))", " WHERE ");
+        if (method.getReturnType().getKind() == TypeKind.BOOLEAN) {
+            spec.addStatement("return false");
+        } else {
+            spec.addStatement("return 0");
+        }
+        spec.endControlFlow();
         if (logSql) {
             spec.beginControlFlow("if (log.isDebugEnabled())");
             spec.addStatement("log.debug($S, sql.toString())", "Executing SQL: {}");

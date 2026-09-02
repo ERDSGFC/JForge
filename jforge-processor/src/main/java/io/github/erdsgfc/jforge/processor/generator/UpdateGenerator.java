@@ -195,6 +195,12 @@ public final class UpdateGenerator {
             WhereCondition.appendSql(spec, condition);
         }
         criteriaGenerator.emitAppend(spec, criteriaUnits, "where", " AND ");
+        if (hasWhere) {
+            // 所有可空 WHERE 条件都被跳过时，禁止退化成无条件 UPDATE。
+            spec.beginControlFlow("if (where.equals($S))", " WHERE ");
+            spec.addStatement("return 0");
+            spec.endControlFlow();
+        }
         // 全部 @UpdateSet 动态跳过时 SET 为空——"UPDATE t WHERE ..." 无 SET 是语法错误,
         // 空操作返回 0(与 MyBatis 动态 SQL 生成非法语句相比,语义更明确)。
         spec.beginControlFlow("if (setConn.isEmpty())");

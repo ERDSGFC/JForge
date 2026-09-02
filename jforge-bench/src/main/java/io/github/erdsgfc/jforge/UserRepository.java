@@ -36,8 +36,11 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
     @Query("UPDATE users SET age = :age WHERE id = :id")
     int updateAge(@Bind("id") long id, @Bind("age") int age);
 
-    /** 动态 WHERE：方括号显式动态段（age 为 null 时跳过）。 */
-    @Query("SELECT id, user_name, age FROM users WHERE [age = :age] AND user_name = :name")
+    @Query("SELECT id, user_name, age FROM users")
+    List<UserEntity> findByAutoQueryParameter(String name);
+
+    /** 动态 WHERE：age 为 null 时按 JSpecify 空性规则跳过。 */
+    @Query("SELECT id, user_name, age FROM users WHERE age = :age AND user_name = :name")
     List<UserEntity> findDynamicByAgeAndName(@Bind("age") @Nullable Integer age,
             @Bind("name") String name);
 
@@ -47,7 +50,7 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
             @Bind("age") @Nullable Integer age);
 
     /** 动态 WHERE：OR 连接符保留。 */
-    @Query("SELECT id, user_name, age FROM users WHERE [age = :age] OR user_name = :name")
+    @Query("SELECT id, user_name, age FROM users WHERE age = :age OR user_name = :name")
     List<UserEntity> findDynamicOr(@Bind("age") @Nullable Integer age, @Bind("name") String name);
 
     /** @Condition 追加条件：手写 SQL + 自动追加（age 非 null 时 AND age > ?，动态）。 */
@@ -73,6 +76,13 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
     /** 静态 + 动态混合。 */
     @Select
     List<UserEntity> findByAgeAndName(@Nullable Integer age, String name);
+
+    /** Iterable/数组参数统一生成 IN 条件。 */
+    @Select
+    List<UserEntity> findByIdIn(List<Long> id);
+
+    @Select
+    List<UserEntity> findByIdArray(long[] id);
 
     /** 操作符：{@code age > ?}。 */
     @Select

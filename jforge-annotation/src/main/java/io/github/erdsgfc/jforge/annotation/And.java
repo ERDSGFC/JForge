@@ -11,6 +11,6 @@ import java.lang.annotation.Target;
  * 保证语义清晰。
  */
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.FIELD)
+@Target({ElementType.FIELD, ElementType.RECORD_COMPONENT})
 public @interface And {
 }

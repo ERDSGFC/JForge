@@ -89,6 +89,12 @@ public final class QueryGenerator {
             if (query == null) {
                 continue;
             }
+            if (query.value().indexOf('[') >= 0 || query.value().indexOf(']') >= 0) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "@Query no longer supports bracketed dynamic fragments; use JSpecify nullability or @Condition/@Where",
+                        method);
+                continue;
+            }
             for (VariableElement parameter : method.getParameters()) {
                 ClassName converter = bindConverter(parameter);
                 if (converter != null) {
@@ -132,32 +138,46 @@ public final class QueryGenerator {
         ParsedWhere parsed = parseWhere(query.value());
         Map<String, VariableElement> binds = bindsOf(method);
         // @Condition 参数 → 追加条件片段（伪占位符 = 参数名，复用占位符绑定与 @Nullable 动态机制）。
-        Map<String, VariableElement> byName = new HashMap<>();
+        Map<String, VariableElement> conditionParams = new HashMap<>();
         List<WhereFragment> appended = new ArrayList<>();
         for (VariableElement parameter : method.getParameters()) {
-            byName.put(parameter.getSimpleName().toString(), parameter);
             Condition where = parameter.getAnnotation(Condition.class);
             if (where != null) {
+                conditionParams.put(parameter.getSimpleName().toString(), parameter);
                 WhereFragment fragment = appendFragment(info, method, parameter, where,
                         parsed == null || parsed.fragments.isEmpty());
                 if (fragment == null) {
                     return null;
                 }
                 appended.add(fragment);
+            } else if (parameter.getAnnotation(Bind.class) == null
+                    && parameter.getAnnotation(Where.class) == null) {
+                WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
+                        processingEnv, "@Query");
+                if (condition == null || condition.columnName() == null || condition.collection()
+                        || condition.array() || condition.optional()) {
+                    if (condition == null) return null;
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            "Automatic @Query WHERE parameters must be scalar non-Optional values", parameter);
+                    return null;
+                }
+                conditionParams.put(parameter.getSimpleName().toString(), parameter);
+                appended.add(new WhereFragment(parsed == null || parsed.fragments.isEmpty() ? "" : " AND ",
+                        condition.columnName() + " = :" + parameter.getSimpleName()));
             }
         }
-        // 片段序列 = SQL 中的片段 + @Condition 追加片段；占位符查找 = @Bind 优先、参数名兜底。
+        // 片段序列 = SQL 中的片段 + @Condition 追加片段；手写 SQL 占位符必须显式 @Bind。
         List<WhereFragment> fragments = parsed != null ? new ArrayList<>(parsed.fragments) : new ArrayList<>();
         fragments.addAll(appended);
         Map<String, VariableElement> lookup = new HashMap<>(binds);
-        lookup.putAll(byName);
+        lookup.putAll(conditionParams);
         boolean hasDynamic = fragments.stream().anyMatch(fragment -> isDynamicFragment(fragment, lookup));
         if (hasDynamic) {
             return dynamicQueryMethod(info, method, query, builder, embedded, connection,
                     preparedStatement, resultSet, sqlException, parsed, fragments, lookup);
         }
         // 静态查询的 SQL 只计算一次：同时用于常量字段和异常信息，避免重复解析占位符/@Condition。
-        String staticSql = querySql(info, method, query, parsed);
+        String staticSql = querySql(info, method, query, parsed, appended);
         builder.addField(SqlFieldGenerator.sqlField(sqlField, staticSql));
         // 静态路径：SQL 常量由 querySql 统一生成（含静态 @Condition 追加），
         // 这里只需收集绑定占位符（含追加片段的伪占位符）。
@@ -294,22 +314,6 @@ public final class QueryGenerator {
                 }
                 params.add(parameter);
             }
-            if (fragment.bracketed) {
-                // 显式动态段:必须恰好一个占位符,且对应参数标注 @Nullable(与 @Select 同规则)。
-                if (placeholders.size() != 1) {
-                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                            "Dynamic WHERE segment [...] must contain exactly one placeholder: "
-                                    + fragment.text, method);
-                    return null;
-                }
-                VariableElement parameter = binds.get(placeholders.get(0));
-                if (parameter == null || !isNullableParameter(parameter)) {
-                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                            "Dynamic WHERE segment [...] requires a @Nullable parameter: "
-                                    + fragment.text, method);
-                    return null;
-                }
-            }
             texts.add(text);
             bindUnits.add(params);
             dynamics.add(isDynamicFragment(fragment, binds));
@@ -393,6 +397,15 @@ public final class QueryGenerator {
      */
     private WhereFragment appendFragment(JForgeProcessor.DaoInfo info, ExecutableElement method,
             VariableElement parameter, Condition where, boolean first) {
+        if (!where.rawSql().isEmpty()) {
+            if (where.rawSql().contains("?")) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "@Condition(rawSql) with '?' is not supported on @Query; use @Bind in the SQL text",
+                        parameter);
+                return null;
+            }
+            return new WhereFragment(first ? "" : " AND ", where.rawSql());
+        }
         String fieldName = where.value().isEmpty()
                 ? parameter.getSimpleName().toString()
                 : where.value();
@@ -411,7 +424,7 @@ public final class QueryGenerator {
         }
         return new WhereFragment(first ? "" : " AND ",
                 SqlCodegen.quoteIdentifier(info.model.dialectSupport(), columnName)
-                        + " " + where.op().sql() + " :" + parameter.getSimpleName(), false);
+                        + " " + where.op().sql() + " :" + parameter.getSimpleName());
     }
 
     /**
@@ -604,7 +617,7 @@ public final class QueryGenerator {
         return sb.toString();
     }
 
-    // ---- @Query 动态 WHERE（方括号显式 / @Nullable 自动推断） ------------------
+    // ---- @Query 动态 WHERE（根据 JSpecify 空性自动推断） ------------------
 
     /** {@code @Query} SQL 的解析结果：SELECT 部分 + WHERE 片段序列。 */
     static final class ParsedWhere {
@@ -621,18 +634,16 @@ public final class QueryGenerator {
     static final class WhereFragment {
         final String conn;       // 前导连接符（" AND "/" OR "；首片段 "")
         final String text;       // 条件文本
-        final boolean bracketed; // 方括号 [ ] 显式动态段
 
-        WhereFragment(String conn, String text, boolean bracketed) {
+        WhereFragment(String conn, String text) {
             this.conn = conn;
             this.text = text;
-            this.bracketed = bracketed;
         }
     }
 
     /**
-     * 解析 {@code @Query} 的 WHERE 部分为片段序列：顶层（括号外）AND/OR 切分，
-     * 方括号 {@code [ ]} 标记显式动态段。无 WHERE 或无法解析（方括号不配对等）
+     * 解析 {@code @Query} 的 WHERE 部分为片段序列：顶层（括号外）AND/OR 切分。
+     * 无 WHERE 返回 {@code null}
      * 返回 {@code null}——调用方走静态路径。
      */
     static ParsedWhere parseWhere(String sql) {
@@ -645,7 +656,6 @@ public final class QueryGenerator {
         List<WhereFragment> fragments = new ArrayList<>();
         String conn = "";
         StringBuilder text = new StringBuilder();
-        boolean bracketed = false;
         int paren = 0;
         for (int i = 0; i < body.length(); i++) {
             char c = body.charAt(i);
@@ -655,24 +665,8 @@ public final class QueryGenerator {
             } else if (c == ')') {
                 paren--;
                 text.append(c);
-            } else if (c == '[') {
-                if (paren > 0 || bracketed) {
-                    return null; // 括号内的 [ 不当标记；不支持嵌套方括号
-                }
-                flushFragment(fragments, conn, text, false);
-                conn = "";
-                bracketed = true;
-                text.setLength(0);
-            } else if (c == ']') {
-                if (!bracketed) {
-                    return null;
-                }
-                flushFragment(fragments, conn, text, true);
-                bracketed = false;
-                conn = "";
-                text.setLength(0);
-            } else if (paren == 0 && !bracketed && isAndOr(body, i)) {
-                flushFragment(fragments, conn, text, false);
+            } else if (paren == 0 && isAndOr(body, i)) {
+                flushFragment(fragments, conn, text);
                 text.setLength(0); // 清空缓冲——否则下一片段会累积上一片段的内容
                 // 连接符长度 = 关键字实际长度（AND=3 / OR=2），不能按固定 4 截取——
                 // 否则会把后续列名的首字符吃进去（如 "OR user_name" → "OR u"）。
@@ -684,15 +678,14 @@ public final class QueryGenerator {
                 text.append(c);
             }
         }
-        flushFragment(fragments, conn, text, bracketed);
+        flushFragment(fragments, conn, text);
         return fragments.isEmpty() ? null : new ParsedWhere(selectPart, fragments);
     }
 
-    private static void flushFragment(List<WhereFragment> out, String conn, StringBuilder text,
-            boolean bracketed) {
+    private static void flushFragment(List<WhereFragment> out, String conn, StringBuilder text) {
         String s = text.toString().trim();
         if (!s.isEmpty()) {
-            out.add(new WhereFragment(conn, s, bracketed));
+            out.add(new WhereFragment(conn, s));
         }
     }
 
@@ -791,13 +784,10 @@ public final class QueryGenerator {
     }
 
     /**
-     * 判定片段是否动态：方括号段恒动态；普通段仅当"恰好一个占位符且对应参数标注
-     * JSpecify {@code @Nullable}"时自动推断为动态（多占位符片段保守处理为静态）。
+     * 判定片段是否动态：仅当恰好一个占位符且对应参数标注 JSpecify
+     * {@code @Nullable} 时自动推断为动态（多占位符片段保守处理为静态）。
      */
     private static boolean isDynamicFragment(WhereFragment fragment, Map<String, VariableElement> binds) {
-        if (fragment.bracketed) {
-            return true;
-        }
         List<String> placeholders = new ArrayList<>();
         SqlCodegen.convertPlaceholders(fragment.text, placeholders);
         if (placeholders.size() != 1) {
@@ -817,33 +807,29 @@ public final class QueryGenerator {
      * 追加参数（非 {@code @Nullable}）的条件；动态追加条件由运行时 SQL 拼接处理。
      */
     static String querySql(JForgeProcessor.DaoInfo info, ExecutableElement method, Query query,
-            ParsedWhere parsed) {
+            ParsedWhere parsed, List<WhereFragment> appended) {
         String sql = SqlCodegen.convertPlaceholders(query.value(), new ArrayList<>());
         boolean first = parsed == null || parsed.fragments.isEmpty();
-        for (VariableElement parameter : method.getParameters()) {
-            Condition where = parameter.getAnnotation(Condition.class);
-            if (where == null || isNullableParameter(parameter)) {
-                continue;
+        for (WhereFragment fragment : appended) {
+            List<String> names = new ArrayList<>();
+            String text = SqlCodegen.convertPlaceholders(fragment.text, names);
+            if (names.size() == 1 && !isNullableParameter(findParameter(method, names.getFirst()))) {
+                sql += (first ? " WHERE " : fragment.conn) + text;
+                first = false;
             }
-            String fieldName = where.value().isEmpty()
-                    ? parameter.getSimpleName().toString()
-                    : where.value();
-            String columnName = null;
-            for (EntityModel.ColumnModel column : info.model.columns()) {
-                if (column.fieldName.equals(fieldName)) {
-                    columnName = column.columnName;
-                    break;
-                }
-            }
-            if (columnName == null) {
-                continue;
-            }
-            sql += (first ? " WHERE " : " AND ")
-                    + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), columnName)
-                    + " " + where.op().sql() + " ?";
-            first = false;
         }
         return sql;
+    }
+
+    private static VariableElement findParameter(ExecutableElement method, String name) {
+        for (VariableElement parameter : method.getParameters()) {
+            Bind bind = parameter.getAnnotation(Bind.class);
+            if ((bind != null && bind.value().contentEquals(name))
+                    || parameter.getSimpleName().contentEquals(name)) {
+                return parameter;
+            }
+        }
+        return null;
     }
 
     // ---- SELECT 列顺序解析(实体映射按下标读取) -------------------------------
