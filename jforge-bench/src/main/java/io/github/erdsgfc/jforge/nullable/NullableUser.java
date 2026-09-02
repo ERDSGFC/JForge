@@ -33,10 +33,9 @@ public interface NullableUser {
     NullableUser name(@Nullable String name);
 
     /** 非空：显式 @NonNull。 */
-    @NonNull
     String nickname();
 
-    NullableUser nickname(@NonNull String nickname);
+    NullableUser nickname( String nickname);
 
     /** 恒非空：基本类型。 */
     int age();

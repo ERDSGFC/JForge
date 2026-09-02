@@ -30,6 +30,11 @@ public @interface Condition {
     Op op() default Op.EQ;
 
     /**
+     * 根据对应的entity找到对应的数据库名称，默认是当前的entity，也可以指定entity
+     */
+    Class<?> entity() default void.class;
+
+    /**
      * 直接使用原生 SQL 片段作为条件（替代 {@link #value()}/{@link #op()} 的
      * "字段 + 操作符"拼装）。片段中的 {@code ?} 占位符绑定该参数的值；无 {@code ?}
      * 则为纯常量条件（参数不绑定，仅用于 {@code @Nullable}/{@code Optional} 的
