@@ -80,7 +80,7 @@ public final class DeleteGenerator {
                 criteriaUnits.addAll(units);
             } else {
                 WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
-                    processingEnv, "@Condition", configHelper);
+                    processingEnv, "@Condition");
                 if (condition == null) {
                     return null;
                 }
@@ -93,9 +93,11 @@ public final class DeleteGenerator {
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(TypeNameUtils.toTypeNameWithGenerics(method.getReturnType(), processingEnv.getTypeUtils()));
+                .returns(TypeNameUtils.toTypeNameWithNullability(
+                        method.getReturnType(), method, processingEnv.getTypeUtils()));
         for (VariableElement parameter : method.getParameters()) {
-            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType(), processingEnv.getTypeUtils()),
+            spec.addParameter(TypeNameUtils.toTypeNameWithNullability(
+                            parameter.asType(), parameter, processingEnv.getTypeUtils()),
                     parameter.getSimpleName().toString());
         }
         boolean logSql = configHelper.logSql(info.element);

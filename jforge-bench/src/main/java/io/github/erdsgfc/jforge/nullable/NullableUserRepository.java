@@ -3,6 +3,7 @@ package io.github.erdsgfc.jforge.nullable;
 import io.github.erdsgfc.jforge.annotation.Dao;
 import io.github.erdsgfc.jforge.annotation.Select;
 import io.github.erdsgfc.jforge.core.BaseRepository;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 
@@ -11,9 +12,8 @@ import java.util.List;
 public interface NullableUserRepository extends BaseRepository<NullableUser, Long> {
 
     /**
-     * 参数动态判定验证：{@code score} 未标 {@code @Nullable}、非基本类型——
-     * 包配置 {@code columnsNullable = true} 时默认动态（null → 跳过条件查全表）。
+     * 参数动态判定验证：显式 {@code @Nullable} 的 score 为 null 时跳过条件查全表。
      */
     @Select
-    List<NullableUser> findByScore(Integer score);
+    List<NullableUser> findByScore(@Nullable Integer score);
 }

@@ -1,12 +1,18 @@
 package io.github.erdsgfc.jforge.processor.utils;
 
+import com.palantir.javapoet.AnnotationSpec;
+import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.TypeName;
 
+import javax.lang.model.element.Element;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 
 /** JDBC 绑定/读取映射以及 TypeMirror 到 JavaPoet TypeName 的辅助工具。 */
 public final class TypeNameUtils {
+
+    private static final ClassName NULLABLE = ClassName.get("org.jspecify.annotations", "Nullable");
+    private static final ClassName NON_NULL = ClassName.get("org.jspecify.annotations", "NonNull");
 
     private TypeNameUtils() {
     }
@@ -89,6 +95,23 @@ public final class TypeNameUtils {
      */
     public static TypeName toTypeNameWithGenerics(TypeMirror type, Types types) {
         return TypeName.get(types.stripAnnotations(type));
+    }
+
+    /**
+     * 深度剥离源 TYPE_USE 注解后，按声明处的 JSpecify 空性给最外层引用类型补标注。
+     */
+    public static TypeName toTypeNameWithNullability(TypeMirror type, Element declaration, Types types) {
+        return withNullability(toTypeNameWithGenerics(type, types),
+                Nullability.isNullable(declaration, type));
+    }
+
+    /** 给引用类型添加明确的 JSpecify 空性标注；基本类型和 {@code void} 保持不变。 */
+    public static TypeName withNullability(TypeName type, boolean nullable) {
+        if (type.isPrimitive() || type.equals(TypeName.VOID)) {
+            return type;
+        }
+        ClassName annotation = nullable ? NULLABLE : NON_NULL;
+        return type.annotated(AnnotationSpec.builder(annotation).build());
     }
 
 }

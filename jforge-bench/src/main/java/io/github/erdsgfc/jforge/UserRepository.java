@@ -94,13 +94,13 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
     @Select
     List<UserEntity> findAllUsers();
 
-    // ---- 动态判定矩阵（基本类型恒固定 / boxed 看注解与配置 / Optional 独立 IS NULL）----
+    // ---- 动态判定矩阵（基本类型恒固定 / 引用类型按 JSpecify 作用域 / Optional 独立 IS NULL）----
 
     /** 基本类型参数：恒固定（静态 SQL 常量形态）。 */
     @Select
     List<UserEntity> findAdults(int age);
 
-    /** boxed 参数未标 @Nullable + 默认配置：固定（静态形态；传 null 属契约违约）。 */
+    /** 未标注 boxed 参数位于非 @NullMarked 作用域：默认可空，null 时动态跳过条件。 */
     @Select
     List<UserEntity> findByBoxedAge(Integer age);
 

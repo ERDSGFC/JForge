@@ -33,7 +33,7 @@ import java.util.Map;
  *
  * <p>每个方法参数即一个 WHERE 条件：字段名取自 {@link Condition#value()}（缺省按参数名推断）、
  * 操作符取自 {@link Condition#op()}（默认等于）。参数标注 JSpecify {@code @Nullable}
- * 时条件动态拼接——运行时为 {@code null} 则跳过；未标注的参数静态拼接。
+ * 时条件动态拼接——运行时为 {@code null} 则跳过；未标注参数按 JSpecify 作用域判定。
  * 生成代码为编译期展开的 StringBuilder 拼接 + 类型精确绑定（拼接与绑定两阶段
  * 各自展开一次相同的条件判断，绑定用运行时索引）。结果映射委托
  * {@link QueryGenerator#appendResultMapping}（与 {@code @Query} 完全一致）。</p>
@@ -184,7 +184,7 @@ public final class SelectGenerator {
                 continue;
             }
             WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
-                    processingEnv, "@Select", configHelper);
+                    processingEnv, "@Select");
             if (condition == null) {
                 return null;
             }
@@ -196,9 +196,11 @@ public final class SelectGenerator {
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(TypeNameUtils.toTypeNameWithGenerics(returnType, processingEnv.getTypeUtils()));
+                .returns(TypeNameUtils.toTypeNameWithNullability(
+                        returnType, method, processingEnv.getTypeUtils()));
         for (VariableElement parameter : method.getParameters()) {
-            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType(), processingEnv.getTypeUtils()),
+            spec.addParameter(TypeNameUtils.toTypeNameWithNullability(
+                            parameter.asType(), parameter, processingEnv.getTypeUtils()),
                     parameter.getSimpleName().toString());
         }
 

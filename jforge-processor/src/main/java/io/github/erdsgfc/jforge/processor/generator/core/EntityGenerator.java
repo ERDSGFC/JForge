@@ -2,6 +2,7 @@ package io.github.erdsgfc.jforge.processor.generator.core;
 
 import com.palantir.javapoet.*;
 import io.github.erdsgfc.jforge.processor.EntityModel;
+import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.lang.model.element.Modifier;
 import java.io.Serializable;
@@ -38,7 +39,7 @@ public final class EntityGenerator {
                 .addSuperinterface(entityClass).addSuperinterface(ClassName.get(Serializable.class));
 
         for (EntityModel.ColumnModel column : model.columns()) {
-            TypeName type = TypeName.get(column.returnType);
+            TypeName type = TypeNameUtils.withNullability(column.javaType, column.nullable);
             builder.addField(FieldSpec.builder(type, column.fieldName, Modifier.PRIVATE).build());
             // getter
             builder.addMethod(MethodSpec.methodBuilder(column.getterName)
@@ -49,9 +50,10 @@ public final class EntityGenerator {
                     .build());
             // setter 返回类型以声明处为准:父接口声明的 setter 返回父接口类型,
             // 生成的 @Override setter 必须匹配;无 setter 的属性(只有 getter)默认真体接口。
-            TypeName setterReturn = column.setterReturnType != null
-                    ? TypeName.get(column.setterReturnType)
+            TypeName setterReturn = column.setterReturnJavaType != null
+                    ? column.setterReturnJavaType
                     : entityClass;
+            setterReturn = TypeNameUtils.withNullability(setterReturn, false);
             MethodSpec.Builder setter = MethodSpec.methodBuilder(column.setterName)
                     .returns(setterReturn)
                     .addParameter(type, "value")
@@ -72,7 +74,7 @@ public final class EntityGenerator {
                 // 绑定经强转调用它取得默认值(查询读回走覆盖的 getter,返回字段值)。
                 builder.addMethod(MethodSpec.methodBuilder(EntityModel.defaultMethodName(column.getterName))
                         .addModifiers(Modifier.PRIVATE)
-                        .returns(TypeName.get(column.returnType))
+                        .returns(type)
                         .addStatement("return $T.super.$N()", entityClass, column.getterName)
                         .build());
             }
@@ -174,7 +176,7 @@ public final class EntityGenerator {
                 .returns(int.class)
                 .addStatement("int result = 1");
         for (EntityModel.ColumnModel column : columns) {
-            TypeName type = TypeName.get(column.returnType);
+            TypeName type = column.javaType;
             if (type.isPrimitive()) {
                 method.addStatement("result = 31 * result + $T.hashCode($N)",
                         type.box(), column.fieldName);

@@ -1,30 +1,36 @@
 package io.github.erdsgfc.jforge.processor.utils;
 
-import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
-import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 
 /**
- * JSpecify {@code @Nullable} 判定的公共工具——实体列空性、@Query/@Select 动态条件的
- * 空性判定统一走这里,避免注解镜像遍历逻辑在各生成器间漂移。
+ * JSpecify 空性判定的公共工具——实体列、生成类型与动态 SQL 参数统一走这里。
  */
 public final class Nullability {
 
     private static final String NULLABLE = "org.jspecify.annotations.Nullable";
-
+    private static final String NON_NULL = "org.jspecify.annotations.NonNull";
+    private static final String NULL_MARKED = "org.jspecify.annotations.NullMarked";
     private Nullability() {
     }
 
-    /** 类型是否标注 JSpecify {@code @Nullable}（TYPE_USE 注解镜像遍历,不经类加载）。 */
-    public static boolean isNullable(TypeMirror type) {
-        for (var mirror : type.getAnnotationMirrors()) {
-            if (mirror.getAnnotationType().toString().equals(NULLABLE)) {
-                return true;
-            }
+    /**
+     * 判定声明处类型是否可空。显式 {@code @Nullable} 优先于 {@code @NonNull}；
+     * 无显式标注时沿声明的 enclosing 链查找 {@code @NullMarked}：作用域内默认非空，
+     * 作用域外未标注引用类型默认可空。
+     */
+    public static boolean isNullable(Element declaration, TypeMirror type) {
+        if (type.getKind().isPrimitive()) {
+            return false;
         }
-        return false;
+        if (hasAnnotation(type, NULLABLE) || hasAnnotation(declaration, NULLABLE)) {
+            return true;
+        }
+        if (hasAnnotation(type, NON_NULL) || hasAnnotation(declaration, NON_NULL)) {
+            return false;
+        }
+        return !isNullMarked(declaration);
     }
 
     /**
@@ -33,28 +39,28 @@ public final class Nullability {
      * javac 的归类可能不同,声明镜像也查一遍。
      */
     public static boolean isNullableParameter(VariableElement parameter) {
-        if (isNullable(parameter.asType())) {
-            return true;
-        }
-        for (var mirror : parameter.getAnnotationMirrors()) {
-            if (mirror.getAnnotationType().toString().equals(NULLABLE)) {
+        return isNullable(parameter, parameter.asType());
+    }
+
+    /** 声明是否位于 JSpecify {@code @NullMarked} 作用域。 */
+    public static boolean isNullMarked(Element declaration) {
+        Element current = declaration;
+        while (current != null) {
+            if (hasAnnotation(current, NULL_MARKED)) {
                 return true;
             }
+            current = current.getEnclosingElement();
         }
         return false;
     }
 
-    /** 是否为 java.lang 包装类(Integer/Long/Boolean/Double/Float/Short/Byte/Character)。 */
-    public static boolean isBoxed(TypeMirror type) {
-        if (type.getKind() != TypeKind.DECLARED) {
-            return false;
-        }
-        String name = ((TypeElement) ((DeclaredType) type).asElement()).getQualifiedName().toString();
-        return switch (name) {
-            case "java.lang.Integer", "java.lang.Long", "java.lang.Boolean",
-                 "java.lang.Double", "java.lang.Float", "java.lang.Short",
-                 "java.lang.Byte", "java.lang.Character" -> true;
-            default -> false;
-        };
+    private static boolean hasAnnotation(Element element, String annotationName) {
+        return element != null && element.getAnnotationMirrors().stream()
+                .anyMatch(mirror -> mirror.getAnnotationType().toString().equals(annotationName));
+    }
+
+    private static boolean hasAnnotation(TypeMirror type, String annotationName) {
+        return type.getAnnotationMirrors().stream()
+                .anyMatch(mirror -> mirror.getAnnotationType().toString().equals(annotationName));
     }
 }

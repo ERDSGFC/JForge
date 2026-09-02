@@ -84,16 +84,4 @@ public @interface JForgeConfig {
      */
     boolean logSql() default false;
 
-    /**
-     * 列的默认空性（nullability）——决定行映射是否生成 {@code ResultSet.wasNull()}
-     * 判断。逐列判定规则：
-     * <ul>
-     *   <li>基本类型 getter（{@code int}/{@code long}/…）→ 恒非空；</li>
-     *   <li>包装类 getter（{@code Integer}/{@code Long}/…）→ 恒可空；</li>
-     *   <li>其他类型（{@code String}/{@code LocalDateTime}/…）→ getter 返回类型标注
-     *       JSpecify {@code @Nullable} 则可空，否则取本配置的默认值。</li>
-     * </ul>
-     * 默认 {@code false}（未标注的其他类型列视为非空）。
-     */
-    boolean columnsNullable() default false;
 }

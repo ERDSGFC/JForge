@@ -6,6 +6,7 @@ import io.github.erdsgfc.jforge.core.JForge;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.jspecify.annotations.Nullable;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -150,13 +151,30 @@ class SelectQueryTest {
         assertEquals("qin", adults.get(0).name());
     }
 
-    /** boxed 未标 @Nullable：静态形态（传非 null 过滤）。 */
+    /** 未标注 boxed 参数位于非 {@code @NullMarked} 作用域：默认可空并动态处理 null。 */
     @Test
-    void boxedUnannotatedStaticForm() {
+    void boxedUnannotatedNullableForm() {
         List<UserEntity> found = repo.findByBoxedAge(25);
 
         assertEquals(1, found.size());
         assertEquals("qin", found.get(0).name());
+        assertEquals(3, repo.findByBoxedAge(null).size());
+    }
+
+    /** 无 {@code @NullMarked} 时，未标注实体引用类型生成 {@code @Nullable}。 */
+    @Test
+    void unmarkedEntityTypesAreGeneratedNullable() throws ReflectiveOperationException {
+        Class<?> entityImpl = Class.forName(
+                "io.github.erdsgfc.jforge.UserRepository_Impl$UserEntity_Impl");
+
+        assertNotNull(entityImpl.getDeclaredField("name").getAnnotatedType().getAnnotation(Nullable.class));
+        assertNotNull(entityImpl.getDeclaredField("age").getAnnotatedType().getAnnotation(Nullable.class));
+        assertNotNull(entityImpl.getDeclaredMethod("name").getAnnotatedReturnType()
+                .getAnnotation(Nullable.class));
+        assertNotNull(entityImpl.getDeclaredMethod("age").getAnnotatedReturnType()
+                .getAnnotation(Nullable.class));
+        assertNotNull(entityImpl.getDeclaredMethod("name", String.class)
+                .getAnnotatedParameterTypes()[0].getAnnotation(Nullable.class));
     }
 
     /** Optional + @Nullable 双层：null → 跳过整个条件；empty → IS NULL；有值 → 等于。 */

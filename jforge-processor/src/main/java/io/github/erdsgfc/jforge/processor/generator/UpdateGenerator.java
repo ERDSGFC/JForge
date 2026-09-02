@@ -114,7 +114,7 @@ public final class UpdateGenerator {
                 criteriaUnits.addAll(units);
             } else {
             WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
-                    processingEnv, "@Condition", configHelper);
+                    processingEnv, "@Condition");
                 if (condition == null) {
                     return null;
                 }
@@ -132,9 +132,11 @@ public final class UpdateGenerator {
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(TypeNameUtils.toTypeNameWithGenerics(method.getReturnType(), processingEnv.getTypeUtils()));
+                .returns(TypeNameUtils.toTypeNameWithNullability(
+                        method.getReturnType(), method, processingEnv.getTypeUtils()));
         for (VariableElement parameter : method.getParameters()) {
-            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType(), processingEnv.getTypeUtils()),
+            spec.addParameter(TypeNameUtils.toTypeNameWithNullability(
+                            parameter.asType(), parameter, processingEnv.getTypeUtils()),
                     parameter.getSimpleName().toString());
         }
         boolean logSql = configHelper.logSql(info.element);
@@ -226,10 +228,9 @@ public final class UpdateGenerator {
         String paramName = parameter.getSimpleName().toString();
         boolean optional = CriteriaGenerator.isOptional(parameter.asType());
         // 动态判定与 WhereCondition.resolveHost 同规则:基本类型恒固定;
-        // 非基本类型(含 Optional)@Nullable 标注或 columnsNullable 默认可空时动态。
+        // 非基本类型(含 Optional)显式 @Nullable 时动态。
         boolean primitive = parameter.asType().getKind().isPrimitive();
-        boolean dynamic = !primitive && (Nullability.isNullableParameter(parameter)
-                || configHelper.columnsNullable(info.element));
+        boolean dynamic = !primitive && Nullability.isNullableParameter(parameter);
         String bindType = optional
                 ? CriteriaGenerator.optionalValueType(parameter.asType(), processingEnv.getTypeUtils())
                 : processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString();

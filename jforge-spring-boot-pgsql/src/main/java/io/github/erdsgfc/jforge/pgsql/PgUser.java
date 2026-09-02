@@ -6,6 +6,9 @@ import io.github.erdsgfc.jforge.annotation.GeneratedValue;
 import io.github.erdsgfc.jforge.annotation.Id;
 import io.github.erdsgfc.jforge.annotation.Table;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
 /**
  * 真 PostgreSQL 集成测试实体：验证生成 SQL（引用符包裹、{@code INSERT ... RETURNING}
  * 生成键回写）在真实 PG 上的行为。
@@ -52,10 +55,10 @@ public interface PgUser {
     /** 创建时间——default getter 作为属性默认值来源（save 自动取值绑定，与 RETURNING 同语句）。 */
     @Column(name = "created_at")
     default java.time.LocalDateTime createdAt() {
-        return java.time.LocalDateTime.now();
+        return LocalDateTime.now();
     }
 
-    PgUser createdAt(java.time.LocalDateTime createdAt);
+    PgUser createdAt(LocalDateTime createdAt);
 
     // ---- 各种数据库字段类型（真 PG 上的 JDBC 绑定/读取矩阵验证）----
 
@@ -70,9 +73,9 @@ public interface PgUser {
     PgUser balance(java.math.BigDecimal balance);
 
     /** 日期 → DATE（getObject 路径）。 */
-    java.time.LocalDate birthDate();
+    LocalDate birthDate();
 
-    PgUser birthDate(java.time.LocalDate birthDate);
+    PgUser birthDate(LocalDate birthDate);
 
     /** 双精度 → DOUBLE PRECISION。 */
     Double height();

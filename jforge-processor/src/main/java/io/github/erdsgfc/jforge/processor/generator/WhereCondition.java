@@ -3,7 +3,6 @@ package io.github.erdsgfc.jforge.processor.generator;
 import com.palantir.javapoet.MethodSpec;
 import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.processor.EntityModel;
-import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
 import io.github.erdsgfc.jforge.processor.utils.Nullability;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
@@ -30,14 +29,10 @@ import java.util.List;
 record WhereCondition(String columnName, String op, String paramName, String typeName, boolean dynamic,
                       boolean optional, String valueExpr, String rawSql, String converterField) {
 
-    /**
-     * 解析绑定到宿主实体列的 {@code @Condition} 参数。
-     *
-     * @param configHelper 配置 helper（动态判定的 columnsNullable 默认值）
-     */
+    /** 解析绑定到宿主实体列的 {@code @Condition} 参数。 */
     static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
                                       VariableElement parameter, ProcessingEnvironment processingEnv,
-                                      String diagnosticPrefix, JForgeConfigHelper configHelper) {
+                                      String diagnosticPrefix) {
         String paramName = parameter.getSimpleName().toString();
         Condition condition = parameter.getAnnotation(Condition.class);
         String fieldName = condition != null && !condition.value().isEmpty()
@@ -47,12 +42,10 @@ record WhereCondition(String columnName, String op, String paramName, String typ
         boolean optional = CriteriaGenerator.isOptional(parameter.asType());
         // 动态判定（与实体列空性同规则,Optional 不特殊——它也是非基本类型）:
         // 基本类型恒固定(不可能为 null,即使标 @Nullable 守卫也恒真,静态拼接);
-        // 非基本类型(含 Optional)@Nullable 标注(类型 + 声明镜像双查,裸读
-        // asType().getAnnotation 在注解混排时可能漏判)或 columnsNullable 默认可空时
-        // 动态——null 守卫与 Optional 的 IS NULL 语义(optional 维度)相互独立。
+        // 非基本类型(含 Optional)显式 @Nullable 时动态——null 守卫与 Optional 的
+        // IS NULL 语义(optional 维度)相互独立。
         boolean primitive = parameter.asType().getKind().isPrimitive();
-        boolean dynamic = !primitive && (Nullability.isNullableParameter(parameter)
-                || configHelper.columnsNullable(info.element));
+        boolean dynamic = !primitive && Nullability.isNullableParameter(parameter);
         String bindType = optional
                 ? CriteriaGenerator.optionalValueType(parameter.asType(), processingEnv.getTypeUtils())
                 : processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString();

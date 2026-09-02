@@ -176,9 +176,11 @@ public final class QueryGenerator {
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(TypeNameUtils.toTypeNameWithGenerics(returnType, processingEnv.getTypeUtils()));
+                .returns(TypeNameUtils.toTypeNameWithNullability(
+                        returnType, method, processingEnv.getTypeUtils()));
         for (VariableElement parameter : method.getParameters()) {
-            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType(), processingEnv.getTypeUtils()),
+            spec.addParameter(TypeNameUtils.toTypeNameWithNullability(
+                            parameter.asType(), parameter, processingEnv.getTypeUtils()),
                     parameter.getSimpleName().toString());
         }
 
@@ -316,9 +318,11 @@ public final class QueryGenerator {
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(TypeNameUtils.toTypeNameWithGenerics(returnType, processingEnv.getTypeUtils()));
+                .returns(TypeNameUtils.toTypeNameWithNullability(
+                        returnType, method, processingEnv.getTypeUtils()));
         for (VariableElement parameter : method.getParameters()) {
-            spec.addParameter(TypeNameUtils.toTypeNameWithGenerics(parameter.asType(), processingEnv.getTypeUtils()),
+            spec.addParameter(TypeNameUtils.toTypeNameWithNullability(
+                            parameter.asType(), parameter, processingEnv.getTypeUtils()),
                     parameter.getSimpleName().toString());
         }
         // parsed 为 null = SQL 无 WHERE（@Condition 追加片段提供首个条件）——selectPart 取整条 SQL。

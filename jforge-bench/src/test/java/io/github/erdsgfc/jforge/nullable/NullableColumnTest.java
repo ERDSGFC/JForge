@@ -6,12 +6,16 @@ import io.github.erdsgfc.jforge.core.JForge;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
+import java.lang.reflect.Method;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /** 列空性（wasNull 映射）的集成测试：可空列 NULL 读回 null，基本类型读 0。 */
@@ -42,30 +46,29 @@ class NullableColumnTest {
         ds.close();
     }
 
-    /** 全 NULL 行：可空列读回 null（标注/全局默认/包装类三条路径），基本类型读 0。 */
+    /** 全 NULL 行：显式可空列读回 null，基本类型读 0。 */
     @Test
     void nullRowMapsNullableColumnsToNull() throws SQLException {
         try (Connection conn = ds.getConnection(); Statement st = conn.createStatement()) {
-            st.execute("INSERT INTO nullable_users (name, nickname, age, score) VALUES (NULL, NULL, NULL, NULL)");
+            st.execute("INSERT INTO nullable_users (name, nickname, age, score) VALUES (NULL, 'required', NULL, NULL)");
         }
 
         NullableUser user = repo.findById(1L);
 
         assertNull(user.name(), "@Nullable annotated String column should read back null");
-        assertNull(user.nickname(), "unannotated String column should use global columnsNullable default");
+        assertEquals("required", user.nickname(), "@NonNull String column should read back normally");
         assertEquals(0, user.age(), "primitive int column has no wasNull branch — NULL reads 0");
-        assertNull(user.score(), "boxed Integer column should read back null");
+        assertNull(user.score(), "explicitly nullable boxed Integer column should read back null");
     }
 
-    /** 非 NULL 行：可空列正常读回，wasNull 分支不影响非 null 值。 */
-    /** columnsNullable=true 包:未标 @Nullable 的 boxed 参数默认动态(null 跳过查全表)。 */
+    /** @Nullable boxed 参数为 null 时动态跳过条件。 */
     @Test
-    void unannotatedBoxedParameterIsDynamicByConfig() {
+    void nullableBoxedParameterIsDynamic() {
         repo.save(repo.createEntity().name("a").nickname("n1").age(10).score(90));
         repo.save(repo.createEntity().name("b").nickname("n2").age(20).score(80));
 
         assertEquals(1, repo.findByScore(90).size(), "non-null value must filter");
-        assertEquals(2, repo.findByScore(null).size(), "null must skip the condition (dynamic by columnsNullable)");
+        assertEquals(2, repo.findByScore(null).size(), "@Nullable null parameter must skip the condition");
     }
 
     @Test
@@ -83,5 +86,27 @@ class NullableColumnTest {
         assertEquals("qq", found.nickname());
         assertEquals(25, found.age());
         assertEquals(88, found.score());
+    }
+
+    /** 生成实现应明确输出列空性，以及 @NullMarked 方法的默认非空返回类型。 */
+    @Test
+    void generatedTypesCarryJSpecifyAnnotations() throws ReflectiveOperationException {
+        Class<?> entityImpl = Class.forName(
+                "io.github.erdsgfc.jforge.nullable.NullableUserRepository_Impl$NullableUser_Impl");
+
+        assertNotNull(entityImpl.getDeclaredField("name").getAnnotatedType().getAnnotation(Nullable.class));
+        assertNotNull(entityImpl.getDeclaredField("nickname").getAnnotatedType().getAnnotation(NonNull.class));
+        assertNotNull(entityImpl.getDeclaredMethod("name").getAnnotatedReturnType()
+                .getAnnotation(Nullable.class));
+        assertNotNull(entityImpl.getDeclaredMethod("nickname").getAnnotatedReturnType()
+                .getAnnotation(NonNull.class));
+        assertNotNull(entityImpl.getDeclaredMethod("name", String.class).getAnnotatedParameterTypes()[0]
+                .getAnnotation(Nullable.class));
+        assertNotNull(entityImpl.getDeclaredMethod("name", String.class).getAnnotatedReturnType()
+                .getAnnotation(NonNull.class));
+
+        Method findByScore = NullableUserRepository_Impl.class.getDeclaredMethod("findByScore", Integer.class);
+        assertNotNull(findByScore.getAnnotatedReturnType().getAnnotation(NonNull.class));
+        assertNotNull(findByScore.getAnnotatedParameterTypes()[0].getAnnotation(Nullable.class));
     }
 }
