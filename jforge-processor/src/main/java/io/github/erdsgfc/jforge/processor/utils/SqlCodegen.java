@@ -427,14 +427,17 @@ public final class SqlCodegen {
         String prefix = operation + " on table '" + tableName + "' [";
         String suffix = "]: ";
         method.nextControlFlow("catch ($T e)", sqlException);
+        // SQL 表达式(如 sql.toString())只求值一次——失败消息、日志与异常各引用同一
+        // 局部变量,避免动态拼接 SQL 在异常路径上被重复 toString(O(n) 复制)。
+        method.addStatement("$T sqlText = $L", String.class, sqlExpr);
         if (logSql) {
             method.beginControlFlow("if (log.isWarnEnabled())");
-            method.addStatement("log.warn($S, $L, e)", "SQL failed: {}", sqlExpr);
+            method.addStatement("log.warn($S, $L, e)", "SQL failed: {}", "sqlText");
             method.endControlFlow();
         }
-        method.addStatement("throw new $T($T.Code.SQL, $S + $L + $S + e.getMessage(), $L, e)",
+        method.addStatement("throw new $T($T.Code.SQL, $S + sqlText + $S + e.getMessage(), sqlText, e)",
                 ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(),
-                prefix, sqlExpr, suffix, sqlExpr)
+                prefix, suffix)
                 .nextControlFlow("finally")
                 .addStatement("releaseConnection(conn)")
                 .endControlFlow();

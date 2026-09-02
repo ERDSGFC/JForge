@@ -1,6 +1,8 @@
 package io.github.erdsgfc.jforge.processor.generator;
 
+import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeName;
 import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.annotation.Op;
 import io.github.erdsgfc.jforge.processor.EntityModel;
@@ -16,7 +18,6 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -36,11 +37,12 @@ import java.util.List;
  * @param converterField  宿主列 {@code @Convert} 转换器静态字段名（{@code null} = 无转换器）
  * @param collection      {@code Iterable} 参数（{@code List}/{@code Set}/…）→ {@code 列 IN (?,...)}
  * @param array           数组参数（如 {@code Long[]}）→ {@code 列 IN (?,...)}
- * @param elementTypeName 数组/集合的元素类型（元素绑定类型；非 IN 条件时为 {@code null}）
+ * @param elementTypeName 数组/集合的元素类型（生成 IN 绑定局部变量声明的 JavaPoet 类型；
+ *                        非 IN 条件时为 {@code null}）
  */
 record WhereCondition(String columnName, String op, String paramName, String typeName, boolean dynamic,
                       boolean optional, String valueExpr, String rawSql, String converterField,
-                      boolean collection, boolean array, String elementTypeName) {
+                      boolean collection, boolean array, TypeName elementTypeName) {
 
     /**
      * 解析绑定到宿主实体列的 {@code @Condition} 参数：字段名取 {@link Condition#value()}
@@ -75,15 +77,16 @@ record WhereCondition(String columnName, String op, String paramName, String typ
         }
         boolean primitive = type.getKind().isPrimitive();
         boolean dynamic = !primitive && Nullability.isNullableParameter(parameter);
-        // 数组的对象
-        String elementType = null;
+        // 数组/集合的元素类型（生成 IN 绑定局部变量声明用）。
+        TypeName elementType = null;
         if (array) {
-            elementType = ((ArrayType) type).getComponentType().toString();
+            elementType = TypeName.get(env.getTypeUtils().stripAnnotations(
+                    ((ArrayType) type).getComponentType()));
         } else if (collection) {
             elementType = iterableElementType(type, env);
         }
         String bindType = optional ? CriteriaGenerator.optionalValueType(type, env.getTypeUtils())
-                : elementType != null ? elementType : type.toString();
+                : elementType != null ? elementType.toString() : type.toString();
         String valueExpr = optional ? paramName + CriteriaGenerator.optionalValueMethod(type) : null;
         if (!rawSql.isEmpty()) {
             if (collection || array) {
@@ -116,10 +119,11 @@ record WhereCondition(String columnName, String op, String paramName, String typ
                 env.getTypeUtils().erasure(iterable));
     }
 
-    private static String iterableElementType(TypeMirror type, ProcessingEnvironment env) {
-        if (type.getKind() != TypeKind.DECLARED) return "java.lang.Object";
+    private static TypeName iterableElementType(TypeMirror type, ProcessingEnvironment env) {
+        if (type.getKind() != TypeKind.DECLARED) return ClassName.get(Object.class);
         List<? extends TypeMirror> args = ((DeclaredType) type).getTypeArguments();
-        return args.isEmpty() ? "java.lang.Object" : env.getTypeUtils().stripAnnotations(args.getFirst()).toString();
+        return args.isEmpty() ? ClassName.get(Object.class)
+                : TypeName.get(env.getTypeUtils().stripAnnotations(args.getFirst()));
     }
 
     /**
@@ -135,30 +139,45 @@ record WhereCondition(String columnName, String op, String paramName, String typ
      * 生成一个条件的动态 SQL 拼接代码（动态形态）。
      *
      * <p>IN 条件（数组/集合）的空值语义：元素数为 0 时拼 {@code 1 = 0}（恒假——空集合
-     * 匹配任何行都不成立），非空时拼 {@code 列 IN (?,?,...)}——集合先复制到局部
-     * {@code sqlValues_xxx} 列表，避免对运行时修改的入参二次迭代时长度不一致。</p>
+     * 匹配任何行都不成立），非空时拼 {@code 列 IN (?,?,...)}。集合直接遍历入参拼占位符
+     * （零临时内存）——占位符先入局部缓冲，空集判定在循环后才知道（不能先拼
+     * {@code "IN ("} 再回退，{@code IN ()} 是非法 SQL）。</p>
      */
     static void appendSql(MethodSpec.Builder spec, WhereCondition c) {
         if (c.dynamic) spec.beginControlFlow("if ($N != null)", c.paramName);
         if (c.collection || c.array) {
-            String size = c.array ? c.paramName + ".length" : "sqlValues_" + c.paramName + ".size()";
             if (c.collection) {
-                spec.addStatement("$T<$L> sqlValues_$L = new $T<>()", List.class,
-                        c.elementTypeName, c.paramName, ArrayList.class);
-                spec.beginControlFlow("for ($L value : $N)", c.elementTypeName, c.paramName);
-                spec.addStatement("sqlValues_$L.add(value)", c.paramName);
+                // 集合:直接遍历入参拼占位符,零临时内存。占位符先拼入局部缓冲
+                // inSql_xxx(空集判定在循环后才知道:空 → 1 = 0,不能先拼 "IN (")。
+                spec.addStatement("$T inSql_$L = new $T()", ClassName.get(StringBuilder.class),
+                        c.paramName, ClassName.get(StringBuilder.class));
+                spec.addStatement("int idx_$L = 0", c.paramName);
+                spec.beginControlFlow("for ($T value : $N)", c.elementTypeName, c.paramName);
+                spec.beginControlFlow("if (idx_$L > 0)", c.paramName);
+                spec.addStatement("inSql_$L.append($S)", c.paramName, ",?");
+                spec.nextControlFlow("else");
+                spec.addStatement("inSql_$L.append($S)", c.paramName, "?");
+                spec.endControlFlow();
+                spec.addStatement("idx_$L++", c.paramName);
+                spec.endControlFlow();
+                spec.beginControlFlow("if (idx_$L == 0)", c.paramName);
+                spec.addStatement("sql.append(where).append($S)", " 1 = 0");
+                spec.nextControlFlow("else");
+                spec.addStatement("sql.append(where).append($S).append(inSql_$L).append($S)",
+                        " " + c.columnName + " IN (", c.paramName, ")");
+                spec.endControlFlow();
+            } else {
+                // 数组:长度循环前可知(无快照)——判空后首项外提拼占位符。
+                spec.beginControlFlow("if ($L == 0)", c.paramName + ".length");
+                spec.addStatement("sql.append(where).append($S)", " 1 = 0");
+                spec.nextControlFlow("else");
+                spec.addStatement("sql.append(where).append($S)", " " + c.columnName + " IN (?");
+                spec.beginControlFlow("for (int j = 1; j < $L; j++)", c.paramName + ".length");
+                spec.addStatement("sql.append($S)", ",?");
+                spec.endControlFlow();
+                spec.addStatement("sql.append($S)", ")");
                 spec.endControlFlow();
             }
-            spec.beginControlFlow("if ($L == 0)", size);
-            spec.addStatement("sql.append(where).append($S)", " 1 = 0");
-            spec.nextControlFlow("else");
-            spec.addStatement("sql.append(where).append($S)", " " + c.columnName + " IN (");
-            spec.beginControlFlow("for (int j = 0; j < $L; j++)", size);
-            spec.addStatement("if (j > 0) sql.append($S)", ", ");
-            spec.addStatement("sql.append($S)", "?");
-            spec.endControlFlow();
-            spec.addStatement("sql.append($S)", ")");
-            spec.endControlFlow();
         } else if (c.rawSql != null) {
             spec.addStatement("sql.append(where).append($S)", " " + c.rawSql);
         } else if (c.optional) {
@@ -182,17 +201,11 @@ record WhereCondition(String columnName, String op, String paramName, String typ
     static void appendBind(MethodSpec.Builder spec, WhereCondition c) {
         if (c.dynamic) spec.beginControlFlow("if ($N != null)", c.paramName);
         if (c.collection || c.array) {
-            String size = c.array ? c.paramName + ".length" : "bindValues_" + c.paramName + ".size()";
-            if (c.collection) {
-                spec.addStatement("$T<$L> bindValues_$L = new $T<>()", List.class,
-                        c.elementTypeName, c.paramName, ArrayList.class);
-                spec.beginControlFlow("for ($L value : $N)", c.elementTypeName, c.paramName);
-                spec.addStatement("bindValues_$L.add(value)", c.paramName);
-                spec.endControlFlow();
-            }
-            spec.beginControlFlow("for (int j = 0; j < $L; j++)", size);
-            String expr = c.array ? c.paramName + "[j]" : "bindValues_" + c.paramName + ".get(j)";
-            spec.addCode(SqlCodegen.bindParam(c.typeName, expr, "i++", true, false, c.converterField));
+            // 集合/数组都直接遍历入参绑值(零临时内存;空集时循环 0 次,与拼接阶段
+            // 的 1 = 0 分支一致——无占位符可绑)。
+            spec.beginControlFlow("for ($T value : $N)", c.elementTypeName, c.paramName);
+            spec.addCode(SqlCodegen.bindParam(c.typeName, "value", "i++", true, false,
+                    c.converterField));
             spec.addCode("\n");
             spec.endControlFlow();
         } else if (c.rawSql != null && !c.rawSql.contains("?")) {

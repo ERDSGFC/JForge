@@ -283,11 +283,10 @@ public final class CrudGenerator {
         method.addStatement("$T sql = new $T($N.length() + ids.size() * 2)",
                 ClassName.get(StringBuilder.class), ClassName.get(StringBuilder.class), baseSqlField);
         method.addStatement("sql.append($N)", baseSqlField);
-        method.beginControlFlow("for (int i = 0; i < ids.size(); i++)");
-        method.beginControlFlow("if (i > 0)");
-        method.addStatement("sql.append($S)", ",");
-        method.endControlFlow();
+        // 首项外提:"?" 后循环追加 ",?"——省去逐项 if(i > 0) 判断(空列表由调用方先行处理)。
         method.addStatement("sql.append($S)", "?");
+        method.beginControlFlow("for (int i = 1; i < ids.size(); i++)");
+        method.addStatement("sql.append($S)", ",?");
         method.endControlFlow();
         method.addStatement("sql.append($S)", ")");
     }
