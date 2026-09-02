@@ -62,7 +62,6 @@ public class JForgeProcessor extends AbstractProcessor {
         public String daoPackage;
         public TypeName entityType;
         public TypeName idType;
-        public String idTypeName;
         public EntityModel model;
         public String implName;
         public boolean springBean = false;
@@ -181,7 +180,6 @@ public class JForgeProcessor extends AbstractProcessor {
         info.model = model;
         info.entityType = ClassName.get(model.entityPackage(), model.entitySimpleName());
         info.idType = TypeName.get(model.idColumn().returnType);
-        info.idTypeName = model.idColumn().returnType.toString();
         return info;
     }
 
