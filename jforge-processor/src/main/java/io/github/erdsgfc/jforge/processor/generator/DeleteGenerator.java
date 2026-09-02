@@ -131,7 +131,7 @@ public final class DeleteGenerator {
         for (WhereCondition condition : conditions) {
             WhereCondition.appendSql(spec, condition);
         }
-        criteriaGenerator.emitAppend(spec, criteriaUnits, "where", " AND ");
+        criteriaGenerator.emitGroupAppend(spec, criteriaUnits, "where", " AND ");
         // 所有可空 WHERE 条件都被跳过时，禁止退化成无条件 DELETE。
         spec.beginControlFlow("if (where.equals($S))", " WHERE ");
         if (method.getReturnType().getKind() == TypeKind.BOOLEAN) {

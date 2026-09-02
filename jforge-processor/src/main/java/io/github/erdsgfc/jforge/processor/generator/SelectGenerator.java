@@ -240,7 +240,7 @@ public final class SelectGenerator {
         for (WhereCondition condition : conditions) {
             WhereCondition.appendSql(spec, condition);
         }
-        criteriaGenerator.emitAppend(spec, criteriaUnits, "where", " AND ");
+        criteriaGenerator.emitGroupAppend(spec, criteriaUnits, "where", " AND ");
         if (logSql) {
             spec.beginControlFlow("if (log.isDebugEnabled())");
             spec.addStatement("log.debug($S, sql.toString())", "Executing SQL: {}");

@@ -112,6 +112,17 @@ class CriteriaQueryTest {
         assertEquals("qin", users.get(0).name());
     }
 
+    /** 嵌套组非 null 但组内全 null → 空组回退(不产生空括号,条件整体跳过)。 */
+    @Test
+    void emptyNestedGroupRollsBack() {
+        UserCriteria criteria = new UserCriteria();
+        criteria.address = new AddressCriteria();   // 组对象非 null,但 city/street 都 null
+
+        List<CriteriaUser> users = repo.findComplex(criteria);
+
+        assertEquals(3, users.size(), "empty group must roll back to no WHERE (full scan)");
+    }
+
     /** 嵌套自定义类字段 → 括号分组。 */
     @Test
     void nestedGroupBecomesParentheses() {

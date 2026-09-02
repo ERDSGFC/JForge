@@ -194,7 +194,7 @@ public final class UpdateGenerator {
         for (WhereCondition condition : conditions) {
             WhereCondition.appendSql(spec, condition);
         }
-        criteriaGenerator.emitAppend(spec, criteriaUnits, "where", " AND ");
+        criteriaGenerator.emitGroupAppend(spec, criteriaUnits, "where", " AND ");
         if (hasWhere) {
             // 所有可空 WHERE 条件都被跳过时，禁止退化成无条件 UPDATE。
             spec.beginControlFlow("if (where.equals($S))", " WHERE ");

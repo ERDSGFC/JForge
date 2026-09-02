@@ -147,6 +147,28 @@ public final class CriteriaGenerator {
         }
     }
 
+    /**
+     * 以括号分组追加一组条件(条件对象顶层展开与嵌套组共用):{@code ( ... )}——
+     * 组内 OR/AND 结构与外层隔离(顶层条件对象与其他条件组合时,组内 @Or 不会
+     * 泄漏成 "A OR B AND C")。组内各单元用独立前缀变量 wN("" 初值——首个条件
+     * 无前缀,其后按连接符)。空组(组内全部 guard 未命中,只拼了前缀 + "()")
+     * 回退到起始长度——不消费外层 where 前缀,不产生非法空括号。
+     */
+    void emitGroupAppend(MethodSpec.Builder spec, List<Unit> units, String whereVar, String after) {
+        int seq = ++varSeq;
+        spec.addStatement("int gs$L = sql.length()", seq);
+        spec.addStatement("sql.append($L).append($S)", whereVar, "(");
+        spec.addStatement("$T w$L = $S", ClassName.get("java.lang", "String"), seq, "");
+        emitAppend(spec, units, "w" + seq, " AND ");
+        spec.addStatement("sql.append($S)", ")");
+        // 空组回退:内容仅前缀 + "()" 时撤销,where 前缀未被消费。
+        spec.beginControlFlow("if (sql.length() == gs$L + $L.length() + 2)", seq, whereVar);
+        spec.addStatement("sql.setLength(gs$L)", seq);
+        spec.nextControlFlow("else");
+        spec.addStatement("$L = $S", whereVar, after);
+        spec.endControlFlow();
+    }
+
     // ---- 解析 ----------------------------------------------------------------
 
     private List<Unit> parseType(JForgeProcessor.DaoInfo info, ExecutableElement method,
@@ -346,14 +368,9 @@ public final class CriteriaGenerator {
             return;
         }
         if (unit.nested != null) {
-            // 括号分组：外部连接符 + "(" + 组内独立前缀变量 + 组内单元 + ")"。
+            // 括号分组(含空组回退)由 emitGroupAppend 统一处理。
             beginGuard(spec, unit.guard);
-            spec.addStatement("$L.append($L).append($S)", "sql", whereVar, "(");
-            String w = "w" + (++varSeq);
-            spec.addStatement("$T $L = $S", ClassName.get("java.lang", "String"), w, "");
-            emitAppend(spec, unit.nested, w, " AND ");
-            spec.addStatement("$L.append($S)", "sql", ")");
-            spec.addStatement("$L = $S", whereVar, after);
+            emitGroupAppend(spec, unit.nested, whereVar, after);
             endGuard(spec, unit.guard);
             return;
         }
