@@ -359,25 +359,39 @@ public final class CriteriaGenerator {
         }
         beginGuard(spec, unit.guard);
         if (unit.collection || unit.array) {
-            String size = unit.array ? unit.readExpr + ".length" : "criteriaValues_" + (++varSeq) + ".size()";
-            String values = unit.array ? null : "criteriaValues_" + varSeq;
             if (unit.collection) {
-                spec.addStatement("$T<$L> $L = new $T<>()", List.class, unit.elementType, values,
-                        java.util.ArrayList.class);
+                // 集合:直接遍历 getter 返回值拼占位符,零临时内存。占位符先入局部缓冲
+                // (空集判定在循环后才知道:空 → 1 = 0,不能先拼 "IN (")。
+                int seq = ++varSeq;
+                spec.addStatement("$T inSql_$L = new $T()", ClassName.get(StringBuilder.class),
+                        seq, ClassName.get(StringBuilder.class));
+                spec.addStatement("int idx_$L = 0", seq);
                 spec.beginControlFlow("for ($L value : $L)", unit.elementType, unit.readExpr);
-                spec.addStatement("$L.add(value)", values);
+                spec.beginControlFlow("if (idx_$L > 0)", seq);
+                spec.addStatement("inSql_$L.append($S)", seq, ",?");
+                spec.nextControlFlow("else");
+                spec.addStatement("inSql_$L.append($S)", seq, "?");
+                spec.endControlFlow();
+                spec.addStatement("idx_$L++", seq);
+                spec.endControlFlow();
+                spec.beginControlFlow("if (idx_$L == 0)", seq);
+                spec.addStatement("sql.append($L).append($S)", whereVar, " 1 = 0");
+                spec.nextControlFlow("else");
+                spec.addStatement("sql.append($L).append($S).append(inSql_$L).append($S)",
+                        whereVar, " " + unit.column + " IN (", seq, ")");
+                spec.endControlFlow();
+            } else {
+                // 数组:长度循环前可知——判空后首项外提拼占位符。
+                spec.beginControlFlow("if ($L.length == 0)", unit.readExpr);
+                spec.addStatement("sql.append($L).append($S)", whereVar, " 1 = 0");
+                spec.nextControlFlow("else");
+                spec.addStatement("sql.append($L).append($S)", whereVar, " " + unit.column + " IN (?");
+                spec.beginControlFlow("for (int j = 1; j < $L.length; j++)", unit.readExpr);
+                spec.addStatement("sql.append($S)", ",?");
+                spec.endControlFlow();
+                spec.addStatement("sql.append($S)", ")");
                 spec.endControlFlow();
             }
-            spec.beginControlFlow("if ($L == 0)", size);
-            spec.addStatement("sql.append($L).append($S)", whereVar, " 1 = 0");
-            spec.nextControlFlow("else");
-            spec.addStatement("sql.append($L).append($S)", whereVar, " " + unit.column + " IN (");
-            spec.beginControlFlow("for (int j = 0; j < $L; j++)", size);
-            spec.addStatement("if (j > 0) sql.append($S)", ", ");
-            spec.addStatement("sql.append($S)", "?");
-            spec.endControlFlow();
-            spec.addStatement("sql.append($S)", ")");
-            spec.endControlFlow();
         } else if (unit.optional) {
             // Optional：有值 → 条件；空 → IS NULL（两者都拼接，连接符仅其后置一次）。
             spec.beginControlFlow("if ($L.isPresent())", unit.readExpr);
@@ -411,20 +425,11 @@ public final class CriteriaGenerator {
             return;
         }
         if (unit.collection || unit.array) {
+            // 直接遍历 getter 返回值绑值(零临时内存;空集时循环 0 次,与拼接阶段的
+            // 1 = 0 分支一致——无占位符可绑)。
             beginGuard(spec, unit.guard);
-            String index = "i++";
-            String size = unit.array ? unit.readExpr + ".length" : "criteriaBindValues_" + (++varSeq) + ".size()";
-            String values = unit.array ? null : "criteriaBindValues_" + varSeq;
-            if (unit.collection) {
-                spec.addStatement("$T<$L> $L = new $T<>()", List.class, unit.elementType, values,
-                        java.util.ArrayList.class);
-                spec.beginControlFlow("for ($L value : $L)", unit.elementType, unit.readExpr);
-                spec.addStatement("$L.add(value)", values);
-                spec.endControlFlow();
-            }
-            spec.beginControlFlow("for (int j = 0; j < $L; j++)", size);
-            String expr = unit.array ? unit.readExpr + "[j]" : values + ".get(j)";
-            spec.addCode(SqlCodegen.bindParam(unit.bindType, expr, index, true, false, null));
+            spec.beginControlFlow("for ($L value : $L)", unit.elementType, unit.readExpr);
+            spec.addCode(SqlCodegen.bindParam(unit.bindType, "value", "i++", true, false, null));
             spec.addCode("\n");
             spec.endControlFlow();
             endGuard(spec, unit.guard);

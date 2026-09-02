@@ -57,6 +57,19 @@ class CriteriaQueryTest {
         assertEquals(3, all.size());
     }
 
+    /** 条件对象集合字段：IN 条件（非空命中 / 空集合 → 1 = 0 无匹配）。 */
+    @Test
+    void collectionFieldGeneratesIn() {
+        UserCriteria criteria = new UserCriteria();
+        criteria.ages = java.util.List.of(25, 30);   // age IN (25, 30)
+
+        List<CriteriaUser> users = repo.findComplex(criteria);
+        assertEquals(2, users.size());
+
+        criteria.ages = java.util.List.of();          // 空集合 → 1 = 0
+        assertTrue(repo.findComplex(criteria).isEmpty());
+    }
+
     /** 值字段条件（null 跳过 + 连接符）。 */
     @Test
     void valueFieldsWithConnectors() {

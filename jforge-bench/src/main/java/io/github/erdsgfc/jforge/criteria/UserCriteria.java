@@ -2,6 +2,7 @@ package io.github.erdsgfc.jforge.criteria;
 
 import io.github.erdsgfc.jforge.annotation.*;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -24,6 +25,10 @@ public class UserCriteria {
     @Condition(value = "name")
     public Optional<String> nickname;
 
+    /** AND age IN (?,?,...)（空集合 → 1 = 0；映射实体 age 列）。 */
+    @Condition(value = "age")
+    public List<Integer> ages;
+
     /** AND (city = ? AND street = ?)（null 跳过整个括号）。 */
     @Where
     public AddressCriteria address;
@@ -42,6 +47,10 @@ public class UserCriteria {
 
     public Optional<String> getNickname() {
         return nickname;
+    }
+
+    public List<Integer> getAges() {
+        return ages;
     }
 
     public AddressCriteria getAddress() {
