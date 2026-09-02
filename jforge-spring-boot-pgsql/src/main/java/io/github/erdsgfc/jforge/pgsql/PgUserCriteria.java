@@ -1,8 +1,6 @@
 package io.github.erdsgfc.jforge.pgsql;
 
-import io.github.erdsgfc.jforge.annotation.Condition;
-import io.github.erdsgfc.jforge.annotation.Or;
-import io.github.erdsgfc.jforge.annotation.Op;
+import io.github.erdsgfc.jforge.annotation.*;
 
 import java.util.Optional;
 
@@ -11,6 +9,7 @@ import java.util.Optional;
  * 空 = IS NULL、有值 = 条件；自定义类字段 → 括号分组；{@link Or} 定义与上一条件
  * 的连接方式。字段名经命名策略映射列（{@code userName} → {@code user_name}）。
  */
+@JForgeSql
 public class PgUserCriteria {
 
     /** user_name = ?（null 跳过）。 */
@@ -26,6 +25,7 @@ public class PgUserCriteria {
     public Optional<String> nickname;
 
     /** AND (city = ? AND street = ?)（null 跳过整个括号）。 */
+    @Where
     public PgAddressCriteria address;
 
     /** 原生 SQL 条件：非 null 时拼 age > 18（常量，无绑定）。 */
