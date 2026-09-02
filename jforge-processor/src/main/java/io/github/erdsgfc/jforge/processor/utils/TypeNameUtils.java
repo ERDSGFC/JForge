@@ -7,12 +7,11 @@ import com.palantir.javapoet.TypeName;
 import javax.lang.model.element.Element;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
+import static io.github.erdsgfc.jforge.processor.ClassEnum.NULLABLE;
+import static io.github.erdsgfc.jforge.processor.ClassEnum.NON_NULL;
 
 /** JDBC 绑定/读取映射以及 TypeMirror 到 JavaPoet TypeName 的辅助工具。 */
 public final class TypeNameUtils {
-
-    private static final ClassName NULLABLE = ClassName.get("org.jspecify.annotations", "Nullable");
-    private static final ClassName NON_NULL = ClassName.get("org.jspecify.annotations", "NonNull");
 
     private TypeNameUtils() {
     }
@@ -110,7 +109,7 @@ public final class TypeNameUtils {
         if (type.isPrimitive() || type.equals(TypeName.VOID)) {
             return type;
         }
-        ClassName annotation = nullable ? NULLABLE : NON_NULL;
+        ClassName annotation = nullable ? NULLABLE.getJavaPoetClassName() : NON_NULL.getJavaPoetClassName();
         return type.annotated(AnnotationSpec.builder(annotation).build());
     }
 

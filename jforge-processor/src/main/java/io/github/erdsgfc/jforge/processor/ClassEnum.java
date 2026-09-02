@@ -19,6 +19,8 @@ public enum ClassEnum {
     SPRING_AUTOWIRED("org.springframework.beans.factory.annotation", "Autowired"),
     SLF4J_LOGGER("org.slf4j", "Logger"),
     SLF4J_LOGGER_FACTORY("org.slf4j", "LoggerFactory"),
+    NULLABLE("org.jspecify.annotations", "Nullable"),
+    NON_NULL("org.jspecify.annotations", "NonNull"),
     ;
 
     ClassEnum(String packagePath, String className) {
