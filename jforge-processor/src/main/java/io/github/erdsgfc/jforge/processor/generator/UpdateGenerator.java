@@ -13,6 +13,9 @@ import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.lang.model.element.*;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -33,7 +36,7 @@ public final class UpdateGenerator {
     /** 一个 SET 单元。 */
     private static final class SetUnit {
         final String column;       // 列名
-        final String paramName;    // 参数名（绑定表达式）
+        final String paramName;    // 绑定表达式:方法参数名,或条件对象 SET 字段的读取表达式(criteria.getX())
         final String bindType;     // 绑定类型（Optional 剥离后）
         final boolean dynamic;     // @Nullable → null 跳过
         final boolean optional;    // Optional：空 → SET NULL
@@ -107,7 +110,14 @@ public final class UpdateGenerator {
                 }
                 sets.add(unit);
             } else if (parameter.getAnnotation(Where.class) != null) {
-                List<CriteriaGenerator.Unit> units = criteriaGenerator.parse(info, method, parameter);
+                // 条件对象:顶层 @UpdateSet 字段是 SET 修改列(值表达式 = criteria.getX()),
+                // 其余字段是 WHERE 条件。
+                List<SetUnit> criteriaSets = resolveCriteriaSets(info, method, parameter);
+                if (criteriaSets == null) {
+                    return null;
+                }
+                sets.addAll(criteriaSets);
+                List<CriteriaGenerator.Unit> units = criteriaGenerator.parse(info, method, parameter, true);
                 if (units == null) {
                     return null;
                 }
@@ -185,7 +195,7 @@ public final class UpdateGenerator {
                 ClassName.get(StringBuilder.class), baseSql + " SET");
         spec.addStatement("$T setConn = $S", ClassName.get(String.class), "");
         for (SetUnit unit : sets) {
-            emitSetAppend(spec, unit, "setConn", ",");
+            emitSetAppend(spec, unit, "setConn");
         }
         boolean hasWhere = !conditions.isEmpty() || !criteriaUnits.isEmpty();
         if (hasWhere) {
@@ -227,6 +237,69 @@ public final class UpdateGenerator {
     }
 
     // ---- SET 单元解析与生成 ---------------------------------------------------
+
+    /**
+     * 解析 {@code @Where} 条件对象顶层的 {@code @UpdateSet} 字段为 SET 单元——
+     * 字段即修改列的值(绑定表达式 = {@code criteria.getX()}),与 {@code @UpdateSet}
+     * 方法参数的动态语义一致(可空字段 null 跳过 SET、Optional 空 → SET NULL)。
+     * 校验失败的报错已在 {@code CriteriaGenerator.parse} 按场景给出;这里只做字段
+     * 到 SET 单元的映射,无 {@code @UpdateSet} 字段时返回空列表。
+     */
+    private List<SetUnit> resolveCriteriaSets(JForgeProcessor.DaoInfo info, ExecutableElement method,
+            VariableElement parameter) {
+        TypeMirror type = parameter.asType();
+        if (type.getKind() != TypeKind.DECLARED) {
+            return List.of(); // 类型校验失败已在 CriteriaGenerator.parse 报错
+        }
+        TypeElement criteriaType = (TypeElement) ((DeclaredType) type).asElement();
+        String accessor = parameter.getSimpleName().toString();
+        List<SetUnit> sets = new ArrayList<>();
+        for (Element enclosed : criteriaType.getEnclosedElements()) {
+            if (enclosed.getKind() != ElementKind.FIELD) {
+                continue;
+            }
+            VariableElement field = (VariableElement) enclosed;
+            UpdateSet set = field.getAnnotation(UpdateSet.class);
+            if (set == null) {
+                continue;
+            }
+            String readExpr = accessor + "." + criteriaGenerator.readMethodName(criteriaType, field, method);
+            if (readExpr == null) {
+                return null; // getter 缺失已由 readMethodName 报错
+            }
+            TypeMirror fieldType = field.asType();
+            boolean optional = CriteriaGenerator.isOptional(fieldType);
+            boolean primitive = fieldType.getKind().isPrimitive();
+            boolean dynamic = !primitive && Nullability.isNullable(field, fieldType);
+            String bindType = optional
+                    ? CriteriaGenerator.optionalValueType(fieldType, processingEnv.getTypeUtils())
+                    : processingEnv.getTypeUtils().stripAnnotations(fieldType).toString();
+            String valueExpr = optional ? readExpr + CriteriaGenerator.optionalValueMethod(fieldType) : null;
+            String rawSql = set.rawSql();
+            if (!rawSql.isEmpty()) {
+                sets.add(new SetUnit(null, readExpr, bindType, dynamic, optional, valueExpr, rawSql, null));
+                continue;
+            }
+            String fieldName = !set.value().isEmpty() ? set.value() : field.getSimpleName().toString();
+            String column = null;
+            for (EntityModel.ColumnModel model : info.model.columns()) {
+                if (model.fieldName.equals(fieldName)) {
+                    column = model.columnName;
+                    break;
+                }
+            }
+            if (column == null) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "@UpdateSet field '" + fieldName + "' does not match any field of entity "
+                                + info.model.entityQualifiedName(), method);
+                return null;
+            }
+            String converterField = SqlCodegen.converterFieldForField(info.model, fieldName);
+            sets.add(new SetUnit(SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column),
+                    readExpr, bindType, dynamic, optional, valueExpr, null, converterField));
+        }
+        return sets;
+    }
 
     private SetUnit resolveSet(JForgeProcessor.DaoInfo info, ExecutableElement method,
             VariableElement parameter) {
@@ -271,22 +344,21 @@ public final class UpdateGenerator {
                 paramName, bindType, dynamic, optional, valueExpr, null, converterField);
     }
 
-    private void emitSetAppend(MethodSpec.Builder spec, SetUnit unit, String setConnVar,
-            String after) {
+    private void emitSetAppend(MethodSpec.Builder spec, SetUnit unit, String setConnVar) {
         if (unit.dynamic) {
-            spec.beginControlFlow("if ($N != null)", unit.paramName);
+            spec.beginControlFlow("if ($L != null)", unit.paramName);
         }
         if (unit.rawSql != null) {
             // 原生 SET 表达式：Optional 有值才拼（空跳过，rawSql 不生成 = NULL）。
             if (unit.optional) {
-                spec.beginControlFlow("if ($N.isPresent())", unit.paramName);
+                spec.beginControlFlow("if ($L.isPresent())", unit.paramName);
             }
             spec.addStatement("$L.append($L).append($S)", "sql", setConnVar, " " + unit.rawSql);
             if (unit.optional) {
                 spec.endControlFlow();
             }
         } else if (unit.optional) {
-            spec.beginControlFlow("if ($N.isPresent())", unit.paramName);
+            spec.beginControlFlow("if ($L.isPresent())", unit.paramName);
             spec.addStatement("$L.append($L).append($S)", "sql", setConnVar, " " + unit.column + " = ?");
             spec.nextControlFlow("else");
             spec.addStatement("$L.append($L).append($S)", "sql", setConnVar, " " + unit.column + " = NULL");
@@ -302,12 +374,12 @@ public final class UpdateGenerator {
 
     private void emitSetBind(MethodSpec.Builder spec, SetUnit unit) {
         if (unit.dynamic) {
-            spec.beginControlFlow("if ($N != null)", unit.paramName);
+            spec.beginControlFlow("if ($L != null)", unit.paramName);
         }
         if (unit.rawSql != null && !unit.rawSql.contains("?")) {
             // 纯常量 SET 表达式（无 ?）不绑定参数。
         } else if (unit.optional) {
-            spec.beginControlFlow("if ($N.isPresent())", unit.paramName);
+            spec.beginControlFlow("if ($L.isPresent())", unit.paramName);
             spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.valueExpr, "i++", false, false,
                     unit.converterField));
             spec.addCode("\n");

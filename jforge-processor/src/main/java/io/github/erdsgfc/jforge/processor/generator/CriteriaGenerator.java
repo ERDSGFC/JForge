@@ -7,6 +7,7 @@ import io.github.erdsgfc.jforge.annotation.And;
 import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.annotation.JForgeSql;
 import io.github.erdsgfc.jforge.annotation.Or;
+import io.github.erdsgfc.jforge.annotation.UpdateSet;
 import io.github.erdsgfc.jforge.annotation.Where;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
@@ -99,14 +100,18 @@ public final class CriteriaGenerator {
     }
 
     /**
-     * 解析 {@code @Where} 参数的条件对象类型为展开单元列表。
+     * 解析 {@code @Where} 参数的条件对象为 WHERE 展开单元。
      *
-     * @param info      仓库信息（宿主实体列映射）
-     * @param method    仓库方法（报错定位）
-     * @param parameter @Where 参数
+     * @param updateContext 是否处于 {@code @Update} 上下文——为 {@code true} 时条件对象
+     *                      顶层标 {@code @UpdateSet} 的字段是修改字段(SET 列值,由
+     *                      UpdateGenerator 另行解析),不作为 WHERE 条件;{@code @Select}/
+     *                      {@code @Delete} 场景(为 {@code false})出现 {@code @UpdateSet}
+     *                      字段是无处可用的错误用法,编译报错。嵌套组是条件分组,任何
+     *                      场景都不允许含 {@code @UpdateSet} 字段。
      * @return 展开单元；解析失败已报错返回 {@code null}
      */
-    List<Unit> parse(JForgeProcessor.DaoInfo info, ExecutableElement method, VariableElement parameter) {
+    List<Unit> parse(JForgeProcessor.DaoInfo info, ExecutableElement method, VariableElement parameter,
+            boolean updateContext) {
         TypeMirror type = parameter.asType();
         if (type.getKind() != TypeKind.DECLARED) {
             error(method, "@Where parameter must be a criteria object type: " + type);
@@ -122,7 +127,7 @@ public final class CriteriaGenerator {
             error(method, "@Where type must be annotated with @JForgeSql: " + type);
             return null;
         }
-        return parseType(info, method, element, parameter.getSimpleName().toString());
+        return parseType(info, method, element, parameter.getSimpleName().toString(), updateContext, true);
     }
 
     /**
@@ -173,7 +178,7 @@ public final class CriteriaGenerator {
     // ---- 解析 ----------------------------------------------------------------
 
     private List<Unit> parseType(JForgeProcessor.DaoInfo info, ExecutableElement method,
-            TypeElement criteriaType, String accessor) {
+            TypeElement criteriaType, String accessor, boolean updateContext, boolean topLevel) {
         List<Unit> units = new ArrayList<>();
         boolean first = true;
         for (Element enclosed : criteriaType.getEnclosedElements()) {
@@ -181,6 +186,18 @@ public final class CriteriaGenerator {
                 continue;
             }
             VariableElement field = (VariableElement) enclosed;
+            if (field.getAnnotation(UpdateSet.class) != null) {
+                // 修改字段分派:@Update 顶层 → SET(跳过 WHERE);其他位置/场景 → 报错。
+                if (topLevel && updateContext) {
+                    continue;
+                }
+                error(method, topLevel
+                        ? "@UpdateSet fields are only valid in @Update criteria objects: "
+                                + field.getSimpleName()
+                        : "@UpdateSet fields are not allowed inside nested @Where groups: "
+                                + field.getSimpleName());
+                return null;
+            }
             String conn = first ? "" : (field.getAnnotation(Or.class) != null ? " OR " : " AND ");
             first = false;
             String readExpr = accessor + "." + readMethodName(criteriaType, field, method);
@@ -265,7 +282,7 @@ public final class CriteriaGenerator {
                 return null;
             }
             List<Unit> nested = parseType(info, method,
-                    nestedType, readExpr);
+                    nestedType, readExpr, false, false);
             if (nested == null) {
                 return null;
             }
@@ -299,7 +316,7 @@ public final class CriteriaGenerator {
     }
 
     /** 条件对象字段的读取方法名：getXxx()（getter 惯例）或 xxx()（record accessor）。 */
-    private String readMethodName(TypeElement criteriaType, VariableElement field,
+    String readMethodName(TypeElement criteriaType, VariableElement field,
             ExecutableElement method) {
         String name = field.getSimpleName().toString();
         String getter = "get" + Character.toUpperCase(name.charAt(0)) + name.substring(1);

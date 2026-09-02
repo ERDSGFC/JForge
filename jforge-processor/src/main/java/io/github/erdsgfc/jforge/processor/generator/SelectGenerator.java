@@ -176,7 +176,7 @@ public final class SelectGenerator {
         List<CriteriaGenerator.Unit> criteriaUnits = new ArrayList<>();
         for (VariableElement parameter : method.getParameters()) {
             if (parameter.getAnnotation(Where.class) != null) {
-                List<CriteriaGenerator.Unit> units = criteriaGenerator.parse(info, method, parameter);
+                List<CriteriaGenerator.Unit> units = criteriaGenerator.parse(info, method, parameter, false);
                 if (units == null) {
                     return null;
                 }

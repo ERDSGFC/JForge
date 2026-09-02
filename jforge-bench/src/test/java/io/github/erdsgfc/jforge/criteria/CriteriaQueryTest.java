@@ -112,6 +112,61 @@ class CriteriaQueryTest {
         assertEquals("qin", users.get(0).name());
     }
 
+    private CriteriaUser byName(String name) {
+        UserCriteria c = new UserCriteria();
+        c.name = name;
+        return repo.findComplex(c).get(0);
+    }
+    /** 条件对象作 @Update 载体：@UpdateSet 字段 → SET、其余 → WHERE。 */
+    @Test
+    void updateWithCriteriaObject() {
+        CriteriaUser saved = byName("qin");
+
+        UserUpdateCriteria update = new UserUpdateCriteria();
+        update.name = "qi";            // SET user_name = ?
+        update.age = 99;               // SET age = ?
+        update.id = saved.id();        // WHERE id = ?
+
+        assertEquals(1, repo.updateByCriteria(update));
+
+        CriteriaUser found = byName("qi");
+        assertEquals(99, found.age());
+        assertEquals(saved.id(), found.id());
+    }
+
+    /** 条件对象 SET 动态语义：@Nullable age 为 null → 跳过该 SET(仅 SET name)。 */
+    @Test
+    void updateWithCriteriaObjectSkipsNullSet() {
+        CriteriaUser saved = byName("qin");
+        int originalAge = saved.age();
+
+        UserUpdateCriteria update = new UserUpdateCriteria();
+        update.name = "qi";
+        update.id = saved.id();        // age 留 null → SET 跳过
+
+        assertEquals(1, repo.updateByCriteria(update));
+
+        CriteriaUser found = byName("qi");
+        assertEquals(originalAge, found.age(), "null @UpdateSet field must be skipped");
+    }
+
+    /** 条件对象 Optional SET：空 → SET score = NULL。 */
+    @Test
+    void updateWithCriteriaObjectOptionalEmptySetsNull() {
+        CriteriaUser saved = byName("qin");
+        assertTrue(saved.score() != null);
+
+        UserUpdateCriteria update = new UserUpdateCriteria();
+        update.name = "qi";
+        update.score = java.util.Optional.empty();   // → SET score = NULL
+        update.id = saved.id();
+
+        assertEquals(1, repo.updateByCriteria(update));
+
+        CriteriaUser found = byName("qi");
+        assertTrue(found.score() == null, "empty Optional must SET NULL");
+    }
+
     /** 嵌套组非 null 但组内全 null → 空组回退(不产生空括号,条件整体跳过)。 */
     @Test
     void emptyNestedGroupRollsBack() {

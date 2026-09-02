@@ -61,6 +61,10 @@ public interface CriteriaRepository extends BaseRepository<CriteriaUser, Long> {
     @Update
     int incrementScore(@UpdateSet(rawSql = "score = score + ?") Integer increment, @Condition Long id);
 
+    /** 条件对象作 @Update 载体：@UpdateSet 字段 → SET，其余字段 → WHERE。 */
+    @Update
+    int updateByCriteria(@Where UserUpdateCriteria update);
+
     /** rawSql 删除条件：WHERE age > 25。 */
     @Delete
     int deleteOldRaw(@Condition(rawSql = "age > 25") Integer ignored);
