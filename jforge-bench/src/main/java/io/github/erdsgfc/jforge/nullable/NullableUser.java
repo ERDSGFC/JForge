@@ -10,7 +10,7 @@ import org.jspecify.annotations.Nullable;
  * 列空性判定的验证实体（包级 {@code @NullMarked}）：
  * <ul>
  *   <li>{@code name}——显式 {@code @Nullable} → 可空；</li>
- *   <li>{@code nickname}——显式 {@code @NonNull} → 非空；</li>
+ *   <li>{@code nickname}——无显式标注，包级 {@code @NullMarked} 默认非空；</li>
  *   <li>{@code age}——基本类型 {@code int} → 恒非空（NULL 读 0，无 wasNull 分支）；</li>
  *   <li>{@code score}——包装类也必须显式 {@code @Nullable} 才可空。</li>
  * </ul>
@@ -32,10 +32,10 @@ public interface NullableUser {
 
     NullableUser name(@Nullable String name);
 
-    /** 非空：显式 @NonNull。 */
+    /** 非空：无显式标注，包级 {@code @NullMarked} 默认非空。 */
     String nickname();
 
-    NullableUser nickname( String nickname);
+    NullableUser nickname(String nickname);
 
     /** 恒非空：基本类型。 */
     int age();

@@ -122,6 +122,39 @@ public interface UserEntity {
 - setter 必须有同名 getter,且参数类型与 getter 返回类型一致
 - 列名不能重复
 
+### 列空性（JSpecify `@Nullable`/`@NonNull`/`@NullMarked`）
+
+列的"数据库空性"由 getter 声明处的 **JSpecify 空性标注**判定——决定行映射是否生成
+`ResultSet.wasNull()` 判断(可空列 NULL 读回 `null`;不可空列 NULL 读回默认值 0/空串):
+
+| 声明形态 | 列空性 |
+|---|---|
+| 基本类型 getter(`int`/`long`/…) | **恒非空**(NULL 读 0,无 wasNull 分支) |
+| 引用类型标 `@Nullable` | 可空(NULL → null,走 wasNull) |
+| 引用类型标 `@NonNull` | 非空(显式覆盖作用域默认) |
+| 无标注 + 所在作用域 `@NullMarked`(包/类型级) | 非空(默认) |
+| 无标注 + 非 `@NullMarked` 作用域 | **默认可空**(默认反转) |
+
+```java
+@org.jspecify.annotations.NullMarked          // package-info.java:本包及子包默认非空
+package com.example.data;
+```
+
+```java
+public interface User {
+    @Nullable String nickname();   // 可空:显式标注(@Nullable 也标注 setter 参数)
+    User nickname(@Nullable String nickname);
+
+    String name();                 // 非空:包级 @NullMarked 默认
+    int age();                     // 恒非空:基本类型
+}
+```
+
+- `@Nullable`/`@NonNull`/`@NullMarked` 由 jforge-annotation 传递依赖提供(`org.jspecify`,纯注解零运行时负担)
+- 标注可写在类型位置(`@Nullable String name()`)或声明位置;实体 impl 生成的字段/getter/setter 自动补对应标注(`withNullability`),便于工具链空性检查
+- 枚举列同规则;`@Convert` 转换列**不参与**空性判定(null 透传给转换器)
+- 动态 WHERE 参数联动:参数空性按**参数声明所在作用域**判定(仓库接口上的 `@NullMarked` 或包级),基本类型参数恒静态
+
 ### 2.1 自定义类型转换(`@Convert`)
 
 标在 getter 上,用自定义转换器处理 Java 类型 ↔ 数据库类型的转换(如把 `UUID`/`LocalDate`
@@ -206,21 +239,17 @@ ConvertUser findByBirthDate(@Bind(value = "d", converter = StringDateConverter.c
 - 转换器可为同批源码或预编译(与实体列 `@Convert` 同一机制);转换器以 `static final` 字段嵌入
 - 动态 WHERE 下同样生效(运行时索引绑定);`@Nullable` 参数传 `null` 时整段移除(条件跳过)
 
-**@Query 动态 WHERE**(JSpecify `@Nullable` 驱动,两种语法):
+**@Query 动态 WHERE**(JSpecify `@Nullable` 驱动——按占位符所在片段自动推断):
 
 ```java
-/** ① 方括号 [ ] 显式标记动态段(段内参数必须标 @Nullable,否则编译报错) */
-@Query("SELECT id, user_name, age FROM users WHERE [age = :age] AND user_name = :name")
-List<UserEntity> findDynamicByAgeAndName(@Bind("age") @Nullable Integer age, @Bind("name") String name);
-
-/** ② @Nullable 自动推断:恰好一个占位符的片段,参数标 @Nullable 即动态 */
+/** WHERE 片段恰好一个占位符,对应参数标 @Nullable → 该片段动态(null 时整段移除) */
 @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND age = :age")
 List<UserEntity> findAutoDynamicByAgeAndName(@Bind("name") String name, @Bind("age") @Nullable Integer age);
 ```
 
-- 动态段运行时参数为 `null` 时**整段移除**,非 null 时拼接——连接符(`AND`/`OR`)由生成器维护,首个实际执行的条件得 `WHERE`、其后按用户写的连接符,动态段跳过时连接符随之消失
-- 含动态段的 @Query 运行时拼接 SQL(不生成常量字段);纯静态 @Query 仍是 SQL 常量 + 静态绑定(零开销)
-- 多占位符片段不做自动推断(需方括号显式);方括号段强制"恰好一个占位符 + 参数标 `@Nullable`"
+- 运行时参数为 `null` 时该片段**整段移除**,非 null 时拼接——连接符(`AND`/`OR`)由生成器维护,首个实际执行的条件得 `WHERE`、其后按用户写的连接符,动态片段跳过时连接符随之消失
+- 含动态片段的 @Query 运行时拼接 SQL(不生成常量字段);纯静态 @Query 仍是 SQL 常量 + 静态绑定(零开销)
+- 多占位符片段恒静态(不自动推断);参数空性按所在作用域判定(`@NullMarked` 内非标注解即非空)
 
 **@Query + @Condition 追加条件**(手写 SQL 之外自动追加条件):
 
@@ -235,7 +264,8 @@ List<UserEntity> find(@Bind("name") String name, @Condition(value = "age", op = 
 ```
 
 - 标注 `@Condition` 的参数(可同时标 `@Bind`)自动追加为条件:`字段 = @Condition.value`(缺省按参数名) → 实体列,`op` 指定操作符;追加条件用 `AND` 连接(无 WHERE 时补 `WHERE`)
-- `@Nullable` 决定动态性:标了则 null 时跳过(运行时拼接),未标则恒拼接(进入 SQL 常量)
+- **参数空性决定动态性**(JSpecify 判定,见"列空性"):可空参数(显式 `@Nullable` 或非 `@NullMarked`
+  作用域默认)null 时跳过(运行时拼接);非空参数(基本类型或 `@NullMarked` 作用域)恒拼接(进入 SQL 常量)
 
 ### @Select 声明式查询（不写 SQL）
 
@@ -265,8 +295,12 @@ List<UserNameDto> findNameDtoById(Long id);                        // record 投
 - **条件参数自动复用列转换器**:条件字段映射到实体列、且该列标了 `@Convert` 时,绑定自动经
   `ps.setObject(i, CONV.toDatabase(param), CONV.sqlType())`(无需注解)——条件值须与列存
   相同的转换后表示才能命中;`@Update` 的 `@UpdateSet` SET 值同样自动经列转换器写库
-- **JSpecify `@Nullable` 参数动态拼接**(`org.jspecify.annotations.Nullable`,经 jforge-annotation 传递依赖提供):运行时为 `null` 时跳过该条件(MyBatis 风格动态 WHERE);未标注的参数始终拼接
-- **生成形态自动选择**:方法不含任何 `@Nullable` 参数时,编译期拼出完整 SQL 常量 + 静态索引绑定(与手写 JDBC 等价);含动态参数才生成运行时拼接(where 前缀变量 + 条件 if 块)
+- **参数空性决定动态拼接**(JSpecify 判定,经 jforge-annotation 传递依赖提供):可空参数运行时为
+  `null` 时跳过该条件(MyBatis 风格动态 WHERE);非空参数(基本类型恒非空;引用类型按 `@Nullable`/
+  `@NonNull`/`@NullMarked` 判定)始终拼接
+- **生成形态自动选择**:方法全部参数为非空(基本类型或 `@NullMarked` 作用域)且无 `Optional` 条件时,
+  编译期拼出完整 SQL 常量 + 静态索引绑定(与手写 JDBC 等价);含可空/`Optional` 条件才生成运行时拼接
+  (where 前缀变量 + 条件 if 块)
 - 与 `@Query` 互斥(同一方法只能标一个)
 
 ### 条件对象（`@Where` 复杂 WHERE）
@@ -274,11 +308,18 @@ List<UserNameDto> findNameDtoById(Long id);                        // record 投
 `@Where` 参数是**条件对象**——处理器递归展开其字段为 WHERE 条件,支持分组括号与 `OR` 连接:
 
 ```java
-public class UserCriteria {
+@JForgeSql
+public class UserCriteria {                          // 条件对象类型须标 @JForgeSql
     String name;                                     // user_name = ?（null 跳过）
     @Or @Condition(op = Op.GT) Integer age;          // OR age > ?
     @Condition(value = "name") Optional<String> nickname;  // IS NULL（空）/ = ?（有值）
-    AddressCriteria address;                         // AND (city = ? AND street = ?)
+    @Where AddressCriteria address;                  // AND (city = ? AND street = ?)——嵌套须显式 @Where
+}
+
+@JForgeSql
+public class AddressCriteria {                       // 嵌套组类型同样须 @JForgeSql
+    String city;
+    String street;
 }
 
 @Select
@@ -286,8 +327,10 @@ List<UserEntity> findComplex(@Where UserCriteria criteria);
 // → WHERE user_name = ? OR age > ? AND (city = ? AND street = ?)（按运行时字段值动态拼装）
 ```
 
-- **值类型字段**（基本/包装/`String`/日期/枚举…）→ 单条件 `列 op ?`;字段名经命名策略映射列,`@Condition` 可指定字段与操作符;字段值为 `null` 时跳过
-- **自定义类字段**（非 JDK 值类型）→ **括号分组** `( ... )` 递归展开,为 `null` 时整个括号跳过
+- **类型标记**:条件对象类型(含嵌套组类型)必须标注 `@JForgeSql`——`@Where` 参数或嵌套字段的类型未标注时编译报错
+- **嵌套分组**:自定义类字段**必须显式标注 `@Where`** 才展开为括号分组 `( ... )`(避免普通自定义值类型被误判为条件组),为 `null` 时整个括号跳过
+- **值类型字段**（基本/包装/`String`/日期/枚举…）→ 单条件 `列 op ?`;字段名经命名策略映射列,`@Condition` 可指定字段与操作符;字段值为 `null` 时跳过(字段空性同样按 JSpecify 判定——`@NullMarked` 作用域内非标注解即非空、恒拼)
+- **数组/集合字段** → `列 IN (?,?,...)`(仅等于语义)
 - **连接符**:字段上的 `@And`/`@Or` 定义与上一条件的连接(缺省 `AND`)
 - **`Optional` 三族**（`Optional`/`OptionalInt`/`OptionalLong`）:值为空 → `列 IS NULL`(显式空值查询);有值 → `列 op ?`;`Optional` 本身为 `null` → 跳过
 - 条件对象字段的读取方法:getter 惯例(`getName()`)、record accessor(`name()`)或 `isXxx()`;列映射失败编译报错
