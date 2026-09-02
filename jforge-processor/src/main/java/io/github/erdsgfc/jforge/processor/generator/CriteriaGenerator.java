@@ -2,6 +2,7 @@ package io.github.erdsgfc.jforge.processor.generator;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeName;
 import io.github.erdsgfc.jforge.annotation.And;
 import io.github.erdsgfc.jforge.annotation.Condition;
 import io.github.erdsgfc.jforge.annotation.JForgeSql;
@@ -56,7 +57,7 @@ public final class CriteriaGenerator {
         final String rawSql;        // 原生 SQL 片段（非 null 替代 column/op；含 ? 绑定字段值）
         boolean collection;
         boolean array;
-        String elementType;
+        TypeName elementType;
 
         Unit(String conn, String column, String op, String readExpr, String valueExpr,
                 String bindType, String guard, boolean optional, List<Unit> nested, String rawSql) {
@@ -77,7 +78,7 @@ public final class CriteriaGenerator {
 
         Unit(String conn, String column, String op, String readExpr, String valueExpr,
                 String bindType, String guard, boolean optional, List<Unit> nested, String rawSql,
-                boolean collection, boolean array, String elementType) {
+                boolean collection, boolean array, TypeName elementType) {
             this(conn, column, op, readExpr, valueExpr, bindType, guard, optional, nested, rawSql);
             this.collection = collection;
             this.array = array;
@@ -244,9 +245,11 @@ public final class CriteriaGenerator {
             }
             String column = findColumn(info, method, condition, field.getSimpleName().toString());
             if (column == null) return null;
-            String elementType = array ? ((javax.lang.model.type.ArrayType) fieldType).getComponentType().toString()
+            TypeName elementType = array
+                    ? TypeName.get(types.stripAnnotations(
+                            ((javax.lang.model.type.ArrayType) fieldType).getComponentType()))
                     : iterableElementType(fieldType);
-            return new Unit(conn, column, "=", readExpr, null, elementType,
+            return new Unit(conn, column, "=", readExpr, null, elementType.toString(),
                     Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null,
                     false, null, null, collection, array, elementType);
         }
@@ -350,10 +353,11 @@ public final class CriteriaGenerator {
         return types.directSupertypes(type).stream().anyMatch(this::isIterable);
     }
 
-    private String iterableElementType(TypeMirror type) {
-        if (type.getKind() != TypeKind.DECLARED) return "java.lang.Object";
+    private TypeName iterableElementType(TypeMirror type) {
+        if (type.getKind() != TypeKind.DECLARED) return ClassName.get(Object.class);
         List<? extends TypeMirror> args = ((DeclaredType) type).getTypeArguments();
-        return args.isEmpty() ? "java.lang.Object" : types.stripAnnotations(args.getFirst()).toString();
+        return args.isEmpty() ? ClassName.get(Object.class)
+                : TypeName.get(types.stripAnnotations(args.getFirst()));
     }
 
     // ---- 生成 ----------------------------------------------------------------
@@ -383,7 +387,7 @@ public final class CriteriaGenerator {
                 spec.addStatement("$T inSql_$L = new $T()", ClassName.get(StringBuilder.class),
                         seq, ClassName.get(StringBuilder.class));
                 spec.addStatement("int idx_$L = 0", seq);
-                spec.beginControlFlow("for ($L value : $L)", unit.elementType, unit.readExpr);
+                spec.beginControlFlow("for ($T value : $L)", unit.elementType, unit.readExpr);
                 spec.beginControlFlow("if (idx_$L > 0)", seq);
                 spec.addStatement("inSql_$L.append($S)", seq, ",?");
                 spec.nextControlFlow("else");
@@ -445,7 +449,7 @@ public final class CriteriaGenerator {
             // 直接遍历 getter 返回值绑值(零临时内存;空集时循环 0 次,与拼接阶段的
             // 1 = 0 分支一致——无占位符可绑)。
             beginGuard(spec, unit.guard);
-            spec.beginControlFlow("for ($L value : $L)", unit.elementType, unit.readExpr);
+            spec.beginControlFlow("for ($T value : $L)", unit.elementType, unit.readExpr);
             spec.addCode(SqlCodegen.bindParam(unit.bindType, "value", "i++", true, false, null));
             spec.addCode("\n");
             spec.endControlFlow();
