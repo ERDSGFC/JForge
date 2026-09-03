@@ -34,4 +34,11 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 public @interface Where {
+    /**
+     * 是否强制要求条件对象类型标注 {@link JForgeSql}。
+     * <p>默认为 {@code true}。设置为 {@code false} 时，处理器仍会按字段/record
+     * 组件展开条件，但允许该类型未标注 {@code @JForgeSql}。根参数和嵌套字段
+     * 分别读取各自的 {@code value} 设置。</p>
+     */
+    boolean value() default true;
 }

@@ -126,9 +126,12 @@ public final class CriteriaGenerator {
             error(method, "@Where parameter must be a class or record: " + type);
             return null;
         }
-        if (element.getAnnotation(JForgeSql.class) == null) {
-            error(method, "@Where type must be annotated with @JForgeSql: " + type);
-            return null;
+        Where rootWhere = parameter.getAnnotation(Where.class);
+        if (rootWhere == null || rootWhere.value()) {
+            if (element.getAnnotation(JForgeSql.class) == null) {
+                error(method, "@Where type must be annotated with @JForgeSql: " + type);
+                return null;
+            }
         }
         return parseType(info, method, element, parameter.getSimpleName().toString(), updateContext, true);
     }
@@ -284,7 +287,9 @@ public final class CriteriaGenerator {
                 return null;
             }
             TypeElement nestedType = (TypeElement) ((DeclaredType) fieldType).asElement();
-            if (nestedType.getAnnotation(JForgeSql.class) == null) {
+            Where nestedWhere = field.getAnnotation(Where.class);
+            if ((nestedWhere == null || nestedWhere.value())
+                    && nestedType.getAnnotation(JForgeSql.class) == null) {
                 error(method, "Nested @Where type must be annotated with @JForgeSql: " + fieldType);
                 return null;
             }

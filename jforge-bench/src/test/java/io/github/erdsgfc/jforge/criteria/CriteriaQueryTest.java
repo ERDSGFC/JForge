@@ -57,6 +57,11 @@ class CriteriaQueryTest {
         assertEquals(3, all.size());
     }
 
+    @Test
+    void whereValueFalseAllowsUnmarkedCriteriaType() {
+        assertEquals(1, repo.findByLoose(new LooseCriteria("qin")).size());
+    }
+
     /** 条件对象集合字段：IN 条件（非空命中 / 空集合 → 1 = 0 无匹配）。 */
     @Test
     void collectionFieldGeneratesIn() {

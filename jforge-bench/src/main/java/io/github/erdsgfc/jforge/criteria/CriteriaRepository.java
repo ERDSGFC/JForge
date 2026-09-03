@@ -21,6 +21,10 @@ public interface CriteriaRepository extends BaseRepository<CriteriaUser, Long> {
     @Select
     List<CriteriaUser> findComplex(@Where UserCriteria user);
 
+    /** value=false 允许条件对象未标注 @JForgeSql。 */
+    @Select
+    List<CriteriaUser> findByLoose(@Where(value = false) LooseCriteria criteria);
+
     /** Optional 参数：isEmpty → user_name IS NULL；有值 → user_name = ?（列映射 name 字段）。 */
     @Select
     List<CriteriaUser> findByNickname(@Condition(value = "name") @Nullable Optional<String> nickname);
