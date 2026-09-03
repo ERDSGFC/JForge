@@ -201,7 +201,7 @@ record WhereCondition(String columnName, String op, String paramName, String typ
                 spec.addStatement("idx_$L++", c.paramName);
                 spec.endControlFlow();
                 spec.beginControlFlow("if (idx_$L == 0)", c.paramName);
-                spec.addStatement("sql.append(where).append($S)", emptyCollectionSql(c.op));
+                spec.addStatement("sql.append(where).append($S)", CriteriaGenerator.emptyCollectionSql(c.op));
                 spec.nextControlFlow("else");
                 spec.addStatement("sql.append(where).append($S).append(inSql_$L).append($S)",
                         " " + c.columnName + " " + c.op + " (", c.paramName, ")");
@@ -209,7 +209,7 @@ record WhereCondition(String columnName, String op, String paramName, String typ
             } else {
                 // 数组:长度循环前可知(无快照)——判空后首项外提拼占位符。
                 spec.beginControlFlow("if ($L == 0)", c.paramName + ".length");
-                spec.addStatement("sql.append(where).append($S)", emptyCollectionSql(c.op));
+                spec.addStatement("sql.append(where).append($S)", CriteriaGenerator.emptyCollectionSql(c.op));
                 spec.nextControlFlow("else");
                 spec.addStatement("sql.append(where).append($S)", " " + c.columnName + " " + c.op + " (?");
                 spec.beginControlFlow("for (int j = 1; j < $L; j++)", c.paramName + ".length");
@@ -233,9 +233,6 @@ record WhereCondition(String columnName, String op, String paramName, String typ
         if (c.dynamic) spec.endControlFlow();
     }
 
-    private static String emptyCollectionSql(String op) {
-        return "NOT IN".equals(op) ? " 1 = 1" : " 1 = 0";
-    }
 
     /**
      * 生成一个条件的动态参数绑定代码（与 {@link #appendSql} 同条件展开，索引递增）。

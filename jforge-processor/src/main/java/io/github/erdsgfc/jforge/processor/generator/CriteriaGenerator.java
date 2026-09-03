@@ -474,7 +474,7 @@ public final class CriteriaGenerator {
         endGuard(spec, unit.guard);
     }
 
-    private static String emptyCollectionSql(String op) {
+    static String emptyCollectionSql(String op) {
         return "NOT IN".equals(op) ? " 1 = 1" : " 1 = 0";
     }
 
