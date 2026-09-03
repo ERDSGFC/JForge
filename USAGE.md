@@ -303,9 +303,10 @@ List<UserNameDto> findNameDtoById(Long id);                        // record 投
 
 - **返回类型**决定 SELECT 列:实体/{@code List<实体>} → 全列(FROM 宿主表,只能返回宿主实体);record → 组件列(组件名经命名策略);标量(`long`/`int`/`boolean`) → `COUNT(*)`
 - **参数即条件**,默认等于(`col = ?`);`@Condition(value = "字段名", op = Op.X)` 可指定字段(缺省按参数名)与操作符(`EQ/NE/GT/LT/GE/LE/LIKE/NOT_LIKE`);字段必须匹配实体字段或 record 组件,否则编译报错
-- **数组/集合参数 → `IN` 条件**(`Iterable` 与数组统一):`findByIdIn(List<Long> ids)` /
-  `findByIdArray(long[] ids)` → `WHERE id IN (?,?,...)`;空集合/空数组 → `1 = 0`(恒假,不匹配
-  任何行);仅支持等于语义(标 `@Condition(op = EQ)` 之外的 op 编译报错);多维数组、与
+- **数组/集合参数 → `IN`/`NOT IN` 条件**(`Iterable` 与数组统一):`findByIdIn(List<Long> ids)` /
+  `findByIdArray(long[] ids)` → `WHERE id IN (?,?,...)`;使用 `@Condition(op = Op.NE)` 时生成
+  `WHERE id NOT IN (?,?,...)`;空集合/空数组分别生成 `1 = 0`(恒假) / `1 = 1`(恒真);
+  仅支持 `EQ`/`NE`，其他 op 编译报错;多维数组、与
   `@Condition(rawSql)` 组合编译报错;集合元素与数组元素逐个绑定(元素可空走 `setObject`)
 - **条件参数自动复用列转换器**:条件字段映射到实体列、且该列标了 `@Convert` 时,绑定自动经
   `ps.setObject(i, CONV.toDatabase(param), CONV.sqlType())`(无需注解)——条件值须与列存
@@ -368,7 +369,8 @@ List<UserEntity> findComplex(@Where UserCriteria criteria);
 - **类型标记**:条件对象类型(含嵌套组类型)必须标注 `@JForgeSql`——`@Where` 参数或嵌套字段的类型未标注时编译报错
 - **嵌套分组**:自定义类字段**必须显式标注 `@Where`** 才展开为括号分组 `( ... )`(避免普通自定义值类型被误判为条件组),为 `null` 时整个括号跳过
 - **值类型字段**（基本/包装/`String`/日期/枚举…）→ 单条件 `列 op ?`;字段名经命名策略映射列,`@Condition` 可指定字段与操作符;字段值为 `null` 时跳过(字段空性同样按 JSpecify 判定——`@NullMarked` 作用域内非标注解即非空、恒拼)
-- **数组/集合字段** → `列 IN (?,?,...)`(仅等于语义);空集合/空数组 → `1 = 0`(恒假);多维数组、与 `@Condition(rawSql)` 组合编译报错
+- **数组/集合字段** → `列 IN/NOT IN (?,?,...)`(`@Condition(op = Op.NE)` 生成 `NOT IN`);
+  空集合/空数组分别为 `1 = 0` / `1 = 1`;仅支持 `EQ`/`NE`;多维数组、与 `@Condition(rawSql)` 组合编译报错
 - **连接符**:字段上的 `@And`/`@Or` 定义与上一条件的连接(缺省 `AND`)
 - **`Optional` 三族**（`Optional`/`OptionalInt`/`OptionalLong`）:值为空 → `列 IS NULL`(显式空值查询);有值 → `列 op ?`;`Optional` 本身为 `null` → 跳过
 - 条件对象字段的读取方法:getter 惯例(`getName()`)、record accessor(`name()`)或 `isXxx()`;列映射失败编译报错

@@ -27,6 +27,7 @@ import java.util.List;
  * <ul>
  *   <li>值类型字段 → 单条件 {@code 列 op ?}（字段名经命名策略映射列；{@link Condition}
  *       可指定字段与操作符；字段值为 {@code null} 时跳过）；</li>
+ *   <li>数组/集合字段 → {@code IN}/{@code NOT IN} 条件（{@link Op#EQ}/{@link Op#NE}）；</li>
  *   <li>{@code Optional}/{@code OptionalInt}/{@code OptionalLong} 字段 →
  *       {@code isEmpty()} 时生成 {@code 列 IS NULL}（显式空值查询）、有值时生成条件；</li>
  *   <li>自定义类字段（非 JDK 值类型）→ 括号分组 {@code ( ... )}，递归展开，
@@ -269,8 +270,9 @@ public final class CriteriaGenerator {
                 error(method, "Multi-dimensional array @Where fields are not supported");
                 return null;
             }
-            if (condition != null && condition.op() != io.github.erdsgfc.jforge.annotation.Op.EQ) {
-                error(method, "Iterable/array @Where fields only support @Condition(op = EQ)");
+            if (condition != null && condition.op() != io.github.erdsgfc.jforge.annotation.Op.EQ
+                    && condition.op() != io.github.erdsgfc.jforge.annotation.Op.NE) {
+                error(method, "Iterable/array @Where fields only support @Condition(op = EQ) or @Condition(op = NE)");
                 return null;
             }
             String column = findColumn(info, method, condition, field.getSimpleName().toString());
@@ -279,7 +281,9 @@ public final class CriteriaGenerator {
                     ? TypeName.get(types.stripAnnotations(
                             ((javax.lang.model.type.ArrayType) fieldType).getComponentType()))
                     : iterableElementType(fieldType);
-            Unit collectionUnit = new Unit(conn, column, "=", readExpr, null, elementType.toString(),
+            String op = condition != null && condition.op() == io.github.erdsgfc.jforge.annotation.Op.NE
+                    ? "NOT IN" : "IN";
+            Unit collectionUnit = new Unit(conn, column, op, readExpr, null, elementType.toString(),
                     Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null,
                     false, null, null, collection, array, elementType);
             collectionUnit.converterField = converterOf(info, condition, field.getSimpleName().toString());
@@ -425,7 +429,7 @@ public final class CriteriaGenerator {
         if (unit.collection || unit.array) {
             if (unit.collection) {
                 // 集合:直接遍历 getter 返回值拼占位符,零临时内存。占位符先入局部缓冲
-                // (空集判定在循环后才知道:空 → 1 = 0,不能先拼 "IN (")。
+                // (空集判定在循环后才知道，不能先拼 IN/NOT IN 的左括号)。
                 int seq = ++varSeq;
                 spec.addStatement("$T inSql_$L = new $T()", ClassName.get(StringBuilder.class),
                         seq, ClassName.get(StringBuilder.class));
@@ -439,17 +443,17 @@ public final class CriteriaGenerator {
                 spec.addStatement("idx_$L++", seq);
                 spec.endControlFlow();
                 spec.beginControlFlow("if (idx_$L == 0)", seq);
-                spec.addStatement("sql.append($L).append($S)", whereVar, " 1 = 0");
+                spec.addStatement("sql.append($L).append($S)", whereVar, emptyCollectionSql(unit.op));
                 spec.nextControlFlow("else");
                 spec.addStatement("sql.append($L).append($S).append(inSql_$L).append($S)",
-                        whereVar, " " + unit.column + " IN (", seq, ")");
+                        whereVar, " " + unit.column + " " + unit.op + " (", seq, ")");
                 spec.endControlFlow();
             } else {
                 // 数组:长度循环前可知——判空后首项外提拼占位符。
                 spec.beginControlFlow("if ($L.length == 0)", unit.readExpr);
-                spec.addStatement("sql.append($L).append($S)", whereVar, " 1 = 0");
+                spec.addStatement("sql.append($L).append($S)", whereVar, emptyCollectionSql(unit.op));
                 spec.nextControlFlow("else");
-                spec.addStatement("sql.append($L).append($S)", whereVar, " " + unit.column + " IN (?");
+                spec.addStatement("sql.append($L).append($S)", whereVar, " " + unit.column + " " + unit.op + " (?");
                 spec.beginControlFlow("for (int j = 1; j < $L.length; j++)", unit.readExpr);
                 spec.addStatement("sql.append($S)", ",?");
                 spec.endControlFlow();
@@ -468,6 +472,10 @@ public final class CriteriaGenerator {
         }
         spec.addStatement("$L = $S", whereVar, after);
         endGuard(spec, unit.guard);
+    }
+
+    private static String emptyCollectionSql(String op) {
+        return "NOT IN".equals(op) ? " 1 = 1" : " 1 = 0";
     }
 
     private void emitUnitBind(MethodSpec.Builder spec, Unit unit, String indexVar) {

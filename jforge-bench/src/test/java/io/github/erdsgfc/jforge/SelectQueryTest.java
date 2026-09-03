@@ -173,6 +173,14 @@ class SelectQueryTest {
         assertTrue(repo.findByIdIn(List.of()).isEmpty());
     }
 
+    @Test
+    void notInConditionsUseNotInAndEmptyIsTrue() {
+        assertEquals(1, repo.findByIdNotIn(List.of(1L, 2L)).size());
+        assertEquals(3, repo.findByIdNotIn(List.of()).size());
+        assertEquals(1, repo.findByIdNotInArray(new long[]{1L, 2L}).size());
+        assertEquals(3, repo.findByIdNotInArray(new long[]{}).size());
+    }
+
     /** 无 {@code @NullMarked} 时，未标注实体引用类型生成 {@code @Nullable}。 */
     @Test
     void unmarkedEntityTypesAreGeneratedNullable() throws ReflectiveOperationException {
@@ -312,5 +320,14 @@ class SelectQueryTest {
         assertEquals("qin", users.get(0).name());
 
         assertTrue(repo.findWithAppendedStaticWhere("qin", 30).isEmpty());
+    }
+
+    @Test
+    void queryWithAppendedNotInCollection() {
+        assertEquals(1, repo.findByQueryNotIn(List.of(1L, 2L)).size());
+        assertEquals(3, repo.findByQueryNotIn(List.of()).size());
+        assertEquals(3, repo.findByQueryNotIn(null).size());
+        assertEquals(1, repo.findByQueryNotInArray(new long[]{1L, 2L}).size());
+        assertEquals(3, repo.findByQueryNotInArray(new long[]{}).size());
     }
 }

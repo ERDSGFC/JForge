@@ -84,6 +84,20 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
     @Select
     List<UserEntity> findByIdArray(long[] id);
 
+    /** {@code @Condition(op = Op.NE)} 集合参数生成 {@code NOT IN}。 */
+    @Select
+    List<UserEntity> findByIdNotIn(@Condition(value = "id", op = Op.NE) List<Long> ids);
+
+    @Select
+    List<UserEntity> findByIdNotInArray(@Condition(value = "id", op = Op.NE) long[] ids);
+
+    /** {@code @Query + @Condition(op = Op.NE)} 集合参数动态展开。 */
+    @Query("SELECT id, user_name, age FROM users")
+    List<UserEntity> findByQueryNotIn(@Condition(value = "id", op = Op.NE) List<Long> ids);
+
+    @Query("SELECT id, user_name, age FROM users")
+    List<UserEntity> findByQueryNotInArray(@Condition(value = "id", op = Op.NE) long[] ids);
+
     /** 操作符：{@code age > ?}。 */
     @Select
     List<UserEntity> findOlderThan(@Condition(op = Op.GT) Integer age);

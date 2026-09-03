@@ -137,7 +137,7 @@ public final class QueryGenerator {
         String sqlField = SqlFieldGenerator.methodSqlFieldName(methodName, overloadIndex);
         ParsedWhere parsed = parseWhere(query.value());
         Map<String, VariableElement> binds = bindsOf(method);
-        // @Condition 参数 → 追加条件片段（伪占位符 = 参数名，复用占位符绑定与 @Nullable 动态机制）。
+        // @Condition 参数 → 追加条件片段（集合/数组保留结构化条件，运行时展开占位符）。
         Map<String, VariableElement> conditionParams = new HashMap<>();
         List<WhereFragment> appended = new ArrayList<>();
         for (VariableElement parameter : method.getParameters()) {
@@ -301,6 +301,12 @@ public final class QueryGenerator {
         List<List<VariableElement>> bindUnits = new ArrayList<>();
         List<Boolean> dynamics = new ArrayList<>();
         for (WhereFragment fragment : fragments) {
+            if (fragment.condition != null) {
+                texts.add(null);
+                bindUnits.add(List.of());
+                dynamics.add(true);
+                continue;
+            }
             SqlCodegen.PlaceholderResult parsedPlaceholders = SqlCodegen.parsePlaceholders(
                     fragment.text, info.model.dialectSupport());
             List<String> placeholders = parsedPlaceholders.names();
@@ -343,6 +349,10 @@ public final class QueryGenerator {
             String nextConn = (i + 1 < fragments.size() && !fragments.get(i + 1).conn.isEmpty())
                     ? fragments.get(i + 1).conn
                     : " AND ";
+            if (fragments.get(i).condition != null) {
+                WhereCondition.appendSql(spec, fragments.get(i).condition);
+                continue;
+            }
             if (dynamics.get(i)) {
                 spec.beginControlFlow("if ($N != null)", bindUnits.get(i).get(0).getSimpleName());
             }
@@ -361,6 +371,10 @@ public final class QueryGenerator {
         // 绑定阶段:与拼接同条件展开,运行时索引 i 递增,类型精确 setXxx。
         spec.addStatement("int i = 1");
         for (int f = 0; f < fragments.size(); f++) {
+            if (fragments.get(f).condition != null) {
+                WhereCondition.appendBind(spec, fragments.get(f).condition);
+                continue;
+            }
             if (dynamics.get(f)) {
                 spec.beginControlFlow("if ($N != null)", bindUnits.get(f).get(0).getSimpleName());
             }
@@ -393,12 +407,22 @@ public final class QueryGenerator {
 
     /**
      * 解析 {@code @Condition} 参数为追加条件片段:字段名取 {@link Condition#value()}(缺省按参数名),
-     * 列名从宿主实体字段映射,文本以参数名作伪占位符(复用占位符绑定与 @Nullable 动态机制)。
+     * 列名从宿主实体字段映射。数组/集合保留 {@link WhereCondition} 结构，供动态路径按
+     * 元素数量展开 {@code IN}/{@code NOT IN} 占位符；标量继续使用参数名伪占位符。
      * 连接符:SQL 已有 WHERE 片段时用 {@code " AND "},否则空(where 前缀变量给 WHERE)。
      */
     private WhereFragment appendFragment(JForgeProcessor.DaoInfo info, ExecutableElement method,
             VariableElement parameter, Condition where, boolean first) {
         if (!where.rawSql().isEmpty()) {
+            TypeMirror strippedType = processingEnv.getTypeUtils().stripAnnotations(parameter.asType());
+            boolean array = strippedType.getKind() == TypeKind.ARRAY;
+            boolean collection = !CriteriaGenerator.isOptional(strippedType)
+                    && isIterable(strippedType);
+            if (array || collection) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "Iterable/array parameters cannot be used with @Condition(rawSql)", parameter);
+                return null;
+            }
             if (where.rawSql().contains("?")) {
                 processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
                         "@Condition(rawSql) with '?' is not supported on @Query; use @Bind in the SQL text",
@@ -407,25 +431,17 @@ public final class QueryGenerator {
             }
             return new WhereFragment(first ? "" : " AND ", where.rawSql());
         }
-        String fieldName = where.value().isEmpty()
-                ? parameter.getSimpleName().toString()
-                : where.value();
-        String columnName = null;
-        for (EntityModel.ColumnModel column : info.model.columns()) {
-            if (column.fieldName.equals(fieldName)) {
-                columnName = column.columnName;
-                break;
-            }
-        }
-        if (columnName == null) {
-            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "@Condition parameter field '" + fieldName + "' does not match any field of entity "
-                            + info.model.entityQualifiedName(), method);
+        WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
+                processingEnv, "@Query");
+        if (condition == null) {
             return null;
         }
-        return new WhereFragment(first ? "" : " AND ",
-                SqlCodegen.quoteIdentifier(info.model.dialectSupport(), columnName)
-                        + " " + where.op().sql() + " :" + parameter.getSimpleName());
+        String conn = first ? "" : " AND ";
+        if (condition.collection() || condition.array()) {
+            return new WhereFragment(conn, condition);
+        }
+        return new WhereFragment(conn,
+                condition.columnName() + " " + condition.op() + " :" + parameter.getSimpleName());
     }
 
     /**
@@ -631,14 +647,22 @@ public final class QueryGenerator {
         }
     }
 
-    /** 一个 WHERE 条件片段：前导连接符 + 条件文本（占位符仍为 {@code :name}）。 */
+    /** 一个 WHERE 条件片段：前导连接符 + 文本，或运行时展开的结构化条件。 */
     static final class WhereFragment {
         final String conn;       // 前导连接符（" AND "/" OR "；首片段 "")
         final String text;       // 条件文本
+        final WhereCondition condition; // 集合/数组条件；非 null 时 text 为 null
 
         WhereFragment(String conn, String text) {
             this.conn = conn;
             this.text = text;
+            this.condition = null;
+        }
+
+        WhereFragment(String conn, WhereCondition condition) {
+            this.conn = conn;
+            this.text = null;
+            this.condition = condition;
         }
     }
 
@@ -790,6 +814,9 @@ public final class QueryGenerator {
      */
     private static boolean isDynamicFragment(WhereFragment fragment, Map<String, VariableElement> binds,
             DialectSupport dialect) {
+        if (fragment.condition != null) {
+            return fragment.condition.collection() || fragment.condition.array() || fragment.condition.dynamic();
+        }
         List<String> placeholders = new ArrayList<>();
         placeholders.addAll(SqlCodegen.parsePlaceholders(fragment.text, dialect).names());
         if (placeholders.size() != 1) {
@@ -797,6 +824,13 @@ public final class QueryGenerator {
         }
         VariableElement parameter = binds.get(placeholders.get(0));
         return parameter != null && isNullableParameter(parameter);
+    }
+
+    private boolean isIterable(TypeMirror type) {
+        if (type.getKind() != TypeKind.DECLARED) return false;
+        TypeMirror iterable = processingEnv.getElementUtils().getTypeElement("java.lang.Iterable").asType();
+        return processingEnv.getTypeUtils().isAssignable(processingEnv.getTypeUtils().erasure(type),
+                processingEnv.getTypeUtils().erasure(iterable));
     }
 
     /** 参数是否标注 JSpecify {@code @Nullable}（公共工具,见 {@link Nullability}）。 */
@@ -813,6 +847,9 @@ public final class QueryGenerator {
         String sql = SqlCodegen.parsePlaceholders(query.value(), info.model.dialectSupport()).sql();
         boolean first = parsed == null || parsed.fragments.isEmpty();
         for (WhereFragment fragment : appended) {
+            if (fragment.condition != null) {
+                continue;
+            }
             SqlCodegen.PlaceholderResult placeholders = SqlCodegen.parsePlaceholders(
                     fragment.text, info.model.dialectSupport());
             List<String> names = placeholders.names();

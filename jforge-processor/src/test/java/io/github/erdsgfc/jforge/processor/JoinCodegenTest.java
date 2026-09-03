@@ -38,4 +38,32 @@ class JoinCodegenTest {
                 generated);
         assertTrue(generated.contains("\\\"departments\\\".\\\"name\\\" = ?"), generated);
     }
+
+    @Test
+    void acceptsNotInForCollectionAndRejectsOtherCollectionOperators() throws Exception {
+        String source = """
+                package test;
+                import io.github.erdsgfc.jforge.annotation.*;
+                import io.github.erdsgfc.jforge.core.BaseRepository;
+                import java.util.List;
+                @Table(name = "users") interface User {
+                    @Id Long id(); User id(Long v);
+                }
+                @Dao public interface GoodRepository extends BaseRepository<User, Long> {
+                    @Select List<User> find(@Condition(value = "id", op = Op.NE) List<Long> ids);
+                }
+                """;
+        CompilationHelper.CompilationResult good = CompilationHelper.compile(
+                "test.GoodRepository", source, new JForgeProcessor());
+        assertTrue(good.success, () -> good.diagnostics.toString());
+        assertTrue(good.generatedSources.get("test.GoodRepository_Impl").contains("NOT IN"));
+
+        String invalid = source.replace("GoodRepository", "BadRepository")
+                .replace("op = Op.NE", "op = Op.GT");
+        CompilationHelper.CompilationResult bad = CompilationHelper.compile(
+                "test.BadRepository", invalid, new JForgeProcessor());
+        assertTrue(!bad.success, "non-EQ/NE collection operators must be rejected");
+        assertTrue(bad.diagnostics.stream().anyMatch(d -> d.getMessage(null).contains("only support")),
+                () -> bad.diagnostics.toString());
+    }
 }
