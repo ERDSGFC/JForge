@@ -242,32 +242,62 @@ public final class SqlCodegen {
         return sb.toString();
     }
 
+    /** 一次扫描 SQL 后得到的占位符解析结果。 */
+    public record PlaceholderResult(String sql, List<String> names, int explicitQuestionMarks) {
+    }
+
     /**
-     * 把 SQL 字符串中的 {@code :name} 占位符转换为 {@code ?} 占位符。
+     * 一次扫描并转换 SQL 字符串中的 {@code :name} 占位符，同时统计原始 {@code ?} 占位符。
+     *
+     * <p>该方法使用一个轻量级状态机扫描 SQL，而不是直接使用正则表达式。扫描过程中会
+     * 区分普通 SQL、单行注释、块注释、字符串/标识符引号；是否识别 PostgreSQL
+     * dollar-quote 字符串、{@code ::} 类型转换操作符以及 PostgreSQL JDBC 的 {@code ??}
+     * 字面量问号转义由 {@code dialect} 决定。占位符只在普通 SQL 状态下替换，因此字符串
+     * 内容和注释内容不会被误处理。</p>
+     *
+     * <p>命名占位符必须以 Java 标识符起始字符开头，后续字符必须是 Java 标识符字符。
+     * 每次发现命名占位符时，名称会按 SQL 出现顺序写入结果；返回 SQL 中对应位置则写入
+     * {@code ?}。重复出现的名称会重复记录，因为 JDBC 需要为每个 {@code ?} 单独绑定参数。
+     * 结果中的 {@code explicitQuestionMarks} 只统计原始 SQL 中真正用于 JDBC 绑定的
+     * {@code ?}，不统计命名占位符转换后生成的 {@code ?}，也不统计 PostgreSQL JDBC
+     * 用来表示字面量问号操作符的 {@code ??}。</p>
      *
      * @param sql              带命名占位符的 SQL（如 {@code "WHERE age > :age"}）
-     * @param placeholderOrder 按出现顺序接收占位符名称
-     * @return 含 {@code ?} 占位符的 SQL
+     * @param dialect          当前 SQL 使用的数据库方言及其语法能力
+     * @return 转换后的 SQL、命名占位符顺序和原始问号数量
      */
-    public static String convertPlaceholders(String sql, List<String> placeholderOrder) {
-        StringBuilder out = new StringBuilder();
+    public static PlaceholderResult parsePlaceholders(String sql, DialectSupport dialect) {
+        // 结果通常与输入长度接近，按输入长度预分配可减少扩容和复制。
+        StringBuilder out = new StringBuilder(sql.length());
+        List<String> names = new ArrayList<>();
+        int explicitQuestionMarks = 0;
+        String identifierQuote = dialect.quote();
+        boolean doubleQuotedIdentifiers = "\"".equals(identifierQuote);
+        boolean backtickQuotedIdentifiers = dialect.supportsBacktickQuotedIdentifiers();
+        boolean dollarQuotedStrings = dialect.supportsDollarQuotedStrings();
+        boolean doubleColonCast = dialect.supportsDoubleColonCast();
+        boolean doubleQuestionMarkEscape = dialect.supportsDoubleQuestionMarkEscape();
         int i = 0;
         String quote = null;
         boolean lineComment = false;
         boolean blockComment = false;
         while (i < sql.length()) {
             char c = sql.charAt(i);
+            // 单行注释中的字符全部原样复制，直到换行后才恢复普通 SQL 扫描。
             if (lineComment) {
                 out.append(c);
                 i++;
+                // \n/\r 标志着单行注释结束，后续内容可能再次出现命名占位符。
                 if (c == '\n' || c == '\r') {
                     lineComment = false;
                 }
                 continue;
             }
+            // 块注释中的字符全部原样复制，遇到 */ 后退出块注释状态。
             if (blockComment) {
                 out.append(c);
                 i++;
+                // 当前字符是 * 且下一个字符是 / 时，完整消费注释结束符。
                 if (c == '*' && i < sql.length() && sql.charAt(i) == '/') {
                     out.append('/');
                     i++;
@@ -275,7 +305,9 @@ public final class SqlCodegen {
                 }
                 continue;
             }
+            // 引号状态下禁止占位符替换，避免修改字符串字面量或带引号的标识符。
             if (quote != null) {
+                // dollar-quote 的结束分隔符长度可能超过一个字符，需要优先整体匹配。
                 if (quote.length() > 1 && sql.startsWith(quote, i)) {
                     out.append(quote);
                     i += quote.length();
@@ -284,12 +316,16 @@ public final class SqlCodegen {
                 }
                 out.append(c);
                 i++;
+                // dollar-quote 内部不处理转义和重复引号，只需继续复制字符。
                 if (quote.length() > 1) {
                     continue;
                 }
+                // SQL 字符串中的反斜杠转义字符与下一个字符一起原样复制。
                 if (c == '\\' && i < sql.length()) {
                     out.append(sql.charAt(i++));
+                // 当前字符是引号时，判断它是字符串结束符还是 SQL 的重复引号转义。
                 } else if (c == quote.charAt(0)) {
+                    // 连续两个同类引号表示引号内容中的一个引号，不结束当前引号状态。
                     if (i < sql.length() && sql.charAt(i) == quote.charAt(0)) {
                         out.append(sql.charAt(i++));
                     } else {
@@ -298,26 +334,34 @@ public final class SqlCodegen {
                 }
                 continue;
             }
-            if (c == '\'' || c == '"' || c == '`') {
+            // 普通 SQL 中遇到单引号、双引号或反引号，进入对应的引号复制状态。
+            // 单引号始终表示字符串；双引号仅在当前方言把它作为标识符引用符时处理。
+            if (c == '\''
+                    || (c == '"' && doubleQuotedIdentifiers)
+                    || (c == '`' && backtickQuotedIdentifiers)) {
                 quote = String.valueOf(c);
                 out.append(c);
                 i++;
                 continue;
             }
+            // 识别 SQL 单行注释起始符，并原样输出起始符本身。
             if (c == '-' && i + 1 < sql.length() && sql.charAt(i + 1) == '-') {
                 lineComment = true;
                 out.append("--");
                 i += 2;
                 continue;
             }
+            // 识别 SQL 块注释起始符，并原样输出起始符本身。
             if (c == '/' && i + 1 < sql.length() && sql.charAt(i + 1) == '*') {
                 blockComment = true;
                 out.append("/*");
                 i += 2;
                 continue;
             }
-            if (c == '$') {
+            // $ 可能开启 PostgreSQL dollar-quote；只有完整识别到合法分隔符时才进入引号状态。
+            if (c == '$' && dollarQuotedStrings) {
                 int delimiterEnd = dollarQuoteDelimiterEnd(sql, i);
+                // 非 dollar-quote 的普通 $ 字符不能改变扫描状态，继续按普通 SQL 处理。
                 if (delimiterEnd >= 0) {
                     quote = sql.substring(i, delimiterEnd);
                     out.append(quote);
@@ -325,24 +369,39 @@ public final class SqlCodegen {
                     continue;
                 }
             }
-            if (c == ':' && i + 1 < sql.length() && sql.charAt(i + 1) == ':') {
+            // PostgreSQL 类型转换操作符 :: 不是命名占位符，必须整体原样保留。
+            if (doubleColonCast && c == ':'
+                    && i + 1 < sql.length() && sql.charAt(i + 1) == ':') {
                 out.append("::");
                 i += 2;
                 continue;
             }
+            // 只有冒号后跟合法 Java 标识符起始字符时，才识别为命名占位符。
             if (c == ':' && i + 1 < sql.length() && Character.isJavaIdentifierStart(sql.charAt(i + 1))) {
                 int start = ++i;
+                // 持续读取占位符名称，直到遇到非 Java 标识符字符。
                 while (i < sql.length() && Character.isJavaIdentifierPart(sql.charAt(i))) {
                     i++;
                 }
-                placeholderOrder.add(sql.substring(start, i));
+                names.add(sql.substring(start, i));
                 out.append('?');
             } else {
+                // 其他普通 SQL 字符直接复制，并向前移动一个字符。
                 out.append(c);
                 i++;
+                if (c == '?') {
+                    // PostgreSQL JDBC 用 ?? 表示字面量 ? 操作符；整体保留并跳过计数，
+                    // 由驱动在发送 SQL 时完成 ?? -> ? 的转换。
+                    if (doubleQuestionMarkEscape && i < sql.length() && sql.charAt(i) == '?') {
+                        out.append('?');
+                        i++;
+                        continue;
+                    }
+                    explicitQuestionMarks++;
+                }
             }
         }
-        return out.toString();
+        return new PlaceholderResult(out.toString(), List.copyOf(names), explicitQuestionMarks);
     }
 
     /** 返回 PostgreSQL dollar-quote 分隔符结束位置，非分隔符返回 -1。 */

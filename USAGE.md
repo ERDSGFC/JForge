@@ -318,6 +318,29 @@ List<UserNameDto> findNameDtoById(Long id);                        // record 投
   (where 前缀变量 + 条件 if 块)
 - 与 `@Query` 互斥(同一方法只能标一个)
 
+### `@Join` 关联查询
+
+`@Join` 只能标在 `@Select` 方法上，用实体类型和字段名声明连接；处理器会在编译期解析两侧
+`@Table`/命名策略映射并校验字段，生成带方言引用符的 `JOIN ... ON ...`。连接顺序就是注解声明顺序，
+可重复声明 `@Join`；当前不支持同一实体多次连接（因此也不支持自连接/别名）。
+
+```java
+@Select
+@Join(entity = Department.class, type = JoinType.LEFT,
+      on = @Join.On(local = "departmentId", target = "id"))
+List<UserEntity> findByDepartment(
+      @Condition(value = "name", entity = Department.class) String departmentName);
+// → FROM users LEFT JOIN departments ON users.department_id = departments.id
+//   WHERE departments.name = ?
+```
+
+- `JoinType` 支持 `INNER`（默认）、`LEFT`、`RIGHT`、`FULL` 与 `CROSS`；除 `CROSS` 外至少需要
+  一个 `@Join.On(local = ..., target = ...)`，多个字段对之间使用 `AND`
+- `@Join.from` 默认是宿主实体；指定时必须引用宿主或更早声明的连接实体，可用于链式连接
+- `@Condition(entity = OtherEntity.class)` 将条件字段解析到对应的已连接实体并自动加表限定；未被
+  `@Join` 引入、字段不存在或连接关系非法时编译失败
+- `@Query` 的 SQL 完全由用户提供，`@Join` 不作用于 `@Query`
+
 ### 条件对象（`@Where` 复杂 WHERE）
 
 `@Where` 参数是**条件对象**——处理器递归展开其字段为 WHERE 条件,支持分组括号与 `OR` 连接:

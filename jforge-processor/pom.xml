@@ -41,6 +41,13 @@
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- CompilationHelper tests compile generated repositories against the core API. -->
+        <dependency>
+            <groupId>io.github.erdsgfc</groupId>
+            <artifactId>jforge-core</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

@@ -171,7 +171,8 @@ public final class QueryGenerator {
         fragments.addAll(appended);
         Map<String, VariableElement> lookup = new HashMap<>(binds);
         lookup.putAll(conditionParams);
-        boolean hasDynamic = fragments.stream().anyMatch(fragment -> isDynamicFragment(fragment, lookup));
+        boolean hasDynamic = fragments.stream().anyMatch(fragment ->
+                isDynamicFragment(fragment, lookup, info.model.dialectSupport()));
         if (hasDynamic) {
             return dynamicQueryMethod(info, method, query, builder, embedded, connection,
                     preparedStatement, resultSet, sqlException, parsed, fragments, lookup);
@@ -182,11 +183,9 @@ public final class QueryGenerator {
         // 静态路径：SQL 常量由 querySql 统一生成（含静态 @Condition 追加），
         // 这里只需收集绑定占位符（含追加片段的伪占位符）。
         List<String> placeholders = new ArrayList<>();
-        SqlCodegen.convertPlaceholders(query.value(), placeholders);
+        placeholders.addAll(SqlCodegen.parsePlaceholders(query.value(), info.model.dialectSupport()).names());
         for (WhereFragment fragment : appended) {
-            List<String> ph = new ArrayList<>();
-            SqlCodegen.convertPlaceholders(fragment.text, ph);
-            placeholders.addAll(ph);
+            placeholders.addAll(SqlCodegen.parsePlaceholders(fragment.text, info.model.dialectSupport()).names());
         }
 
         TypeMirror returnType = method.getReturnType();
@@ -302,8 +301,10 @@ public final class QueryGenerator {
         List<List<VariableElement>> bindUnits = new ArrayList<>();
         List<Boolean> dynamics = new ArrayList<>();
         for (WhereFragment fragment : fragments) {
-            List<String> placeholders = new ArrayList<>();
-            String text = SqlCodegen.convertPlaceholders(fragment.text, placeholders);
+            SqlCodegen.PlaceholderResult parsedPlaceholders = SqlCodegen.parsePlaceholders(
+                    fragment.text, info.model.dialectSupport());
+            List<String> placeholders = parsedPlaceholders.names();
+            String text = parsedPlaceholders.sql();
             List<VariableElement> params = new ArrayList<>();
             for (String placeholder : placeholders) {
                 VariableElement parameter = binds.get(placeholder);
@@ -316,7 +317,7 @@ public final class QueryGenerator {
             }
             texts.add(text);
             bindUnits.add(params);
-            dynamics.add(isDynamicFragment(fragment, binds));
+            dynamics.add(isDynamicFragment(fragment, binds, info.model.dialectSupport()));
         }
 
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
@@ -787,9 +788,10 @@ public final class QueryGenerator {
      * 判定片段是否动态：仅当恰好一个占位符且对应参数标注 JSpecify
      * {@code @Nullable} 时自动推断为动态（多占位符片段保守处理为静态）。
      */
-    private static boolean isDynamicFragment(WhereFragment fragment, Map<String, VariableElement> binds) {
+    private static boolean isDynamicFragment(WhereFragment fragment, Map<String, VariableElement> binds,
+            DialectSupport dialect) {
         List<String> placeholders = new ArrayList<>();
-        SqlCodegen.convertPlaceholders(fragment.text, placeholders);
+        placeholders.addAll(SqlCodegen.parsePlaceholders(fragment.text, dialect).names());
         if (placeholders.size() != 1) {
             return false;
         }
@@ -808,11 +810,13 @@ public final class QueryGenerator {
      */
     static String querySql(JForgeProcessor.DaoInfo info, ExecutableElement method, Query query,
             ParsedWhere parsed, List<WhereFragment> appended) {
-        String sql = SqlCodegen.convertPlaceholders(query.value(), new ArrayList<>());
+        String sql = SqlCodegen.parsePlaceholders(query.value(), info.model.dialectSupport()).sql();
         boolean first = parsed == null || parsed.fragments.isEmpty();
         for (WhereFragment fragment : appended) {
-            List<String> names = new ArrayList<>();
-            String text = SqlCodegen.convertPlaceholders(fragment.text, names);
+            SqlCodegen.PlaceholderResult placeholders = SqlCodegen.parsePlaceholders(
+                    fragment.text, info.model.dialectSupport());
+            List<String> names = placeholders.names();
+            String text = placeholders.sql();
             if (names.size() == 1 && !isNullableParameter(findParameter(method, names.getFirst()))) {
                 sql += (first ? " WHERE " : fragment.conn) + text;
                 first = false;

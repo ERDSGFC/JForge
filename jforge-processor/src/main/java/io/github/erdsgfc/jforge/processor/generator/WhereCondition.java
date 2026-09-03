@@ -13,12 +13,10 @@ import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.VariableElement;
-import javax.lang.model.type.ArrayType;
-import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.TypeKind;
-import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.*;
 import javax.tools.Diagnostic;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 已解析的 WHERE 条件节点，供 {@code @Select}/{@code @Update}/{@code @Delete}/{@code @Query}
@@ -42,7 +40,8 @@ import java.util.List;
  */
 record WhereCondition(String columnName, String op, String paramName, String typeName, boolean dynamic,
                       boolean optional, String valueExpr, String rawSql, String converterField,
-                      boolean collection, boolean array, TypeName elementTypeName) {
+                      boolean collection, boolean array, TypeName elementTypeName,
+                      List<RawSqlSupport.Binding> rawBindings) {
 
     /**
      * 解析绑定到宿主实体列的 {@code @Condition} 参数：字段名取 {@link Condition#value()}
@@ -55,10 +54,30 @@ record WhereCondition(String columnName, String op, String paramName, String typ
     static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
                                       VariableElement parameter, ProcessingEnvironment env,
                                       String diagnosticPrefix) {
+        return resolveHost(info, method, parameter, env, diagnosticPrefix,
+                Map.of(info.model.entityQualifiedName(), info.model));
+    }
+
+    static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
+                                      VariableElement parameter, ProcessingEnvironment env,
+                                      String diagnosticPrefix, Map<String, EntityModel> entities) {
         String paramName = parameter.getSimpleName().toString();
         Condition condition = parameter.getAnnotation(Condition.class);
         String fieldName = condition != null && !condition.value().isEmpty()
                 ? condition.value() : paramName;
+        EntityModel fieldEntity = info.model;
+        if (condition != null) {
+            TypeMirror entityType = conditionEntity(condition);
+            if (entityType != null) {
+                fieldEntity = entities.get(entityType.toString());
+                if (fieldEntity == null) {
+                    env.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            diagnosticPrefix + " @Condition(entity) must reference the host entity or a @Join entity",
+                            parameter);
+                    return null;
+                }
+            }
+        }
         String op = condition != null ? condition.op().sql() : "=";
         String rawSql = condition != null ? condition.rawSql() : "";
         boolean optional = CriteriaGenerator.isOptional(parameter.asType());
@@ -94,22 +113,39 @@ record WhereCondition(String columnName, String op, String paramName, String typ
                         "Iterable/array parameters cannot be used with @Condition(rawSql)", parameter);
                 return null;
             }
+            RawSqlSupport.Plan plan = RawSqlSupport.resolve(rawSql, parameter.asType(), parameter,
+                    paramName, condition.requireJForgeSql(), env.getMessager(), env.getTypeUtils(), method,
+                    info.model.dialectSupport());
+            if (plan == null) return null;
             return new WhereCondition(null, op, paramName, bindType, dynamic, optional, valueExpr,
-                    rawSql, null, false, false, null);
+                    plan.sql(), null, false, false, null, plan.bindings());
         }
-        for (EntityModel.ColumnModel column : info.model.columns()) {
+        for (EntityModel.ColumnModel column : fieldEntity.columns()) {
             if (column.fieldName.equals(fieldName)) {
-                String converter = column.converter != null
+                String converter = fieldEntity == info.model && column.converter != null
                         ? SqlCodegen.converterFieldName(info.model, column) : null;
-                return new WhereCondition(SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column.columnName),
+                String qualified = fieldEntity == info.model
+                        ? SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column.columnName)
+                        : SqlCodegen.quoteIdentifier(info.model.dialectSupport(), fieldEntity.tableName()) + "."
+                                + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column.columnName);
+                return new WhereCondition(qualified,
                         op, paramName, bindType, dynamic, optional, valueExpr, null, converter,
-                        collection, array, elementType);
+                        collection, array, elementType, List.of());
             }
         }
         env.getMessager().printMessage(Diagnostic.Kind.ERROR,
                 diagnosticPrefix + " parameter field '" + fieldName + "' does not match any field of entity "
-                        + info.model.entityQualifiedName(), method);
+                        + fieldEntity.entityQualifiedName(), method);
         return null;
+    }
+
+    private static TypeMirror conditionEntity(Condition condition) {
+        try {
+            condition.entity();
+            return null;
+        } catch (MirroredTypeException e) {
+            return e.getTypeMirror().getKind() == TypeKind.VOID ? null : e.getTypeMirror();
+        }
     }
 
     private static boolean isIterable(TypeMirror type, ProcessingEnvironment env) {
@@ -208,8 +244,12 @@ record WhereCondition(String columnName, String op, String paramName, String typ
                     c.converterField));
             spec.addCode("\n");
             spec.endControlFlow();
-        } else if (c.rawSql != null && !c.rawSql.contains("?")) {
-            // no binding
+        } else if (c.rawSql != null) {
+            for (RawSqlSupport.Binding binding : c.rawBindings) {
+                spec.addCode(SqlCodegen.bindParam(binding.typeName(), binding.expression(), "i++",
+                        binding.nullable(), false, null));
+                spec.addCode("\n");
+            }
         } else if (c.optional) {
             spec.beginControlFlow("if ($N.isPresent())", c.paramName);
             spec.addCode(SqlCodegen.bindParam(c.typeName, c.valueExpr, "i++", false, false, c.converterField));
@@ -234,7 +274,14 @@ record WhereCondition(String columnName, String op, String paramName, String typ
 
     static void appendStaticBinds(MethodSpec.Builder spec, List<WhereCondition> conditions, int index) {
         for (WhereCondition c : conditions) {
-            if (c.rawSql != null && !c.rawSql.contains("?")) continue;
+            if (c.rawSql != null) {
+                for (RawSqlSupport.Binding binding : c.rawBindings) {
+                    spec.addCode(SqlCodegen.bindParam(binding.typeName(), binding.expression(), index++,
+                            binding.nullable(), false, null));
+                    spec.addCode("\n");
+                }
+                continue;
+            }
             spec.addCode(SqlCodegen.bindParam(c.typeName, c.valueExpr != null ? c.valueExpr : c.paramName,
                     index++, false, false, c.converterField));
             spec.addCode("\n");

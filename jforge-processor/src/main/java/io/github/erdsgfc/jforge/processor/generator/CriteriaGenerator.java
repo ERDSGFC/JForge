@@ -3,16 +3,11 @@ package io.github.erdsgfc.jforge.processor.generator;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
-import io.github.erdsgfc.jforge.annotation.And;
-import io.github.erdsgfc.jforge.annotation.Condition;
-import io.github.erdsgfc.jforge.annotation.JForgeSql;
-import io.github.erdsgfc.jforge.annotation.Or;
-import io.github.erdsgfc.jforge.annotation.UpdateSet;
-import io.github.erdsgfc.jforge.annotation.Where;
+import io.github.erdsgfc.jforge.annotation.*;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
-import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 import io.github.erdsgfc.jforge.processor.utils.Nullability;
+import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
@@ -55,7 +50,8 @@ public final class CriteriaGenerator {
         final String guard;         // 前置判断表达式（null 检查/Optional != null）；null = 恒真
         final boolean optional;     // Optional 语义（空 → IS NULL）
         final List<Unit> nested;    // 嵌套组单元（非 null = 括号分组）
-        final String rawSql;        // 原生 SQL 片段（非 null 替代 column/op；含 ? 绑定字段值）
+        String rawSql;              // 原生 SQL 片段（已转换命名占位符）
+        List<RawSqlSupport.Binding> rawBindings = List.of();
         boolean collection;
         boolean array;
         TypeName elementType;
@@ -236,11 +232,20 @@ public final class CriteriaGenerator {
                         + field.getSimpleName());
                 return null;
             }
-            return new Unit(conn, null, null, readExpr,
-                    rawSql.contains("?") ? readExpr : null,
-                    rawSql.contains("?") ? types.stripAnnotations(fieldType).toString() : null,
+            if (fieldType.getKind() == TypeKind.ARRAY || isIterable(fieldType)) {
+                error(method, "@Condition rawSql cannot be used with array/Iterable fields: "
+                        + field.getSimpleName());
+                return null;
+            }
+            Unit unit = new Unit(conn, null, null, readExpr, null, null,
                     Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null,
                     false, null, rawSql);
+            RawSqlSupport.Plan plan = RawSqlSupport.resolve(rawSql, fieldType, field, readExpr,
+                    condition.requireJForgeSql(), messager, types, method, info.model.dialectSupport());
+            if (plan == null) return null;
+            unit.rawSql = plan.sql();
+            unit.rawBindings = plan.bindings();
+            return unit;
         }
 
         // Optional 族：空 → IS NULL，有值 → 条件（列名取 @Condition.value 或字段名）。
@@ -468,11 +473,13 @@ public final class CriteriaGenerator {
     private void emitUnitBind(MethodSpec.Builder spec, Unit unit, String indexVar) {
         if (unit.rawSql != null) {
             // 含 ? 才绑定字段值；纯常量条件不绑定。
-            if (unit.rawSql.contains("?")) {
+            if (!unit.rawBindings.isEmpty()) {
                 beginGuard(spec, unit.guard);
-                spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.readExpr, indexVar,
-                        false, false, unit.converterField));
-                spec.addCode("\n");
+                for (RawSqlSupport.Binding binding : unit.rawBindings) {
+                    spec.addCode(SqlCodegen.bindParam(binding.typeName(), binding.expression(), indexVar,
+                            binding.nullable(), false, null));
+                    spec.addCode("\n");
+                }
                 endGuard(spec, unit.guard);
             }
             return;

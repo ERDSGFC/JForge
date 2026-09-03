@@ -43,8 +43,10 @@ public @interface UpdateSet {
 
     /**
      * 直接使用原生 SQL 片段作为 {@code SET} 表达式（替代 {@code 列 = ?} 的拼装，
-     * 如 {@code "score = score + ?"}）。片段中的 {@code ?} 占位符绑定该参数的值；
-     * 无 {@code ?} 则为纯常量（参数不绑定）。{@code @Nullable}/{@code Optional}
+     * 如 {@code "score = score + ?"}）。标量参数支持一个 {@code ?} 占位符；
+     * class/record 参数支持多个命名 {@code :fieldName} 占位符，字段只解析当前类型直接
+     * 声明的字段，不递归，且按占位符出现顺序绑定。无占位符则为纯常量（参数不绑定）。
+     * {@code @Nullable}/{@code Optional}
      * 动态语义保留（null/空时跳过该 SET）。
      *
      * <pre>{@code
@@ -55,4 +57,10 @@ public @interface UpdateSet {
      * }</pre>
      */
     String rawSql() default "";
+
+    /**
+     * rawSql 使用 class/record 多参数对象时，是否要求该类型标注 {@link JForgeSql}。
+     * 标量参数不受此属性影响。
+     */
+    boolean requireJForgeSql() default true;
 }

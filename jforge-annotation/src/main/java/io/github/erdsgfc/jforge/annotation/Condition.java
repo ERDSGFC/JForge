@@ -30,15 +30,20 @@ public @interface Condition {
     Op op() default Op.EQ;
 
     /**
-     * 根据对应的entity找到对应的数据库名称，默认是当前的entity，也可以指定entity
+     * 条件字段所属实体。默认的 {@code void.class} 表示当前仓库的宿主实体；指定其他实体时，
+     * 该实体必须由当前 {@link Select} 方法上的 {@link Join} 引入。处理器据此解析列名并添加
+     * 表限定符，避免多表查询中的同名列歧义。
+     *
+     * @return 条件字段所属实体，或 {@code void.class}
      */
     Class<?> entity() default void.class;
 
     /**
      * 直接使用原生 SQL 片段作为条件（替代 {@link #value()}/{@link #op()} 的
-     * "字段 + 操作符"拼装）。片段中的 {@code ?} 占位符绑定该参数的值；无 {@code ?}
-     * 则为纯常量条件（参数不绑定，仅用于 {@code @Nullable}/{@code Optional} 的
-     * 跳过控制）。
+     * "字段 + 操作符"拼装）。标量参数支持一个 {@code ?} 占位符；class/record
+     * 参数支持多个命名 {@code :fieldName} 占位符，字段只解析当前类型直接声明的字段，
+     * 不递归，且按占位符出现顺序绑定。无占位符则为纯常量条件（参数不绑定，仅用于
+     * {@code @Nullable}/{@code Optional} 的跳过控制）。
      *
      * <pre>{@code
      * @Select
@@ -47,4 +52,10 @@ public @interface Condition {
      * }</pre>
      */
     String rawSql() default "";
+
+    /**
+     * rawSql 使用 class/record 多参数对象时，是否要求该类型标注 {@link JForgeSql}。
+     * 标量参数不受此属性影响。
+     */
+    boolean requireJForgeSql() default true;
 }
