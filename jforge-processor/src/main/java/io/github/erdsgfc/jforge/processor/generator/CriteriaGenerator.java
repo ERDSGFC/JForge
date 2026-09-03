@@ -9,10 +9,7 @@ import io.github.erdsgfc.jforge.processor.JForgeProcessor;
 import io.github.erdsgfc.jforge.processor.utils.Nullability;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 
-import javax.lang.model.element.Element;
-import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.VariableElement;
+import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
@@ -351,7 +348,7 @@ public final class CriteriaGenerator {
         String name = field.getSimpleName().toString();
         String getter = "get" + Character.toUpperCase(name.charAt(0)) + name.substring(1);
         for (Element enclosed : criteriaType.getEnclosedElements()) {
-            if (enclosed.getKind() != javax.lang.model.element.ElementKind.METHOD) {
+            if (enclosed.getKind() != ElementKind.METHOD) {
                 continue;
             }
             String methodName = enclosed.getSimpleName().toString();
