@@ -89,12 +89,6 @@ public final class QueryGenerator {
             if (query == null) {
                 continue;
             }
-            if (query.value().indexOf('[') >= 0 || query.value().indexOf(']') >= 0) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "@Query no longer supports bracketed dynamic fragments; use JSpecify nullability or @Condition/@Where",
-                        method);
-                continue;
-            }
             for (VariableElement parameter : method.getParameters()) {
                 ClassName converter = bindConverter(parameter);
                 if (converter != null) {
