@@ -210,17 +210,20 @@ public final class UpdateGenerator {
             WhereCondition.appendSql(spec, condition);
         }
         criteriaGenerator.emitGroupAppend(spec, criteriaUnits, "where", " AND ");
-        if (hasWhere) {
-            // 所有可空 WHERE 条件都被跳过时，禁止退化成无条件 UPDATE。
+        // 守卫仅在"可能发生"时生成,避免静态条件的死分支:
+        // - where 守卫:存在 @Nullable 动态条件(可能整段跳过)或条件对象(组可能全空回退)
+        //   时才可能无条件——全静态条件恒拼,守卫恒 false;
+        // - setConn 守卫:存在 dynamic SET(null 跳过)时才可能 SET 为空——静态 SET 恒拼。
+        if (conditions.stream().anyMatch(c -> c.dynamic()) || !criteriaUnits.isEmpty()) {
             spec.beginControlFlow("if (where.equals($S))", " WHERE ");
             spec.addStatement("return 0");
             spec.endControlFlow();
         }
-        // 全部 @UpdateSet 动态跳过时 SET 为空——"UPDATE t WHERE ..." 无 SET 是语法错误,
-        // 空操作返回 0(与 MyBatis 动态 SQL 生成非法语句相比,语义更明确)。
-        spec.beginControlFlow("if (setConn.isEmpty())");
-        spec.addStatement("return 0");
-        spec.endControlFlow();
+        if (sets.stream().anyMatch(s -> s.dynamic)) {
+            spec.beginControlFlow("if (setConn.isEmpty())");
+            spec.addStatement("return 0");
+            spec.endControlFlow();
+        }
         if (logSql) {
             spec.beginControlFlow("if (log.isDebugEnabled())");
             spec.addStatement("log.debug($S, sql.toString())", "Executing SQL: {}");

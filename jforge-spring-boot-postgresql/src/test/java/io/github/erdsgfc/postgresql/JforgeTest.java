@@ -48,6 +48,6 @@ public class JforgeTest {
 
     @Test
     void updateAdminStatus() {
-        sysAdminRepository.updateAdminStatus(2, null);
+        long l = sysAdminRepository.updateAdminStatus(1, new long[]{1L, 2L});
     }
 }

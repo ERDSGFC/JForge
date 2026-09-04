@@ -132,14 +132,17 @@ public final class DeleteGenerator {
             WhereCondition.appendSql(spec, condition);
         }
         criteriaGenerator.emitGroupAppend(spec, criteriaUnits, "where", " AND ");
-        // 所有可空 WHERE 条件都被跳过时，禁止退化成无条件 DELETE。
-        spec.beginControlFlow("if (where.equals($S))", " WHERE ");
-        if (method.getReturnType().getKind() == TypeKind.BOOLEAN) {
-            spec.addStatement("return false");
-        } else {
-            spec.addStatement("return 0");
+        // 守卫仅在可能发生空 WHERE 时生成(dynamic 条件可能跳过/条件对象组可能回退)——
+        // 全静态条件恒拼,守卫恒 false。
+        if (conditions.stream().anyMatch(c -> c.dynamic()) || !criteriaUnits.isEmpty()) {
+            spec.beginControlFlow("if (where.equals($S))", " WHERE ");
+            if (method.getReturnType().getKind() == TypeKind.BOOLEAN) {
+                spec.addStatement("return false");
+            } else {
+                spec.addStatement("return 0");
+            }
+            spec.endControlFlow();
         }
-        spec.endControlFlow();
         if (logSql) {
             spec.beginControlFlow("if (log.isDebugEnabled())");
             spec.addStatement("log.debug($S, sql.toString())", "Executing SQL: {}");

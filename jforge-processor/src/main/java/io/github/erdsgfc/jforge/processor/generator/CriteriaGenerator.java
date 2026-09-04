@@ -168,6 +168,11 @@ public final class CriteriaGenerator {
      * 回退到起始长度——不消费外层 where 前缀,不产生非法空括号。
      */
     void emitGroupAppend(MethodSpec.Builder spec, List<Unit> units, String whereVar, String after) {
+        // 空条件列表:没有组可拼——调用方(条件对象为空时也统一调用本方法)直接返回,
+        // 避免生成 gsN + "()" + 回退 的纯无用代码。
+        if (units == null || units.isEmpty()) {
+            return;
+        }
         int seq = ++varSeq;
         spec.addStatement("int gs$L = sql.length()", seq);
         spec.addStatement("sql.append($L).append($S)", whereVar, "(");
