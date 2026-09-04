@@ -111,7 +111,7 @@ class JoinCodegenTest {
         assertTrue(generated.contains("Long id)"), generated);
         assertTrue(generated.contains("deleteById(@Nullable Long id)") || generated.contains("deleteById(@NonNull Long id)") || generated.contains("deleteById(Long id)"), generated);
         assertTrue(generated.contains("List<Long> ids)"), generated);
-        assertTrue(generated.contains("if (id == null)"), generated);
+        assertTrue(generated.contains("requireNonNull(id"), generated);
     }
 
     @Test
@@ -134,6 +134,6 @@ class JoinCodegenTest {
         assertTrue(generated != null, "repository implementation was not generated");
         assertTrue(generated.contains("Integer id)"), generated);
         assertTrue(generated.contains("List<Integer> ids)"), generated);
-        assertTrue(generated.contains("if (id == null)"), generated);
+        assertTrue(generated.contains("requireNonNull(id"), generated);
     }
 }
