@@ -5,6 +5,7 @@ import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.TypeName;
 
 import javax.lang.model.element.Element;
+import javax.lang.model.type.PrimitiveType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 import static io.github.erdsgfc.jforge.processor.ClassEnum.NULLABLE;
@@ -111,6 +112,27 @@ public final class TypeNameUtils {
         }
         ClassName annotation = nullable ? NULLABLE.getJavaPoetClassName() : NON_NULL.getJavaPoetClassName();
         return type.annotated(AnnotationSpec.builder(annotation).build());
+    }
+
+
+    /**
+     * Returns true when two types are identical or differ only by primitive/boxed representation.
+     * Java generic ID parameters are always boxed, so this accepts an entity {@code long} getter
+     * with a {@code BaseRepository<?, Long>} ID while keeping unrelated numeric types distinct.
+     */
+    public static boolean isSameType(TypeMirror t1, TypeMirror t2, Types typeUtils) {
+        t1 = typeUtils.stripAnnotations(t1);
+        t2 = typeUtils.stripAnnotations(t2);
+        if (typeUtils.isSameType(t1, t2)) {
+            return true;
+        }
+        if (t1.getKind().isPrimitive()) {
+            return typeUtils.isSameType(typeUtils.boxedClass((PrimitiveType) t1).asType(), t2);
+        }
+        if (t2.getKind().isPrimitive()) {
+            return typeUtils.isSameType(t1, typeUtils.boxedClass((PrimitiveType) t2).asType());
+        }
+        return false;
     }
 
 }

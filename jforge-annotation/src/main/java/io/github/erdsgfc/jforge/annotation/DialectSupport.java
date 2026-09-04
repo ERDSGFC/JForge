@@ -31,4 +31,38 @@ public interface DialectSupport {
 
     /** 布尔字面量，如 {@code "TRUE"}。 */
     String booleanLiteral();
+
+    /**
+     * 是否支持 PostgreSQL 风格的 dollar-quote 字符串（{@code $tag$...$tag$}）。
+     * 默认不启用，避免自定义方言把普通 {@code $} 文本误判为字符串分隔符。
+     */
+    default boolean supportsDollarQuotedStrings() {
+        return false;
+    }
+
+    /**
+     * 是否支持 PostgreSQL/H2 风格的 {@code ::} 类型转换操作符。
+     * 默认不启用。
+     */
+    default boolean supportsDoubleColonCast() {
+        return false;
+    }
+
+    /**
+     * 是否支持 PostgreSQL JDBC 使用 {@code ??} 转义字面量 {@code ?} 操作符。
+     * 该写法常用于 JSON/JSONB 的键存在性查询；处理器会保留两个字符，交由 JDBC
+     * 驱动在发送 SQL 时还原为一个 {@code ?}，并且不会把它们统计为绑定参数。
+     * 默认不启用。
+     */
+    default boolean supportsDoubleQuestionMarkEscape() {
+        return false;
+    }
+
+    /**
+     * 是否支持反引号标识符（{@code `column`}）。默认根据标识符引用符判断；
+     * 引用符为反引号的方言无需额外覆写该方法。
+     */
+    default boolean supportsBacktickQuotedIdentifiers() {
+        return "`".equals(quote());
+    }
 }

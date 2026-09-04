@@ -200,19 +200,19 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 
     /** 自定义查询:命名占位符 :name 绑定到 @Bind 参数 */
     @Query("SELECT id, user_name, age FROM users WHERE age > :age")
-    List<UserEntity> findByAgeGreaterThan(@Bind("age") int age);
+    List<UserEntity> findByAgeGreaterThan(@Bind int age);
 
     /** 投影到 DTO record(按 SELECT 列序对应 record 组件) */
     @Query("SELECT id, user_name FROM users WHERE id = :id")
-    UserNameDto findNameById(@Bind("id") long id);
+    UserNameDto findNameById(@Bind long id);
 
     /** 标量返回值 */
     @Query("SELECT COUNT(*) FROM users WHERE age = :age")
-    long countByAge(@Bind("age") int age);
+    long countByAge(@Bind int age);
 
     /** 写语句返回影响行数 */
     @Query("UPDATE users SET age = :age WHERE id = :id")
-    int updateAge(@Bind("id") long id, @Bind("age") int age);
+    int updateAge(@Bind long id, @Bind int age);
 }
 ```
 
@@ -220,20 +220,21 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 
 **@Query 规则**:
 
-- 占位符 `:name` ↔ `@Bind("name")` 参数一一对应
+- 占位符 `:name` 必须对应同名 `@Bind` 参数；`@Bind` 不再有 `value` 属性
+- 片段占位符 `{:name}` 显式插入同名 `@RawSql`、`@Condition` 或 `@Where` 参数
 - SELECT → 按返回类型映射:实体(按列名)、DTO record(按列序)、标量、List 包装
 - 非 SELECT → 返回影响行数;配合 `@ReturnGeneratedKeys` 可回写生成键到实体参数
 - 每方法只能有一个语句注解
 
 **@Bind 绑定转换器**(按转换列查询):
-`@Bind(value = "d", converter = XxxConverter.class)` 把该参数的绑定从"按声明类型选 `setXxx`"
+`@Bind(converter = XxxConverter.class)` 把该参数的绑定从"按声明类型选 `setXxx`"
 改为 `ps.setObject(i, CONV.toDatabase(param), CONV.sqlType())`——参数与实体列经同一转换器
 生成相同存储表示才能命中(实体列存转换后文本,如 `LocalDate` → VARCHAR,查询参数必须同样
 转成文本):
 
 ```java
 @Query("SELECT * FROM convert_users WHERE birth_date = :d")
-ConvertUser findByBirthDate(@Bind(value = "d", converter = StringDateConverter.class) LocalDate d);
+ConvertUser findByBirthDate(@Bind(converter = StringDateConverter.class) LocalDate d);
 ```
 
 - 转换器可为同批源码或预编译(与实体列 `@Convert` 同一机制);转换器以 `static final` 字段嵌入
@@ -242,41 +243,45 @@ ConvertUser findByBirthDate(@Bind(value = "d", converter = StringDateConverter.c
 **@Query 动态 WHERE**(JSpecify `@Nullable` 驱动——按占位符所在片段自动推断):
 
 ```java
-/** WHERE 片段恰好一个占位符,对应参数标 @Nullable → 该片段动态(null 时整段移除) */
+/** 普通 :name 参数即使为 null 也按原生 SQL 语义绑定 */
 @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND age = :age")
-List<UserEntity> findAutoDynamicByAgeAndName(@Bind("name") String name, @Bind("age") @Nullable Integer age);
+List<UserEntity> findAutoDynamicByAgeAndName(@Bind String name, @Bind @Nullable Integer age);
 ```
 
 - 运行时参数为 `null` 时该片段**整段移除**,非 null 时拼接——连接符(`AND`/`OR`)由生成器维护,首个实际执行的条件得 `WHERE`、其后按用户写的连接符,动态片段跳过时连接符随之消失
 - 含动态片段的 @Query 运行时拼接 SQL(不生成常量字段);纯静态 @Query 仍是 SQL 常量 + 静态绑定(零开销)
 - 多占位符片段恒静态(不自动推断);参数空性按所在作用域判定(`@NullMarked` 内非标注解即非空)
 
-**@Query + @Condition 追加条件**(手写 SQL 之外自动追加条件):
+**@Query + @Condition 片段**（必须使用显式 `{:name}`）:
 
 ```java
-/** 动态追加:age 非 null 时 AND age > ?(null 时仅按 name 查) */
-@Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
-List<UserEntity> find(@Bind("name") String name, @Condition(op = Op.GT) @Nullable Integer age);
+/** 动态片段:age 非 null 时追加 AND age > ?(null 时仅按 name 查) */
+@Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND {:age}")
+List<UserEntity> find(@Bind String name, @Condition(value = "age", op = Op.GT) @Nullable Integer age);
 
 /** 静态追加:恒拼接(无 @Nullable),SQL 常量 + 静态绑定,零开销 */
-@Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
-List<UserEntity> find(@Bind("name") String name, @Condition(value = "age", op = Op.GE) int minAge);
+@Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND {:minAge}")
+List<UserEntity> find(@Bind String name, @Condition(value = "age", op = Op.GE) int minAge);
 ```
 
-- 标注 `@Condition` 的参数(可同时标 `@Bind`)自动追加为条件:`字段 = @Condition.value`(缺省按参数名) → 实体列,`op` 指定操作符;追加条件用 `AND` 连接(无 WHERE 时补 `WHERE`)
+- `@Condition`、`@Where`、`@RawSql` 只在对应 `{:name}` 位置展开，不再隐式追加到 SQL 末尾
+- 集合/数组条件使用 `IN`/`NOT IN`，空集合分别生成 `1 = 0`/`1 = 1`
 
-**@Query 未标注参数自动条件**(SQL 无 WHERE 时,普通参数按字段名自动补条件):
+`@RawSql` 用于 Query 中的静态原生片段：
 
 ```java
-/** SQL 没有 WHERE,参数 `name` 未标 @Bind/@Condition → 自动补 WHERE user_name = ? */
-@Query("SELECT id, user_name, age FROM users")
-List<UserEntity> findByAutoQueryParameter(String name);
+@Query("SELECT * FROM users WHERE {:filter} AND user_name = :name")
+List<UserEntity> find(@RawSql("age > 18") String filter, @Bind String name);
 ```
 
-- 规则与 `@Select` 相同:非 `@Bind`/`@Condition`/`@Where` 参数自动追加 `列 = :参数名`(参数名映射实体字段,列自动引用列转换器);数组/集合自动 `IN`;`@Nullable`(或作用域默认可空)参数动态——null 时整段跳过
-- 参数与 SQL 占位符不冲突:手写 `:name` 仍需显式 `@Bind`;自动条件用参数名作伪占位符
-- **参数空性决定动态性**(JSpecify 判定,见"列空性"):可空参数(显式 `@Nullable` 或非 `@NullMarked`
-  作用域默认)null 时跳过(运行时拼接);非空参数(基本类型或 `@NullMarked` 作用域)恒拼接(进入 SQL 常量)
+标量 raw SQL 最多包含一个 `?`；class/record 参数可使用直接字段的 `:field` 占位符，
+字段值按出现顺序通过 JDBC 绑定。`requireJForgeSql` 默认要求对象类型标注 `@JForgeSql`。
+
+**@Query 参数约束**:
+
+- 每个参数必须标注且只能标注一个 `@Bind`、`@RawSql`、`@Condition` 或 `@Where`。
+- `:name` 只能绑定同名 `@Bind`；`{:name}` 只能展开同名片段注解。
+- Query 中 `@Condition(value = "...")` 的 value 是原生 SQL 列名，必须显式填写；`@Where` 条件对象的每个字段也必须显式标注语义注解。
 
 ### @Select 声明式查询（不写 SQL）
 
@@ -303,9 +308,10 @@ List<UserNameDto> findNameDtoById(Long id);                        // record 投
 
 - **返回类型**决定 SELECT 列:实体/{@code List<实体>} → 全列(FROM 宿主表,只能返回宿主实体);record → 组件列(组件名经命名策略);标量(`long`/`int`/`boolean`) → `COUNT(*)`
 - **参数即条件**,默认等于(`col = ?`);`@Condition(value = "字段名", op = Op.X)` 可指定字段(缺省按参数名)与操作符(`EQ/NE/GT/LT/GE/LE/LIKE/NOT_LIKE`);字段必须匹配实体字段或 record 组件,否则编译报错
-- **数组/集合参数 → `IN` 条件**(`Iterable` 与数组统一):`findByIdIn(List<Long> ids)` /
-  `findByIdArray(long[] ids)` → `WHERE id IN (?,?,...)`;空集合/空数组 → `1 = 0`(恒假,不匹配
-  任何行);仅支持等于语义(标 `@Condition(op = EQ)` 之外的 op 编译报错);多维数组、与
+- **数组/集合参数 → `IN`/`NOT IN` 条件**(`Iterable` 与数组统一):`findByIdIn(List<Long> ids)` /
+  `findByIdArray(long[] ids)` → `WHERE id IN (?,?,...)`;使用 `@Condition(op = Op.NE)` 时生成
+  `WHERE id NOT IN (?,?,...)`;空集合/空数组分别生成 `1 = 0`(恒假) / `1 = 1`(恒真);
+  仅支持 `EQ`/`NE`，其他 op 编译报错;多维数组、与
   `@Condition(rawSql)` 组合编译报错;集合元素与数组元素逐个绑定(元素可空走 `setObject`)
 - **条件参数自动复用列转换器**:条件字段映射到实体列、且该列标了 `@Convert` 时,绑定自动经
   `ps.setObject(i, CONV.toDatabase(param), CONV.sqlType())`(无需注解)——条件值须与列存
@@ -317,6 +323,29 @@ List<UserNameDto> findNameDtoById(Long id);                        // record 投
   编译期拼出完整 SQL 常量 + 静态索引绑定(与手写 JDBC 等价);含可空/`Optional` 条件才生成运行时拼接
   (where 前缀变量 + 条件 if 块)
 - 与 `@Query` 互斥(同一方法只能标一个)
+
+### `@Join` 关联查询
+
+`@Join` 只能标在 `@Select` 方法上，用实体类型和字段名声明连接；处理器会在编译期解析两侧
+`@Table`/命名策略映射并校验字段，生成带方言引用符的 `JOIN ... ON ...`。连接顺序就是注解声明顺序，
+可重复声明 `@Join`；当前不支持同一实体多次连接（因此也不支持自连接/别名）。
+
+```java
+@Select
+@Join(entity = Department.class, type = JoinType.LEFT,
+      on = @Join.On(local = "departmentId", target = "id"))
+List<UserEntity> findByDepartment(
+      @Condition(value = "name", entity = Department.class) String departmentName);
+// → FROM users LEFT JOIN departments ON users.department_id = departments.id
+//   WHERE departments.name = ?
+```
+
+- `JoinType` 支持 `INNER`（默认）、`LEFT`、`RIGHT`、`FULL` 与 `CROSS`；除 `CROSS` 外至少需要
+  一个 `@Join.On(local = ..., target = ...)`，多个字段对之间使用 `AND`
+- `@Join.from` 默认是宿主实体；指定时必须引用宿主或更早声明的连接实体，可用于链式连接
+- `@Condition(entity = OtherEntity.class)` 将条件字段解析到对应的已连接实体并自动加表限定；未被
+  `@Join` 引入、字段不存在或连接关系非法时编译失败
+- `@Query` 的 SQL 完全由用户提供，`@Join` 不作用于 `@Query`
 
 ### 条件对象（`@Where` 复杂 WHERE）
 
@@ -345,7 +374,8 @@ List<UserEntity> findComplex(@Where UserCriteria criteria);
 - **类型标记**:条件对象类型(含嵌套组类型)必须标注 `@JForgeSql`——`@Where` 参数或嵌套字段的类型未标注时编译报错
 - **嵌套分组**:自定义类字段**必须显式标注 `@Where`** 才展开为括号分组 `( ... )`(避免普通自定义值类型被误判为条件组),为 `null` 时整个括号跳过
 - **值类型字段**（基本/包装/`String`/日期/枚举…）→ 单条件 `列 op ?`;字段名经命名策略映射列,`@Condition` 可指定字段与操作符;字段值为 `null` 时跳过(字段空性同样按 JSpecify 判定——`@NullMarked` 作用域内非标注解即非空、恒拼)
-- **数组/集合字段** → `列 IN (?,?,...)`(仅等于语义);空集合/空数组 → `1 = 0`(恒假);多维数组、与 `@Condition(rawSql)` 组合编译报错
+- **数组/集合字段** → `列 IN/NOT IN (?,?,...)`(`@Condition(op = Op.NE)` 生成 `NOT IN`);
+  空集合/空数组分别为 `1 = 0` / `1 = 1`;仅支持 `EQ`/`NE`;多维数组、与 `@Condition(rawSql)` 组合编译报错
 - **连接符**:字段上的 `@And`/`@Or` 定义与上一条件的连接(缺省 `AND`)
 - **`Optional` 三族**（`Optional`/`OptionalInt`/`OptionalLong`）:值为空 → `列 IS NULL`(显式空值查询);有值 → `列 op ?`;`Optional` 本身为 `null` → 跳过
 - 条件对象字段的读取方法:getter 惯例(`getName()`)、record accessor(`name()`)或 `isXxx()`;列映射失败编译报错

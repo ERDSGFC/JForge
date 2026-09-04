@@ -51,7 +51,7 @@ public interface UserEntity {
 @Dao
 public interface UserRepository extends BaseRepository<UserEntity, Long> {
     @Query("SELECT id, user_name, age FROM users WHERE age > :age")
-    List<UserEntity> findByAgeGreaterThan(@Bind("age") int age);
+    List<UserEntity> findByAgeGreaterThan(@Bind int age);
 }
 
 // 3. 使用（统一门面 JForge：持有 DataSource/TransactionManager，缓存全部仓库）

@@ -140,6 +140,16 @@ class SelectQueryTest {
         assertEquals(1, repo.countByAge(25));
     }
 
+    /** 复杂原生 Query 的表别名/列名不依赖实体属性名，且按片段顺序绑定。 */
+    @Test
+    void queryUsesAliasedSqlColumnNames() {
+        List<UserEntity> found = repo.findByAliasedColumns("qin", 20);
+
+        assertEquals(1, found.size());
+        assertEquals("qin", found.get(0).name());
+        assertEquals(25, found.get(0).age());
+    }
+
     // ---- 动态判定矩阵用例 ----
 
     /** 基本类型参数：静态形态（过滤正确）。 */
@@ -171,6 +181,14 @@ class SelectQueryTest {
         assertEquals(2, repo.findByIdIn(List.of(1L, 2L)).size());
         assertEquals(2, repo.findByIdArray(new long[]{1L, 2L}).size());
         assertTrue(repo.findByIdIn(List.of()).isEmpty());
+    }
+
+    @Test
+    void notInConditionsUseNotInAndEmptyIsTrue() {
+        assertEquals(1, repo.findByIdNotIn(List.of(1L, 2L)).size());
+        assertEquals(3, repo.findByIdNotIn(List.of()).size());
+        assertEquals(1, repo.findByIdNotInArray(new long[]{1L, 2L}).size());
+        assertEquals(3, repo.findByIdNotInArray(new long[]{}).size());
     }
 
     /** 无 {@code @NullMarked} 时，未标注实体引用类型生成 {@code @Nullable}。 */
@@ -312,5 +330,14 @@ class SelectQueryTest {
         assertEquals("qin", users.get(0).name());
 
         assertTrue(repo.findWithAppendedStaticWhere("qin", 30).isEmpty());
+    }
+
+    @Test
+    void queryWithAppendedNotInCollection() {
+        assertEquals(1, repo.findByQueryNotIn(List.of(1L, 2L)).size());
+        assertEquals(3, repo.findByQueryNotIn(List.of()).size());
+        assertEquals(3, repo.findByQueryNotIn(null).size());
+        assertEquals(1, repo.findByQueryNotInArray(new long[]{1L, 2L}).size());
+        assertEquals(3, repo.findByQueryNotInArray(new long[]{}).size());
     }
 }

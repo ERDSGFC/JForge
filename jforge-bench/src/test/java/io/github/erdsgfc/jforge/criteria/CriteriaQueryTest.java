@@ -57,6 +57,11 @@ class CriteriaQueryTest {
         assertEquals(3, all.size());
     }
 
+    @Test
+    void whereValueFalseAllowsUnmarkedCriteriaType() {
+        assertEquals(1, repo.findByLoose(new LooseCriteria("qin")).size());
+    }
+
     /** 条件对象集合字段：IN 条件（非空命中 / 空集合 → 1 = 0 无匹配）。 */
     @Test
     void collectionFieldGeneratesIn() {
@@ -68,6 +73,25 @@ class CriteriaQueryTest {
 
         criteria.ages = java.util.List.of();          // 空集合 → 1 = 0
         assertTrue(repo.findComplex(criteria).isEmpty());
+    }
+
+    /** 条件对象集合字段：NOT IN（非空排除 / 空集合恒真）。 */
+    @Test
+    void collectionFieldGeneratesNotIn() {
+        UserCriteria criteria = new UserCriteria();
+        criteria.excludedAges = List.of(25, 30);
+
+        assertEquals(1, repo.findComplex(criteria).size());
+        assertEquals(10, repo.findComplex(criteria).get(0).age());
+
+        criteria.excludedAges = null;
+        criteria.excludedAgesArray = new int[]{25, 30};
+        assertEquals(1, repo.findComplex(criteria).size());
+        assertEquals(10, repo.findComplex(criteria).get(0).age());
+
+        criteria.excludedAgesArray = new int[]{};
+        criteria.excludedAges = List.of();
+        assertEquals(3, repo.findComplex(criteria).size());
     }
 
     /** 值字段条件（null 跳过 + 连接符）。 */
@@ -273,6 +297,13 @@ class CriteriaQueryTest {
         assertTrue(repo.findByNickname(Optional.of("all-beijing")).size() >= 2);
     }
 
+    @Test
+    void updateWithNotInCollectionCondition() {
+        assertEquals(2, repo.updateNameExcluding("renamed", List.of(1L)));
+        assertEquals(2, repo.findByNickname(Optional.of("renamed")).size());
+        assertEquals("qin", repo.findById(1L).name());
+    }
+
     // ---- @Delete 声明式删除 ----
 
     /** 基本删除：WHERE 条件（全静态 → SQL 常量）。 */
@@ -282,6 +313,13 @@ class CriteriaQueryTest {
 
         assertEquals(1, deleted);
         assertEquals(2, repo.findAll().size());
+    }
+
+    @Test
+    void deleteByNotInCollectionCondition() {
+        assertEquals(2, repo.deleteByIdNotIn(List.of(1L)));
+        assertEquals(1, repo.findAll().size());
+        assertEquals(1L, repo.findAll().get(0).id());
     }
 
     /** Optional WHERE：isEmpty → IS NULL（删除空名行）。 */

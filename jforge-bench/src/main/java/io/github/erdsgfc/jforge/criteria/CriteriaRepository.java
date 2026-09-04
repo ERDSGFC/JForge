@@ -7,6 +7,7 @@ import io.github.erdsgfc.jforge.annotation.Select;
 import io.github.erdsgfc.jforge.annotation.UpdateSet;
 import io.github.erdsgfc.jforge.annotation.Update;
 import io.github.erdsgfc.jforge.annotation.Where;
+import io.github.erdsgfc.jforge.annotation.Op;
 import io.github.erdsgfc.jforge.core.BaseRepository;
 import org.jspecify.annotations.Nullable;
 
@@ -21,6 +22,10 @@ public interface CriteriaRepository extends BaseRepository<CriteriaUser, Long> {
     @Select
     List<CriteriaUser> findComplex(@Where UserCriteria user);
 
+    /** value=false 允许条件对象未标注 @JForgeSql。 */
+    @Select
+    List<CriteriaUser> findByLoose(@Where(value = false) LooseCriteria criteria);
+
     /** Optional 参数：isEmpty → user_name IS NULL；有值 → user_name = ?（列映射 name 字段）。 */
     @Select
     List<CriteriaUser> findByNickname(@Condition(value = "name") @Nullable Optional<String> nickname);
@@ -33,6 +38,11 @@ public interface CriteriaRepository extends BaseRepository<CriteriaUser, Long> {
     @Update
     int updateNameAndAge(@UpdateSet String name, @UpdateSet @Nullable Integer age, @Condition Long id);
 
+    /** 集合 {@code NOT IN} WHERE 条件用于声明式更新。 */
+    @Update
+    int updateNameExcluding(@UpdateSet String name,
+            @Condition(value = "id", op = Op.NE) List<Long> excludedIds);
+
     /** 声明式更新：Optional SET 空 → SET 列 = NULL。 */
     @Update
     int updateNickname(@UpdateSet(value = "name") @Nullable Optional<String> nickname, @Condition Long id);
@@ -44,6 +54,10 @@ public interface CriteriaRepository extends BaseRepository<CriteriaUser, Long> {
     /** 声明式删除：WHERE 条件（全静态 → SQL 常量）。 */
     @Delete
     int deleteByIdCondition(@Condition Long id);
+
+    /** 集合 {@code NOT IN} WHERE 条件用于声明式删除。 */
+    @Delete
+    int deleteByIdNotIn(@Condition(value = "id", op = Op.NE) List<Long> excludedIds);
 
     /** 声明式删除：Optional WHERE 参数（isEmpty → IS NULL）。 */
     @Delete

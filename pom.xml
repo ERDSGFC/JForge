@@ -17,6 +17,7 @@
     <module>jforge-bench</module>
     <module>jforge-spring-boot-starter</module>
     <module>jforge-spring-boot-pgsql</module>
+    <module>jforge-spring-boot-postgresql</module>
   </modules>
 
   <!-- Maven Central 发布元数据（发布前按实际仓库信息核对） -->

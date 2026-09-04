@@ -30,8 +30,19 @@ import java.lang.annotation.Target;
  * @Select
  * List<UserEntity> findComplex(@Where UserCriteria criteria);
  * }</pre>
+ * <p>在 {@link Query} 方法中，条件对象的每个字段都必须显式标注
+ * {@link Condition}、嵌套 {@code @Where} 或合法上下文中的 {@link UpdateSet}；
+ * {@link And}/{@link Or} 仅用于连接修饰，不能替代语义注解。Query 中的
+ * {@code @Condition.value} 必须显式填写，并表示原生 SQL 列名。</p>
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 public @interface Where {
+    /**
+     * 是否强制要求条件对象类型标注 {@link JForgeSql}。
+     * <p>默认为 {@code true}。设置为 {@code false} 时，处理器仍会按字段/record
+     * 组件展开条件，但允许该类型未标注 {@code @JForgeSql}。根参数和嵌套字段
+     * 分别读取各自的 {@code value} 设置。</p>
+     */
+    boolean value() default true;
 }

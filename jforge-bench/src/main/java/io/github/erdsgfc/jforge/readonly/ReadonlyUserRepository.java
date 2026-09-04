@@ -13,5 +13,5 @@ public interface ReadonlyUserRepository extends BaseRepository<ReadonlyUser, Lon
 
     /** 按年龄过滤查询（列名映射）。 */
     @Query("SELECT id, user_name, age FROM readonly_users WHERE age > :age")
-    List<ReadonlyUser> findByAgeGreaterThan(@Bind("age") int age);
+    List<ReadonlyUser> findByAgeGreaterThan(@Bind int age);
 }

@@ -41,8 +41,9 @@ public final class UpdateGenerator {
         final boolean dynamic;     // @Nullable → null 跳过
         final boolean optional;    // Optional：空 → SET NULL
         final String valueExpr;    // Optional 绑定值表达式
-        final String rawSql;       // 原生 SET 表达式（非 null 替代 列 = ?；含 ? 绑定参数）
+        String rawSql;              // 原生 SET 表达式（已转换命名占位符）
         final String converterField; // 宿主列 @Convert 转换器字段（非 null = 值经转换器绑定）
+        List<RawSqlSupport.Binding> rawBindings = List.of();
 
         SetUnit(String column, String paramName, String bindType, boolean dynamic,
                 boolean optional, String valueExpr, String rawSql, String converterField) {
@@ -172,8 +173,12 @@ public final class UpdateGenerator {
             SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, false, logSql);
             int index = 1;
             for (SetUnit unit : sets) {
-                // rawSql 无 ? 的纯常量 SET 不绑定参数。
-                if (unit.rawSql != null && !unit.rawSql.contains("?")) {
+                if (unit.rawSql != null) {
+                    for (RawSqlSupport.Binding binding : unit.rawBindings) {
+                        spec.addCode(SqlCodegen.bindParam(binding.typeName(), binding.expression(), index++,
+                                binding.nullable(), false, null));
+                        spec.addCode("\n");
+                    }
                     continue;
                 }
                 // Optional SET(非空契约,静态形态):绑定 valueExpr(opt.get());普通 SET 绑参数。
@@ -277,7 +282,14 @@ public final class UpdateGenerator {
             String valueExpr = optional ? readExpr + CriteriaGenerator.optionalValueMethod(fieldType) : null;
             String rawSql = set.rawSql();
             if (!rawSql.isEmpty()) {
-                sets.add(new SetUnit(null, readExpr, bindType, dynamic, optional, valueExpr, rawSql, null));
+                SetUnit unit = new SetUnit(null, readExpr, bindType, dynamic, optional, valueExpr, rawSql, null);
+                RawSqlSupport.Plan plan = RawSqlSupport.resolve(rawSql, fieldType, field, readExpr,
+                        set.requireJForgeSql(), processingEnv.getMessager(), processingEnv.getTypeUtils(), method,
+                        info.model.dialectSupport());
+                if (plan == null) return null;
+                unit.rawSql = plan.sql();
+                unit.rawBindings = plan.bindings();
+                sets.add(unit);
                 continue;
             }
             String fieldName = !set.value().isEmpty() ? set.value() : field.getSimpleName().toString();
@@ -320,7 +332,14 @@ public final class UpdateGenerator {
         // 原生 SQL SET 表达式：rawSql 非空直接使用（跳过列映射），含 ? 绑定参数。
         String rawSql = set != null ? set.rawSql() : "";
         if (!rawSql.isEmpty()) {
-            return new SetUnit(null, paramName, bindType, dynamic, optional, valueExpr, rawSql, null);
+            SetUnit unit = new SetUnit(null, paramName, bindType, dynamic, optional, valueExpr, rawSql, null);
+            RawSqlSupport.Plan plan = RawSqlSupport.resolve(rawSql, parameter.asType(), parameter, paramName,
+                    set.requireJForgeSql(), processingEnv.getMessager(), processingEnv.getTypeUtils(), method,
+                    info.model.dialectSupport());
+            if (plan == null) return null;
+            unit.rawSql = plan.sql();
+            unit.rawBindings = plan.bindings();
+            return unit;
         }
 
         String fieldName = set != null && !set.value().isEmpty()
@@ -376,8 +395,12 @@ public final class UpdateGenerator {
         if (unit.dynamic) {
             spec.beginControlFlow("if ($L != null)", unit.paramName);
         }
-        if (unit.rawSql != null && !unit.rawSql.contains("?")) {
-            // 纯常量 SET 表达式（无 ?）不绑定参数。
+        if (unit.rawSql != null) {
+            for (RawSqlSupport.Binding binding : unit.rawBindings) {
+                spec.addCode(SqlCodegen.bindParam(binding.typeName(), binding.expression(), "i++",
+                        binding.nullable(), false, null));
+                spec.addCode("\n");
+            }
         } else if (unit.optional) {
             spec.beginControlFlow("if ($L.isPresent())", unit.paramName);
             spec.addCode(SqlCodegen.bindParam(unit.bindType, unit.valueExpr, "i++", false, false,

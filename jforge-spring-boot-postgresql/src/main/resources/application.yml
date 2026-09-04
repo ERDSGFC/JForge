@@ -1,0 +1,10 @@
+spring:
+  threads:
+    virtual:
+      enabled: true
+  application:
+    name: customer-api
+  datasource:
+    username: postgres
+    password: asdfjj
+    url: jdbc:postgresql://localhost:5432/jpa?ssl=false&reWriteBatchedInserts=true

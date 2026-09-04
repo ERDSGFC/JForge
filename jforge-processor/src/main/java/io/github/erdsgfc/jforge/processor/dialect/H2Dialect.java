@@ -41,4 +41,14 @@ public final class H2Dialect implements DialectSupport {
     public String booleanLiteral() {
         return "TRUE";
     }
+
+    @Override
+    public boolean supportsDollarQuotedStrings() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsDoubleColonCast() {
+        return true;
+    }
 }

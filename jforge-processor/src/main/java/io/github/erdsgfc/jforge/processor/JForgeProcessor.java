@@ -6,6 +6,7 @@ import io.github.erdsgfc.jforge.annotation.Dao;
 import io.github.erdsgfc.jforge.annotation.JForgeConfig;
 import io.github.erdsgfc.jforge.processor.generator.core.RepositoryGenerator;
 import io.github.erdsgfc.jforge.processor.utils.CommonUtils;
+import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
@@ -161,13 +162,14 @@ public class JForgeProcessor extends AbstractProcessor {
             return null;
         }
 
-        // ID 类型以实体 @Id getter 为准(实体自己声明主键类型,泛型参数可能写错);
-        // 泛型参数仅作一致性校验——不一致直接报错,而不是静默采用错误类型。
-        if (!processingEnv.getTypeUtils().isSameType(idMirror, model.idColumn().returnType)) {
+        // ID 泛型必须与实体 @Id getter 类型一致；primitive 与其包装类型视为等价。
+        // 公开 CRUD 签名随后使用 BaseRepository 的 ID 泛型（因为 Java 泛型不能是 primitive）。
+        if (!TypeNameUtils.isSameType(idMirror, model.idColumn().returnType, processingEnv.getTypeUtils())) {
             error(dao, "@Dao ID type " + idMirror + " does not match entity @Id getter type "
                     + model.idColumn().returnType + " on " + entityElement.getQualifiedName());
             return null;
         }
+
         // ID 类型参数同样必须是具体类型:虽然 idMirror 从不被 cast(isSameType 对类型变量
         // 安全比较返回 false),但显式判断能让泛型 ID 的错误消息准确,而不是误导性的
         // "ID 类型不匹配"。
@@ -179,7 +181,8 @@ public class JForgeProcessor extends AbstractProcessor {
 
         info.model = model;
         info.entityType = ClassName.get(model.entityPackage(), model.entitySimpleName());
-        info.idType = TypeName.get(model.idColumn().returnType);
+        // CRUD signatures follow BaseRepository ID type (wrapper), even when entity ID is primitive.
+        info.idType = TypeName.get(processingEnv.getTypeUtils().stripAnnotations(idMirror));
         return info;
     }
 

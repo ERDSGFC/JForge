@@ -22,45 +22,51 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 
     /** 按列名映射的完整实体查询。 */
     @Query("SELECT id, user_name, age FROM users WHERE age > :age")
-    List<UserEntity> findByAgeGreaterThan(@Bind("age") int age);
+    List<UserEntity> findByAgeGreaterThan(@Bind int age);
 
     /** 部分字段投影到 DTO record。 */
     @Query("SELECT id, user_name FROM users WHERE id = :id")
-    UserNameDto findNameById(@Bind("id") long id);
+    UserNameDto findNameById(@Bind long id);
 
     /** 标量计数。 */
     @Query("SELECT COUNT(*) FROM users WHERE age = :age")
-    long countByAge(@Bind("age") int age);
+    long countByAge(@Bind int age);
 
     /** 返回受影响行数的更新语句。 */
     @Query("UPDATE users SET age = :age WHERE id = :id")
-    int updateAge(@Bind("id") long id, @Bind("age") int age);
+    int updateAge(@Bind long id, @Bind int age);
 
-    @Query("SELECT id, user_name, age FROM users")
-    List<UserEntity> findByAutoQueryParameter(String name);
+    @Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
+    List<UserEntity> findByAutoQueryParameter(@Bind String name);
+
+    /** Query 原生 SQL 使用表别名时，条件 value 直接使用 SQL 列表达式。 */
+    @Query("SELECT u.id, u.user_name, u.age FROM users u WHERE {:name} AND {:minAge} ORDER BY u.id")
+    List<UserEntity> findByAliasedColumns(
+            @Condition(value = "u.user_name") String name,
+            @Condition(value = "u.age", op = Op.GE) int minAge);
 
     /** 动态 WHERE：age 为 null 时按 JSpecify 空性规则跳过。 */
-    @Query("SELECT id, user_name, age FROM users WHERE age = :age AND user_name = :name")
-    List<UserEntity> findDynamicByAgeAndName(@Bind("age") @Nullable Integer age,
-            @Bind("name") String name);
+    @Query("SELECT id, user_name, age FROM users WHERE {:age} AND user_name = :name")
+    List<UserEntity> findDynamicByAgeAndName(@Condition(value = "age") @Nullable Integer age,
+            @Bind String name);
 
     /** 动态 WHERE：@Nullable 自动推断（片段仅一个占位符）。 */
-    @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND age = :age")
-    List<UserEntity> findAutoDynamicByAgeAndName(@Bind("name") String name,
-            @Bind("age") @Nullable Integer age);
+    @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND {:age}")
+    List<UserEntity> findAutoDynamicByAgeAndName(@Bind String name,
+            @Condition(value = "age") @Nullable Integer age);
 
     /** 动态 WHERE：OR 连接符保留。 */
-    @Query("SELECT id, user_name, age FROM users WHERE age = :age OR user_name = :name")
-    List<UserEntity> findDynamicOr(@Bind("age") @Nullable Integer age, @Bind("name") String name);
+    @Query("SELECT id, user_name, age FROM users WHERE {:age} OR user_name = :name")
+    List<UserEntity> findDynamicOr(@Condition(value = "age") @Nullable Integer age, @Bind String name);
 
     /** @Condition 追加条件：手写 SQL + 自动追加（age 非 null 时 AND age > ?，动态）。 */
-    @Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
-    List<UserEntity> findWithAppendedWhere(@Bind("name") String name,
-            @Condition(op = Op.GT) @Nullable Integer age);
+    @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND {:age}")
+    List<UserEntity> findWithAppendedWhere(@Bind String name,
+            @Condition(value = "age", op = Op.GT) @Nullable Integer age);
 
     /** @Condition 追加条件：静态追加（恒拼接），无 @Nullable。 */
-    @Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
-    List<UserEntity> findWithAppendedStaticWhere(@Bind("name") String name,
+    @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND {:minAge}")
+    List<UserEntity> findWithAppendedStaticWhere(@Bind String name,
             @Condition(value = "age", op = Op.GE) int minAge);
 
     // ---- @Select 声明式查询（不写 SQL，参数即条件，默认等于）----
@@ -83,6 +89,20 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 
     @Select
     List<UserEntity> findByIdArray(long[] id);
+
+    /** {@code @Condition(op = Op.NE)} 集合参数生成 {@code NOT IN}。 */
+    @Select
+    List<UserEntity> findByIdNotIn(@Condition(value = "id", op = Op.NE) List<Long> ids);
+
+    @Select
+    List<UserEntity> findByIdNotInArray(@Condition(value = "id", op = Op.NE) long[] ids);
+
+    /** {@code @Query + @Condition(op = Op.NE)} 集合参数动态展开。 */
+    @Query("SELECT id, user_name, age FROM users WHERE {:ids}")
+    List<UserEntity> findByQueryNotIn(@Condition(value = "id", op = Op.NE) List<Long> ids);
+
+    @Query("SELECT id, user_name, age FROM users WHERE {:ids}")
+    List<UserEntity> findByQueryNotInArray(@Condition(value = "id", op = Op.NE) long[] ids);
 
     /** 操作符：{@code age > ?}。 */
     @Select

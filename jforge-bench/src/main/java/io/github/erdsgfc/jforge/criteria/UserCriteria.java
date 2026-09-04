@@ -29,6 +29,14 @@ public class UserCriteria {
     @Condition(value = "age")
     public List<Integer> ages;
 
+    /** age NOT IN (?,?,...)；空集合 → 1 = 1。 */
+    @Condition(value = "age", op = Op.NE)
+    public List<Integer> excludedAges;
+
+    /** age NOT IN (?,?,...) for primitive arrays; empty array → 1 = 1. */
+    @Condition(value = "age", op = Op.NE)
+    public int[] excludedAgesArray;
+
     /** AND (city = ? AND street = ?)（null 跳过整个括号）。 */
     @Where
     public AddressCriteria address;
@@ -51,6 +59,14 @@ public class UserCriteria {
 
     public List<Integer> getAges() {
         return ages;
+    }
+
+    public List<Integer> getExcludedAges() {
+        return excludedAges;
+    }
+
+    public int[] getExcludedAgesArray() {
+        return excludedAgesArray;
     }
 
     public AddressCriteria getAddress() {

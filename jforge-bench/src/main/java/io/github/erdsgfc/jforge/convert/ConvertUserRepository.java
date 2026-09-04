@@ -24,16 +24,16 @@ public interface ConvertUserRepository extends BaseRepository<ConvertUser, Long>
      * {@code @Nullable}）。
      */
     @Query("SELECT * FROM convert_users WHERE birth_date = :d")
-    ConvertUser findByBirthDate(@Bind(value = "d", converter = StringDateConverter.class) LocalDate d);
+    ConvertUser findByBirthDate(@Bind(converter = StringDateConverter.class) LocalDate d);
 
     /**
      * 动态路径：{@code @Nullable} 参数 + {@code @Bind} 转换器（{@link VarcharDateConverter}，
      * 显式 {@code sqlType() = VARCHAR}）——运行时 {@code null} 跳过条件、非 null 经转换器
      * 绑定（运行时索引 {@code i++}）。
      */
-    @Query("SELECT * FROM convert_users WHERE hire_date = :d")
+    @Query("SELECT * FROM convert_users WHERE {:d}")
     ConvertUser findNullableByHireDate(
-            @Nullable @Bind(value = "d", converter = VarcharDateConverter.class) LocalDate d);
+            @Condition(value = "hire_date") @Nullable LocalDate d);
 
     /**
      * {@code @Select}：条件参数名即宿主实体字段名，处理器自动复用该列 {@code @Convert}
@@ -47,8 +47,9 @@ public interface ConvertUserRepository extends BaseRepository<ConvertUser, Long>
      * {@code @Query} + {@code @Condition} 追加条件：{@code birthDate} 条件映射宿主列
      * {@code birth_date}，自动复用其转换器。
      */
-    @Query("SELECT * FROM convert_users WHERE name = :n")
-    ConvertUser findByNameAndBirthDate(@Bind("n") String name, @Condition LocalDate birthDate);
+    @Query("SELECT * FROM convert_users WHERE name = :name AND {:birthDate}")
+    ConvertUser findByNameAndBirthDate(@Bind String name,
+            @Condition(value = "birth_date") LocalDate birthDate);
 
     /** 条件对象字段命中 @Convert 列：自动复用列转换器生成匹配表示。 */
     @Select

@@ -42,4 +42,9 @@ public final class SqliteDialect implements DialectSupport {
     public String booleanLiteral() {
         return "1"; // SQLite 无布尔类型,以 0/1 存储
     }
+
+    @Override
+    public boolean supportsBacktickQuotedIdentifiers() {
+        return true;
+    }
 }

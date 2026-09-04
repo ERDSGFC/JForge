@@ -59,10 +59,10 @@ public interface UserEntity {
 @Dao
 public interface UserRepository extends BaseRepository<UserEntity, Long> {
     @Query("SELECT id, user_name, age FROM users WHERE age > :age")
-    List<UserEntity> findByAgeGreaterThan(@Bind("age") int age);
+    List<UserEntity> findByAgeGreaterThan(@Bind int age);
 
     @Query("SELECT id, user_name FROM users WHERE id = :id")
-    UserNameDto findNameById(@Bind("id") long id);   // record DTO 投影
+    UserNameDto findNameById(@Bind long id);   // record DTO 投影
 }
 
 // 3. 使用（Repositories 工厂编译期生成）

@@ -5,6 +5,7 @@ import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeSpec;
 import io.github.erdsgfc.jforge.annotation.*;
+import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
@@ -13,13 +14,11 @@ import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.MirroredTypeException;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * 生成 {@code @Select} 声明式查询方法：不写 SQL，按返回类型与方法参数自动构造
@@ -170,6 +169,12 @@ public final class SelectGenerator {
             return null;
         }
 
+        List<JoinSpec> joins = parseJoins(info, method);
+        if (joins == null) return null;
+        Map<String, EntityModel> entities = new LinkedHashMap<>();
+        entities.put(info.model.entityQualifiedName(), info.model);
+        for (JoinSpec join : joins) entities.put(join.target().entityQualifiedName(), join.target());
+
         // 解析每个参数为一个 WHERE 条件（字段名 / 操作符 / 动态判定 + 字段存在性校验）。
         // @Where 参数是条件对象——递归展开为片段（值条件/括号分组/Optional IS NULL）。
         List<WhereCondition> conditions = new ArrayList<>();
@@ -184,7 +189,7 @@ public final class SelectGenerator {
                 continue;
             }
             WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
-                    processingEnv, "@Select");
+                    processingEnv, "@Select", entities);
             if (condition == null) {
                 return null;
             }
@@ -193,6 +198,19 @@ public final class SelectGenerator {
 
         String baseSql = "SELECT " + columns + " FROM "
                 + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), info.model.tableName());
+        for (JoinSpec join : joins) {
+            baseSql += " " + join.type().sql() + " "
+                    + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), join.target().tableName());
+            if (join.type() != JoinType.CROSS) {
+                baseSql += " ON ";
+                for (int i = 0; i < join.on().size(); i++) {
+                    if (i > 0) baseSql += " AND ";
+                    Join.On on = join.on().get(i);
+                    baseSql += qualifiedColumn(join.from(), on.local(), info.model.dialectSupport())
+                            + " = " + qualifiedColumn(join.target(), on.target(), info.model.dialectSupport());
+                }
+            }
+        }
         MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
@@ -263,5 +281,85 @@ public final class SelectGenerator {
                 "sql.toString()", configHelper.logSql(info.element));
         return spec.build();
     }
+
+    /** 编译期解析一个 @Select 方法上的全部连接，并校验连接图的顺序和字段。 */
+    private List<JoinSpec> parseJoins(JForgeProcessor.DaoInfo info, ExecutableElement method) {
+        Join[] annotations = method.getAnnotationsByType(Join.class);
+        List<JoinSpec> result = new ArrayList<>();
+        Map<String, EntityModel> available = new LinkedHashMap<>();
+        available.put(info.model.entityQualifiedName(), info.model);
+        for (Join annotation : annotations) {
+            TypeElement targetElement = mirroredClass(annotation, true);
+            if (targetElement == null) {
+                error(method, "@Join.entity must be an entity type");
+                return null;
+            }
+            EntityModel target = EntityModel.parse(targetElement, processingEnv.getTypeUtils(),
+                    Diagnostic.Kind.ERROR, processingEnv.getMessager(), configHelper);
+            if (target == null) return null;
+            if (available.containsKey(target.entityQualifiedName())) {
+                error(method, "@Join does not support joining the same entity more than once: "
+                        + target.entityQualifiedName());
+                return null;
+            }
+            TypeElement fromElement = mirroredClass(annotation, false);
+            EntityModel from = fromElement == null ? info.model
+                    : available.get(fromElement.getQualifiedName().toString());
+            if (from == null) {
+                error(method, "@Join.from must be the host entity or an earlier joined entity");
+                return null;
+            }
+            JoinType type = annotation.type();
+            List<Join.On> on = List.of(annotation.on());
+            if (type == JoinType.CROSS && !on.isEmpty()) {
+                error(method, "CROSS JOIN cannot declare @Join.On conditions");
+                return null;
+            }
+            if (type != JoinType.CROSS && on.isEmpty()) {
+                error(method, "A non-CROSS @Join requires at least one @Join.On condition");
+                return null;
+            }
+            for (Join.On pair : on) {
+                if (findColumn(from, pair.local()) == null || findColumn(target, pair.target()) == null) {
+                    error(method, "@Join.On refers to an unknown entity field: "
+                            + pair.local() + " -> " + pair.target());
+                    return null;
+                }
+            }
+            result.add(new JoinSpec(from, target, type, on));
+            available.put(target.entityQualifiedName(), target);
+        }
+        return result;
+    }
+
+    /** 读取 Class 注解属性而不加载用户类型（javac 会抛 MirroredTypeException）。 */
+    private TypeElement mirroredClass(Join annotation, boolean target) {
+        try {
+            if (target) annotation.entity(); else annotation.from();
+            return null;
+        } catch (MirroredTypeException e) {
+            if (e.getTypeMirror().getKind() != TypeKind.DECLARED) return null;
+            return (TypeElement) ((DeclaredType) e.getTypeMirror()).asElement();
+        }
+    }
+
+    private static EntityModel.ColumnModel findColumn(EntityModel model, String field) {
+        for (EntityModel.ColumnModel column : model.columns()) {
+            if (column.fieldName.equals(field)) return column;
+        }
+        return null;
+    }
+
+    private static String qualifiedColumn(EntityModel model, String field, DialectSupport dialect) {
+        EntityModel.ColumnModel column = findColumn(model, field);
+        return SqlCodegen.quoteIdentifier(dialect, model.tableName()) + "."
+                + SqlCodegen.quoteIdentifier(dialect, column.columnName);
+    }
+
+    private void error(Element element, String message) {
+        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, message, element);
+    }
+
+    private record JoinSpec(EntityModel from, EntityModel target, JoinType type, List<Join.On> on) { }
 
 }
