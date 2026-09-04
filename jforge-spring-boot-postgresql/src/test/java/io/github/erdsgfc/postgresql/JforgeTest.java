@@ -25,10 +25,9 @@ public class JforgeTest {
     @Transactional
     @Rollback(false)
     void baseRepTest() {
-        // save → findById → update → findAll 全链路(自包含,不依赖固定 id)。
-        long adminId = ThreadLocalRandom.current().nextLong(1_000_000);
+        long adminId = System.currentTimeMillis();
         SysAdmin created = sysAdminRepository.save(sysAdminRepository.createEntity()
-                .adminId(adminId).adminName("tester").adminMobile("1787899999").adminPassword("123456"));
+                .adminId(adminId).adminName("tester").adminMobile("1787899999").adminPassword("123456").adminStatus(1));
         assertNotNull(created);
 
         SysAdmin found = sysAdminRepository.findById(adminId);
