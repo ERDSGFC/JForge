@@ -16,6 +16,7 @@ import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.*;
 import javax.tools.Diagnostic;
 import java.util.List;
+import java.util.Objects;
 import java.util.Map;
 
 /**
@@ -219,6 +220,11 @@ record WhereCondition(String columnName, String op, String paramName, String typ
     static void appendSql(MethodSpec.Builder spec, WhereCondition c) {
         if (c.dynamic) spec.beginControlFlow("if ($N != null)", c.paramName);
         if (c.collection || c.array) {
+            // @NonNull 契约的数组/集合(dynamic=false,无 null 守卫)在这里快速失败——
+            // 否则 null 会于 param.length/遍历处抛模糊 NPE;@Nullable 集合被上方守卫
+            // 拦截,null 不会执行到此。
+            spec.addStatement("$T.requireNonNull($L, $S)", Objects.class, c.paramName,
+                    c.paramName + " must not be null");
             if (c.collection) {
                 // 集合:直接遍历入参拼占位符,零临时内存。占位符先拼入局部缓冲
                 // inSql_xxx(空集判定在循环后才知道，不能先拼 IN/NOT IN 的左括号。

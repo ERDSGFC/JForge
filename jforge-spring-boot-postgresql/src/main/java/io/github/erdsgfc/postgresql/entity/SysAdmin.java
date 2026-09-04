@@ -19,4 +19,7 @@ public interface SysAdmin {
     String adminPassword();
     SysAdmin adminPassword(String adminPassword);
 
+    int adminStatus();
+    SysAdmin adminStatus(int adminStatus);
+
 }

@@ -1,8 +1,12 @@
 package io.github.erdsgfc.jforge.processor.utils;
 
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeName;
+
 import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
+import java.util.Objects;
 
 /**
  * JSpecify 空性判定的公共工具——实体列、生成类型与动态 SQL 参数统一走这里。
@@ -52,6 +56,39 @@ public final class Nullability {
             current = current.getEnclosingElement();
         }
         return false;
+    }
+
+    // ---- 空性代码生成辅助（非空契约参数/返回值的补标与快速失败）----
+
+    /**
+     * 返回补标 JSpecify {@code @NonNull} 的类型（非空契约的生成签名用）——
+     * {@link TypeNameUtils#withNullability} 的语义化包装;与 {@link #isNullable}
+     * 等判定方法区分:本族是"生成新类型",判定族是"读注解"。
+     */
+    public static TypeName withNonNull(TypeName type) {
+        return TypeNameUtils.withNullability(type, false);
+    }
+
+    /** 返回补标 JSpecify {@code @Nullable} 的类型（可空契约的生成签名用）。 */
+    public static TypeName withNullable(TypeName type) {
+        return TypeNameUtils.withNullability(type, true);
+    }
+
+    /**
+     * 在生成方法体开头生成 {@code Objects.requireNonNull(expr, "<operation>: <name> must
+     * not be null")}——对 {@code @NonNull} 契约参数快速失败(null 是调用错误),替代静默
+     * 返回或 null 在绑定/解引用处的模糊 NPE。消息带操作名以区分同名参数
+     * (如 {@code id} 出现在 deleteById/findById/existsById)。
+     *
+     * @param method     方法构建器
+     * @param operation  操作名(消息上下文,如 {@code "findById"})
+     * @param expression 参数表达式(通常为参数名)
+     * @param name       参数名(消息内容)
+     */
+    public static void requireNonNull(MethodSpec.Builder method, String operation, String expression,
+            String name) {
+        method.addStatement("$T.requireNonNull($L, $S)", Objects.class, expression,
+                operation + ": " + name + " must not be null");
     }
 
     private static boolean hasAnnotation(Element element, String annotationName) {

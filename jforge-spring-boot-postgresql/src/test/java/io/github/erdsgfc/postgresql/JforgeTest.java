@@ -45,4 +45,9 @@ public class JforgeTest {
     void nullParameterFailsFast() {
         assertThrows(NullPointerException.class, () -> sysAdminRepository.update(null));
     }
+
+    @Test
+    void updateAdminStatus() {
+        sysAdminRepository.updateAdminStatus(2, null);
+    }
 }

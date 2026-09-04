@@ -5,6 +5,7 @@ import io.github.erdsgfc.jforge.annotation.BatchSize;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
+import io.github.erdsgfc.jforge.processor.utils.Nullability;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
@@ -35,20 +36,6 @@ public final class CrudGenerator {
      */
     public CrudGenerator(JForgeConfigHelper configHelper) {
         this.configHelper = configHelper;
-    }
-
-    private static TypeName nonNull(TypeName type) {
-        return TypeNameUtils.withNullability(type, false);
-    }
-
-    private static TypeName nullable(TypeName type) {
-        return TypeNameUtils.withNullability(type, true);
-    }
-
-    private static void requireNonNull(MethodSpec.Builder method, String operation, String expression,
-            String name) {
-        method.addStatement("$T.requireNonNull($L, $S)", Objects.class, expression,
-                operation + ": " + name + " must not be null");
     }
 
     /**
@@ -94,7 +81,7 @@ public final class CrudGenerator {
         return MethodSpec.methodBuilder("createEntity")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(nonNull(info.entityType))
+                .returns(Nullability.withNonNull(info.entityType))
                 .addStatement("return new $T()", entityImpl)
                 .build();
     }
@@ -120,10 +107,10 @@ public final class CrudGenerator {
         MethodSpec.Builder method = MethodSpec.methodBuilder("save")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(nonNull(info.entityType))
-                .addParameter(nonNull(info.entityType), "entity");
+                .returns(Nullability.withNonNull(info.entityType))
+                .addParameter(Nullability.withNonNull(info.entityType), "entity");
         // @NonNull 契约参数快速失败:null 时明确 NPE,而非在 getter 解引用处抛模糊异常。
-        requireNonNull(method, "save", "entity", "entity");
+        Nullability.requireNonNull(method, "save", "entity", "entity");
         // 空列守卫:实体无可写列(全只读/策略排除)——编译期已确定,直接抛配置错误,
         // 避免生成 "INSERT INTO t () VALUES ()" 语法错误(纯只读实体仓库仍可定义)。
         if (insertColumns.isEmpty()) {
@@ -199,10 +186,10 @@ public final class CrudGenerator {
         MethodSpec.Builder method = MethodSpec.methodBuilder("save")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(nonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType)))
-                .addParameter(nonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType)), "entities");
+                .returns(Nullability.withNonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType)))
+                .addParameter(Nullability.withNonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType)), "entities");
         // @NonNull 契约参数快速失败(null → NPE);空列表是合法场景(直接返回)。
-        requireNonNull(method, "saveAll", "entities", "entities");
+        Nullability.requireNonNull(method, "saveAll", "entities", "entities");
         method.beginControlFlow("if (entities.isEmpty())")
                 .addStatement("return entities")
                 .endControlFlow();
@@ -442,8 +429,8 @@ public final class CrudGenerator {
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
-                .addParameter(nonNull(info.entityType), "entity");
-        requireNonNull(method, "delete", "entity", "entity");
+                .addParameter(Nullability.withNonNull(info.entityType), "entity");
+        Nullability.requireNonNull(method, "delete", "entity", "entity");
         method.addStatement("return deleteById(entity.$L())", info.model.idColumn().getterName);
         return method.build();
     }
@@ -460,8 +447,8 @@ public final class CrudGenerator {
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.INT)
-                .addParameter(nonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType)), "entities");
-        requireNonNull(method, "delete", "entities", "entities");
+                .addParameter(Nullability.withNonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType)), "entities");
+        Nullability.requireNonNull(method, "delete", "entities", "entities");
         method.addStatement("$T<$T> ids = new $T<>()",
                 ClassName.get(List.class), info.idType, ClassName.get(ArrayList.class));
         method.beginControlFlow("for ($T entity : entities)", info.entityType);
@@ -486,8 +473,8 @@ public final class CrudGenerator {
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
-                .addParameter(nonNull(info.idType), "id");
-        requireNonNull(method, "deleteById", "id", "id");
+                .addParameter(Nullability.withNonNull(info.idType), "id");
+        Nullability.requireNonNull(method, "deleteById", "id", "id");
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "deleteByIdSql", false, configHelper.logSql(info.element));
         method.addCode(idBindParam(info, "id", 1));
         method.addCode("\n");
@@ -512,8 +499,8 @@ public final class CrudGenerator {
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.INT)
-                .addParameter(nonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.idType)), "ids");
-        requireNonNull(method, "deleteByIds", "ids", "ids");
+                .addParameter(Nullability.withNonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.idType)), "ids");
+        Nullability.requireNonNull(method, "deleteByIds", "ids", "ids");
         method.beginControlFlow("if (ids.isEmpty())");
         method.addStatement("return 0");
         method.endControlFlow();
@@ -552,8 +539,8 @@ public final class CrudGenerator {
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
-                .addParameter(nonNull(info.entityType), "entity");
-        requireNonNull(method, "update", "entity", "entity");
+                .addParameter(Nullability.withNonNull(info.entityType), "entity");
+        Nullability.requireNonNull(method, "update", "entity", "entity");
         // 空列守卫:SET 无列时 "UPDATE t SET WHERE ..." 是语法错误——编译期已确定,
         // 直接抛配置错误。
         if (updateColumns.isEmpty()) {
@@ -594,9 +581,9 @@ public final class CrudGenerator {
         MethodSpec.Builder method = MethodSpec.methodBuilder("findById")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(nullable(info.entityType))
-                .addParameter(nonNull(info.idType), "id");
-        requireNonNull(method, "findById", "id", "id");
+                .returns(Nullability.withNullable(info.entityType))
+                .addParameter(Nullability.withNonNull(info.idType), "id");
+        Nullability.requireNonNull(method, "findById", "id", "id");
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "findByIdSql", false, configHelper.logSql(info.element));
         method.addCode(idBindParam(info, "id", 1));
         method.addCode("\n");
@@ -626,9 +613,9 @@ public final class CrudGenerator {
         MethodSpec.Builder method = MethodSpec.methodBuilder("findByIds")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(nonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType)))
-                .addParameter(nonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.idType)), "ids");
-        requireNonNull(method, "findByIds", "ids", "ids");
+                .returns(Nullability.withNonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType)))
+                .addParameter(Nullability.withNonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.idType)), "ids");
+        Nullability.requireNonNull(method, "findByIds", "ids", "ids");
         // null 快速失败;空列表是合法场景(返回空结果)。
         method.beginControlFlow("if (ids.isEmpty())");
         method.addStatement("return $T.of()", ClassName.get(List.class));
@@ -664,7 +651,7 @@ public final class CrudGenerator {
         MethodSpec.Builder method = MethodSpec.methodBuilder("findAll")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(nonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType)));
+                .returns(Nullability.withNonNull(ParameterizedTypeName.get(ClassName.get(List.class), info.entityType)));
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "findAllSql", false, configHelper.logSql(info.element));
         method.addStatement("$T<$T> result = new $T<>()", ClassName.get(List.class), info.entityType,
                 ClassName.get(ArrayList.class));
@@ -714,8 +701,8 @@ public final class CrudGenerator {
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
-                .addParameter(nonNull(info.idType), "id");
-        requireNonNull(method, "existsById", "id", "id");
+                .addParameter(Nullability.withNonNull(info.idType), "id");
+        Nullability.requireNonNull(method, "existsById", "id", "id");
         method.addStatement("return countById(id) > 0");
         return method.build();
     }
@@ -736,7 +723,7 @@ public final class CrudGenerator {
         MethodSpec.Builder method = MethodSpec.methodBuilder("countById")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.LONG)
-                .addParameter(nonNull(info.idType), "id");
+                .addParameter(Nullability.withNonNull(info.idType), "id");
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "countByIdSql", false,
                 configHelper.logSql(info.element));
         method.addCode(idBindParam(info, "id", 1));
