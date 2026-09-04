@@ -109,6 +109,12 @@ public final class CriteriaGenerator {
      */
     List<Unit> parse(JForgeProcessor.DaoInfo info, ExecutableElement method, VariableElement parameter,
             boolean updateContext) {
+        return parse(info, method, parameter, updateContext, false);
+    }
+
+    /** Query 专用解析：要求每个条件字段显式声明语义注解，并要求 Condition.value。 */
+    List<Unit> parse(JForgeProcessor.DaoInfo info, ExecutableElement method, VariableElement parameter,
+            boolean updateContext, boolean queryContext) {
         TypeMirror type = parameter.asType();
         if (type.getKind() != TypeKind.DECLARED) {
             error(method, "@Where parameter must be a criteria object type: " + type);
@@ -127,7 +133,8 @@ public final class CriteriaGenerator {
                 return null;
             }
         }
-        return parseType(info, method, element, parameter.getSimpleName().toString(), updateContext, true);
+        return parseType(info, method, element, parameter.getSimpleName().toString(), updateContext, true,
+                queryContext);
     }
 
     /**
@@ -178,7 +185,8 @@ public final class CriteriaGenerator {
     // ---- 解析 ----------------------------------------------------------------
 
     private List<Unit> parseType(JForgeProcessor.DaoInfo info, ExecutableElement method,
-            TypeElement criteriaType, String accessor, boolean updateContext, boolean topLevel) {
+            TypeElement criteriaType, String accessor, boolean updateContext, boolean topLevel,
+            boolean queryContext) {
         List<Unit> units = new ArrayList<>();
         boolean first = true;
         for (Element enclosed : criteriaType.getEnclosedElements()) {
@@ -186,6 +194,28 @@ public final class CriteriaGenerator {
                 continue;
             }
             VariableElement field = (VariableElement) enclosed;
+            if (queryContext) {
+                Condition semanticCondition = field.getAnnotation(Condition.class);
+                Where semanticWhere = field.getAnnotation(Where.class);
+                UpdateSet semanticUpdate = field.getAnnotation(UpdateSet.class);
+                int semanticCount = (semanticCondition != null ? 1 : 0)
+                        + (semanticWhere != null ? 1 : 0) + (semanticUpdate != null ? 1 : 0);
+                if (semanticCount == 0) {
+                    error(method, "@Query @Where field must declare @Condition, @Where, or a valid @UpdateSet: "
+                            + field.getSimpleName());
+                    return null;
+                }
+                if (semanticCount > 1) {
+                    error(method, "@Query @Where field has multiple semantic annotations: "
+                            + field.getSimpleName());
+                    return null;
+                }
+                if (semanticCondition != null && semanticCondition.value().isEmpty()) {
+                    error(method, "@Query @Where @Condition field must specify a non-empty value: "
+                            + field.getSimpleName());
+                    return null;
+                }
+            }
             if (field.getAnnotation(UpdateSet.class) != null) {
                 // 修改字段分派:@Update 顶层 → SET(跳过 WHERE);其他位置/场景 → 报错。
                 if (topLevel && updateContext) {
@@ -204,7 +234,7 @@ public final class CriteriaGenerator {
             if (readExpr == null) {
                 return null;
             }
-            Unit unit = parseField(info, method, field, conn, readExpr);
+            Unit unit = parseField(info, method, field, conn, readExpr, queryContext);
             if (unit == null) {
                 return null;
             }
@@ -214,7 +244,7 @@ public final class CriteriaGenerator {
     }
 
     private Unit parseField(JForgeProcessor.DaoInfo info, ExecutableElement method,
-            VariableElement field, String conn, String readExpr) {
+            VariableElement field, String conn, String readExpr, boolean queryContext) {
         TypeMirror fieldType = field.asType();
         Condition condition = field.getAnnotation(Condition.class);
         if (condition != null && field.getAnnotation(Where.class) != null) {
@@ -248,7 +278,7 @@ public final class CriteriaGenerator {
 
         // Optional 族：空 → IS NULL，有值 → 条件（列名取 @Condition.value 或字段名）。
         if (isOptional(fieldType)) {
-            String column = findColumn(info, method, condition, field.getSimpleName().toString());
+            String column = findColumn(info, method, condition, field.getSimpleName().toString(), queryContext);
             if (column == null) {
                 return null;
             }
@@ -257,7 +287,7 @@ public final class CriteriaGenerator {
                     readExpr + optionalValueMethod(fieldType), optionalValueType(fieldType, types),
                     Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null,
                     true, null, null);
-            optionalUnit.converterField = converterOf(info, condition, field.getSimpleName().toString());
+            optionalUnit.converterField = queryContext ? null : converterOf(info, condition, field.getSimpleName().toString());
             return optionalUnit;
         }
         boolean array = fieldType.getKind() == TypeKind.ARRAY;
@@ -272,7 +302,7 @@ public final class CriteriaGenerator {
                 error(method, "Iterable/array @Where fields only support @Condition(op = EQ) or @Condition(op = NE)");
                 return null;
             }
-            String column = findColumn(info, method, condition, field.getSimpleName().toString());
+            String column = findColumn(info, method, condition, field.getSimpleName().toString(), queryContext);
             if (column == null) return null;
             TypeName elementType = array
                     ? TypeName.get(types.stripAnnotations(
@@ -283,7 +313,7 @@ public final class CriteriaGenerator {
             Unit collectionUnit = new Unit(conn, column, op, readExpr, null, elementType.toString(),
                     Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null,
                     false, null, null, collection, array, elementType);
-            collectionUnit.converterField = converterOf(info, condition, field.getSimpleName().toString());
+            collectionUnit.converterField = queryContext ? null : converterOf(info, condition, field.getSimpleName().toString());
             return collectionUnit;
         }
         // 嵌套组仅由显式 @Where 触发，避免把普通自定义值类型误判为条件组。
@@ -300,7 +330,7 @@ public final class CriteriaGenerator {
                 return null;
             }
             List<Unit> nested = parseType(info, method,
-                    nestedType, readExpr, false, false);
+                    nestedType, readExpr, false, false, queryContext);
             if (nested == null) {
                 return null;
             }
@@ -309,7 +339,7 @@ public final class CriteriaGenerator {
                     false, nested, null);
         }
         // 值条件：列名 = @Condition.value 或字段名；null 跳过。
-        String column = findColumn(info, method, condition, field.getSimpleName().toString());
+        String column = findColumn(info, method, condition, field.getSimpleName().toString(), queryContext);
         if (column == null) {
             return null;
         }
@@ -317,7 +347,7 @@ public final class CriteriaGenerator {
         String guard = Nullability.isNullable(field, fieldType) ? readExpr + " != null" : null;
         Unit valueUnit = new Unit(conn, column, op, readExpr, null, types.stripAnnotations(fieldType).toString(),
                 guard, false, null, null);
-        valueUnit.converterField = converterOf(info, condition, field.getSimpleName().toString());
+        valueUnit.converterField = queryContext ? null : converterOf(info, condition, field.getSimpleName().toString());
         return valueUnit;
     }
 
@@ -330,8 +360,16 @@ public final class CriteriaGenerator {
 
     private String findColumn(JForgeProcessor.DaoInfo info, ExecutableElement method,
             Condition condition, String fieldName) {
+        return findColumn(info, method, condition, fieldName, false);
+    }
+
+    private String findColumn(JForgeProcessor.DaoInfo info, ExecutableElement method,
+            Condition condition, String fieldName, boolean queryContext) {
         String entityField = condition != null && !condition.value().isEmpty()
                 ? condition.value() : fieldName;
+        if (queryContext) {
+            return entityField;
+        }
         for (EntityModel.ColumnModel column : info.model.columns()) {
             if (column.fieldName.equals(entityField)) {
                 return SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column.columnName);

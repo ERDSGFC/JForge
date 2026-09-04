@@ -30,6 +30,10 @@ import java.lang.annotation.Target;
  * @Select
  * List<UserEntity> findComplex(@Where UserCriteria criteria);
  * }</pre>
+ * <p>在 {@link Query} 方法中，条件对象的每个字段都必须显式标注
+ * {@link Condition}、嵌套 {@code @Where} 或合法上下文中的 {@link UpdateSet}；
+ * {@link And}/{@link Or} 仅用于连接修饰，不能替代语义注解。Query 中的
+ * {@code @Condition.value} 必须显式填写，并表示原生 SQL 列名。</p>
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})

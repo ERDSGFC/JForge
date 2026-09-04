@@ -140,6 +140,16 @@ class SelectQueryTest {
         assertEquals(1, repo.countByAge(25));
     }
 
+    /** 复杂原生 Query 的表别名/列名不依赖实体属性名，且按片段顺序绑定。 */
+    @Test
+    void queryUsesAliasedSqlColumnNames() {
+        List<UserEntity> found = repo.findByAliasedColumns("qin", 20);
+
+        assertEquals(1, found.size());
+        assertEquals("qin", found.get(0).name());
+        assertEquals(25, found.get(0).age());
+    }
+
     // ---- 动态判定矩阵用例 ----
 
     /** 基本类型参数：静态形态（过滤正确）。 */

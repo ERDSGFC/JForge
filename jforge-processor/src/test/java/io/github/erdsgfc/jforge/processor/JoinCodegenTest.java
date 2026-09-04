@@ -66,4 +66,27 @@ class JoinCodegenTest {
         assertTrue(bad.diagnostics.stream().anyMatch(d -> d.getMessage(null).contains("only support")),
                 () -> bad.diagnostics.toString());
     }
+
+    @Test
+    void queryConditionValueUsesNativeAliasedColumn() throws Exception {
+        String source = """
+                package test;
+                import io.github.erdsgfc.jforge.annotation.*;
+                import io.github.erdsgfc.jforge.core.BaseRepository;
+                import java.util.List;
+                @Table(name = "users") interface User {
+                    @Id Long id(); User id(Long v);
+                }
+                @Dao public interface UserRepository extends BaseRepository<User, Long> {
+                    @Query("SELECT u.id FROM users u WHERE {:name}")
+                    List<User> find(@Condition(value = "u.display_name") String name);
+                }
+                """;
+        CompilationHelper.CompilationResult result = CompilationHelper.compile(
+                "test.UserRepository", source, new JForgeProcessor());
+        assertTrue(result.success, () -> result.diagnostics.toString());
+        String generated = result.generatedSources.get("test.UserRepository_Impl");
+        assertTrue(generated != null, "repository implementation was not generated");
+        assertTrue(generated.contains("u.display_name = ?"), generated);
+    }
 }

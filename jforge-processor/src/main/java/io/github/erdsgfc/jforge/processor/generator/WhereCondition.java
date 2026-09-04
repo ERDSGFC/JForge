@@ -55,14 +55,33 @@ record WhereCondition(String columnName, String op, String paramName, String typ
                                       VariableElement parameter, ProcessingEnvironment env,
                                       String diagnosticPrefix) {
         return resolveHost(info, method, parameter, env, diagnosticPrefix,
-                Map.of(info.model.entityQualifiedName(), info.model));
+                Map.of(info.model.entityQualifiedName(), info.model), false);
+    }
+
+    static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
+                                      VariableElement parameter, ProcessingEnvironment env,
+                                      String diagnosticPrefix, boolean queryContext) {
+        return resolveHost(info, method, parameter, env, diagnosticPrefix,
+                Map.of(info.model.entityQualifiedName(), info.model), queryContext);
     }
 
     static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
                                       VariableElement parameter, ProcessingEnvironment env,
                                       String diagnosticPrefix, Map<String, EntityModel> entities) {
+        return resolveHost(info, method, parameter, env, diagnosticPrefix, entities, false);
+    }
+
+    static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
+                                      VariableElement parameter, ProcessingEnvironment env,
+                                      String diagnosticPrefix, Map<String, EntityModel> entities,
+                                      boolean queryContext) {
         String paramName = parameter.getSimpleName().toString();
         Condition condition = parameter.getAnnotation(Condition.class);
+        if (queryContext && (condition == null || condition.value().isEmpty())) {
+            env.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    diagnosticPrefix + " @Condition must specify a non-empty value", parameter);
+            return null;
+        }
         String fieldName = condition != null && !condition.value().isEmpty()
                 ? condition.value() : paramName;
         EntityModel fieldEntity = info.model;
@@ -123,6 +142,20 @@ record WhereCondition(String columnName, String op, String paramName, String typ
             if (plan == null) return null;
             return new WhereCondition(null, op, paramName, bindType, dynamic, optional, valueExpr,
                     plan.sql(), null, false, false, null, plan.bindings());
+        }
+        if (queryContext) {
+            // @Query is native SQL: Condition.value names the SQL column directly,
+            // rather than an entity property subject to naming/converter mapping.
+            String qualified = condition.value();
+            String converter = null;
+            for (EntityModel.ColumnModel column : info.model.columns()) {
+                if (column.columnName.equals(condition.value()) && column.converter != null) {
+                    converter = SqlCodegen.converterFieldName(info.model, column);
+                    break;
+                }
+            }
+            return new WhereCondition(qualified, op, paramName, bindType, dynamic, optional, valueExpr,
+                    null, converter, collection, array, elementType, List.of());
         }
         for (EntityModel.ColumnModel column : fieldEntity.columns()) {
             if (column.fieldName.equals(fieldName)) {

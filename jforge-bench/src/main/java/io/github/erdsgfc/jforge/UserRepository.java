@@ -36,27 +36,33 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
     @Query("UPDATE users SET age = :age WHERE id = :id")
     int updateAge(@Bind long id, @Bind int age);
 
-    @Query("SELECT id, user_name, age FROM users")
-    List<UserEntity> findByAutoQueryParameter(String name);
+    @Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
+    List<UserEntity> findByAutoQueryParameter(@Bind String name);
+
+    /** Query 原生 SQL 使用表别名时，条件 value 直接使用 SQL 列表达式。 */
+    @Query("SELECT u.id, u.user_name, u.age FROM users u WHERE {:name} AND {:minAge} ORDER BY u.id")
+    List<UserEntity> findByAliasedColumns(
+            @Condition(value = "u.user_name") String name,
+            @Condition(value = "u.age", op = Op.GE) int minAge);
 
     /** 动态 WHERE：age 为 null 时按 JSpecify 空性规则跳过。 */
-    @Query("SELECT id, user_name, age FROM users WHERE age = :age AND user_name = :name")
-    List<UserEntity> findDynamicByAgeAndName(@Bind @Nullable Integer age,
+    @Query("SELECT id, user_name, age FROM users WHERE {:age} AND user_name = :name")
+    List<UserEntity> findDynamicByAgeAndName(@Condition(value = "age") @Nullable Integer age,
             @Bind String name);
 
     /** 动态 WHERE：@Nullable 自动推断（片段仅一个占位符）。 */
-    @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND age = :age")
+    @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND {:age}")
     List<UserEntity> findAutoDynamicByAgeAndName(@Bind String name,
-            @Bind @Nullable Integer age);
+            @Condition(value = "age") @Nullable Integer age);
 
     /** 动态 WHERE：OR 连接符保留。 */
-    @Query("SELECT id, user_name, age FROM users WHERE age = :age OR user_name = :name")
-    List<UserEntity> findDynamicOr(@Bind @Nullable Integer age, @Bind String name);
+    @Query("SELECT id, user_name, age FROM users WHERE {:age} OR user_name = :name")
+    List<UserEntity> findDynamicOr(@Condition(value = "age") @Nullable Integer age, @Bind String name);
 
     /** @Condition 追加条件：手写 SQL + 自动追加（age 非 null 时 AND age > ?，动态）。 */
     @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND {:age}")
     List<UserEntity> findWithAppendedWhere(@Bind String name,
-            @Condition(op = Op.GT) @Nullable Integer age);
+            @Condition(value = "age", op = Op.GT) @Nullable Integer age);
 
     /** @Condition 追加条件：静态追加（恒拼接），无 @Nullable。 */
     @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND {:minAge}")

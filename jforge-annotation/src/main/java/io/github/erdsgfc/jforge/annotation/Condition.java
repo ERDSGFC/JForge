@@ -6,12 +6,13 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * 标注 {@link Select} 方法参数，指定该参数的 WHERE 条件：
+ * 标注声明式方法参数或条件对象字段，指定该参数的 WHERE 条件：
  * {@link #value()} 指定实体字段名（缺省时按参数名推断字段），{@link #op()} 指定操作符。
  * 数组或 {@code Iterable} 集合参数支持 {@link Op#EQ}（生成 {@code IN}）和
  * {@link Op#NE}（生成 {@code NOT IN}）；空集合分别生成恒假 {@code 1 = 0} 和恒真
  * {@code 1 = 1}。标量参数的 {@link Op#NE} 仍生成 {@code <>}。
- * 参数是否参与动态拼接由 JSpecify {@code @Nullable} 决定——标注了 {@code @Nullable}
+ * 在 {@link Query} 方法中，{@link #value()} 必须显式填写并表示原生 SQL 列名，
+ * 不再按实体字段名推断；其他声明式 API 仍保留按参数/字段名推断。参数是否参与动态拼接由 JSpecify {@code @Nullable} 决定——标注了 {@code @Nullable}
  * 的参数在运行时为 {@code null} 时跳过该条件。
  *
  * <pre>{@code

@@ -139,8 +139,7 @@ public final class QueryGenerator {
             ClassName connection, ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         String methodName = method.getSimpleName().toString();
         String sqlField = SqlFieldGenerator.methodSqlFieldName(methodName, overloadIndex);
-        String effectiveQuery = augmentAutomaticParameters(info, method, query.value());
-        QueryScan scan = scanQuery(effectiveQuery, info.model.dialectSupport(), method);
+        QueryScan scan = scanQuery(query.value(), info.model.dialectSupport(), method);
         if (scan == null) return null;
         if (scan.explicitQuestionMarks() > 0) {
             error(method, "@Query uses raw '?' placeholders; use named :name placeholders with @Bind");
@@ -148,11 +147,25 @@ public final class QueryGenerator {
         }
 
         Map<String, VariableElement> parameters = new LinkedHashMap<>();
+        boolean valid = true;
         for (VariableElement parameter : method.getParameters()) {
             parameters.put(parameter.getSimpleName().toString(), parameter);
+            int semanticCount = (parameter.getAnnotation(Bind.class) != null ? 1 : 0)
+                    + (parameter.getAnnotation(RawSql.class) != null ? 1 : 0)
+                    + (parameter.getAnnotation(Condition.class) != null ? 1 : 0)
+                    + (parameter.getAnnotation(Where.class) != null ? 1 : 0);
+            if (semanticCount == 0) {
+                error(method, "Every @Query parameter must declare exactly one of @Bind, @RawSql, @Condition, or @Where: "
+                        + parameter.getSimpleName());
+                valid = false;
+            } else if (semanticCount > 1) {
+                error(method, "@Query parameter has multiple semantic annotations: " + parameter.getSimpleName());
+                valid = false;
+            }
         }
         Map<String, FragmentPlan> fragmentPlans = new HashMap<>();
-        Set<String> used = new HashSet<>();
+        Set<String> ordinaryNames = new HashSet<>();
+        Set<String> fragmentNames = new HashSet<>();
         boolean dynamic = false;
         for (QueryToken token : scan.tokens()) {
             if (!token.fragment()) {
@@ -160,50 +173,57 @@ public final class QueryGenerator {
                 VariableElement parameter = parameters.get(token.name());
                 if (parameter == null || parameter.getAnnotation(Bind.class) == null) {
                     error(method, "Query placeholder :" + token.name() + " must match a same-named @Bind parameter");
+                    valid = false;
                     continue;
                 }
-                if (!used.add(token.name()) && parameter.getAnnotation(Condition.class) != null) {
+                if (fragmentNames.contains(token.name())) {
                     error(method, "Query parameter '" + token.name() + "' cannot be used as both bind and fragment");
+                    valid = false;
                 }
+                ordinaryNames.add(token.name());
                 continue;
             }
             VariableElement parameter = parameters.get(token.name());
             if (parameter == null) {
                 error(method, "Query fragment {:" + token.name() + "} has no matching method parameter");
+                valid = false;
                 continue;
             }
-            if (!used.add(token.name()) && parameter.getAnnotation(Bind.class) != null) {
+            boolean fragmentAnnotation = parameter.getAnnotation(RawSql.class) != null
+                    || parameter.getAnnotation(Condition.class) != null
+                    || parameter.getAnnotation(Where.class) != null;
+            if (!fragmentAnnotation) {
+                error(method, "Query fragment {:" + token.name()
+                        + "} must match a same-named @RawSql, @Condition, or @Where parameter");
+                valid = false;
+            }
+            if (ordinaryNames.contains(token.name())) {
                 error(method, "Query parameter '" + token.name() + "' cannot be used as both bind and fragment");
+                valid = false;
+            }
+            if (!fragmentNames.add(token.name())) {
+                error(method, "Query fragment {:" + token.name() + "} may be used only once");
+                valid = false;
             }
             FragmentPlan plan = fragmentPlan(info, method, parameter);
-            if (plan == null) continue;
+            if (plan == null) {
+                valid = false;
+                continue;
+            }
             fragmentPlans.put(token.name(), plan);
             dynamic |= plan.dynamic();
         }
         for (VariableElement parameter : method.getParameters()) {
             String name = parameter.getSimpleName().toString();
-            if ((parameter.getAnnotation(Bind.class) != null
-                    || parameter.getAnnotation(RawSql.class) != null
-                    || parameter.getAnnotation(Where.class) != null
-                    || parameter.getAnnotation(Condition.class) != null) && !used.contains(name)) {
+            if (!ordinaryNames.contains(name) && !fragmentNames.contains(name)) {
                 error(method, "Query parameter '" + name + "' is not referenced by :" + name + " or {:" + name + "}");
+                valid = false;
             }
         }
+        if (!valid) return null;
         TypeMirror returnType = method.getReturnType();
         boolean isUpdate = !query.value().trim().toUpperCase().startsWith("SELECT");
         String mappingSql = scan.mappingSql();
-        // Preserve the established nullable @Bind behavior for ordinary WHERE predicates:
-        // the whole top-level predicate is skipped, including its connector.
-        if (scan.tokens().stream().noneMatch(QueryToken::fragment)
-                && method.getParameters().stream().anyMatch(p -> p.getAnnotation(Bind.class) != null
-                        && isNullableParameter(p))) {
-            ParsedWhere legacyWhere = parseWhere(query.value());
-            if (legacyWhere != null) {
-                return dynamicQueryMethod(info, method, query, builder, embedded, connection,
-                        preparedStatement, resultSet, sqlException, legacyWhere,
-                        legacyWhere.fragments, bindsOf(method));
-            }
-        }
         if (!dynamic) {
             String staticSql = renderStaticSql(scan, fragmentPlans);
             builder.addField(SqlFieldGenerator.sqlField(sqlField, staticSql));
@@ -298,7 +318,7 @@ public final class QueryGenerator {
             VariableElement parameter, String index) {
         String converter = effectiveConverterField(info, method, parameter);
         return SqlCodegen.bindParam(processingEnv.getTypeUtils().stripAnnotations(parameter.asType()).toString(),
-                parameter.getSimpleName().toString(), index, false, false, converter);
+                parameter.getSimpleName().toString(), index, isNullableParameter(parameter), false, converter);
     }
 
     private void emitDynamicFragmentSql(MethodSpec.Builder spec, FragmentPlan plan, QueryToken token, int sequence) {
@@ -311,12 +331,19 @@ public final class QueryGenerator {
             spec.beginControlFlow("if (sql.length() > $L)", start);
             if (!token.prefix().isEmpty()) spec.addStatement("sql.insert($L, $S)", start, token.prefix());
             if (!token.suffix().isEmpty()) spec.addStatement("sql.append($S)", token.suffix());
+            spec.nextControlFlow("else if ($L)", token.prefix().toUpperCase(Locale.ROOT).contains("WHERE")
+                    && !token.suffix().isEmpty());
+            // A leading fragment owns the WHERE keyword. If it is skipped but a
+            // following predicate remains, retain WHERE and its connector.
+            spec.addStatement("sql.append($S)", token.prefix());
             spec.endControlFlow();
         } else if (plan.criteria() != null) {
             String start = "fragmentStart" + sequence;
             spec.addStatement("int $L = sql.length()", start);
             spec.addStatement("where = $S", "");
+            spec.beginControlFlow("if ($N != null)", plan.parameter().getSimpleName());
             criteriaGenerator.emitAppend(spec, plan.criteria(), "where", "");
+            spec.endControlFlow();
             spec.addStatement("where = $S", "");
             spec.beginControlFlow("if (sql.length() > $L)", start);
             if (!token.prefix().isEmpty()) spec.addStatement("sql.insert($L, $S)", start, token.prefix());
@@ -335,7 +362,9 @@ public final class QueryGenerator {
         if (plan.condition() != null) {
             WhereCondition.appendBind(spec, plan.condition());
         } else if (plan.criteria() != null) {
+            spec.beginControlFlow("if ($N != null)", plan.parameter().getSimpleName());
             criteriaGenerator.emitBind(spec, plan.criteria(), "i++");
+            spec.endControlFlow();
         } else {
             if (plan.dynamic()) spec.beginControlFlow("if ($N != null)", plan.parameter().getSimpleName());
             for (RawSqlSupport.Binding binding : plan.bindings()) {
@@ -827,52 +856,18 @@ public final class QueryGenerator {
         }
         Condition condition = parameter.getAnnotation(Condition.class);
         if (condition != null) {
-            WhereCondition c = WhereCondition.resolveHost(info, method, parameter, processingEnv, "@Query");
+            WhereCondition c = WhereCondition.resolveHost(info, method, parameter, processingEnv, "@Query", true);
             if (c == null) return null;
             return new FragmentPlan(null, List.of(), c, null,
                     c.dynamic() || c.collection() || c.array() || c.optional(), parameter);
         }
         Where where = parameter.getAnnotation(Where.class);
         if (where != null) {
-            List<CriteriaGenerator.Unit> units = criteriaGenerator.parse(info, method, parameter, false);
+            List<CriteriaGenerator.Unit> units = criteriaGenerator.parse(info, method, parameter, false, true);
             if (units == null) return null;
             return new FragmentPlan(null, List.of(), null, units, true, parameter);
         }
-        // Legacy Query parameters without an annotation remain supported as scalar conditions.
-        WhereCondition c = WhereCondition.resolveHost(info, method, parameter, processingEnv, "@Query");
-        if (c == null || c.columnName() == null || c.collection() || c.array() || c.optional()) {
-            error(method, "Automatic Query parameters must be scalar non-Optional values; use @Bind, @Condition or @Where");
-            return null;
-        }
-        return new FragmentPlan(null, List.of(), c, null, c.dynamic(), parameter);
-    }
-
-    private String augmentAutomaticParameters(JForgeProcessor.DaoInfo info, ExecutableElement method, String sql) {
-        StringBuilder out = new StringBuilder(sql);
-        boolean hasAuto = false;
-        for (VariableElement parameter : method.getParameters()) {
-            if (parameter.getAnnotation(Bind.class) != null || parameter.getAnnotation(RawSql.class) != null
-                    || parameter.getAnnotation(Where.class) != null || parameter.getAnnotation(Condition.class) != null) {
-                continue;
-            }
-            WhereCondition c = WhereCondition.resolveHost(info, method, parameter, processingEnv, "@Query");
-            if (c == null || c.columnName() == null || c.collection() || c.array() || c.optional()) {
-                error(method, "Automatic Query parameters must be scalar non-Optional values");
-                continue;
-            }
-            if (!hasAuto) {
-                out.append(hasTopLevelWhere(sql) ? " AND " : " WHERE ");
-                hasAuto = true;
-            } else {
-                out.append(" AND ");
-            }
-            out.append("{:" ).append(parameter.getSimpleName()).append("}");
-        }
-        return out.toString();
-    }
-
-    private static boolean hasTopLevelWhere(String sql) {
-        return indexOfTopLevelKeyword(sql, "WHERE", 0) >= 0;
+        return null;
     }
 
     private String renderStaticSql(QueryScan scan, Map<String, FragmentPlan> plans) {

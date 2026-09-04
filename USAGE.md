@@ -243,7 +243,7 @@ ConvertUser findByBirthDate(@Bind(converter = StringDateConverter.class) LocalDa
 **@Query 动态 WHERE**(JSpecify `@Nullable` 驱动——按占位符所在片段自动推断):
 
 ```java
-/** WHERE 片段恰好一个占位符,对应参数标 @Nullable → 该片段动态(null 时整段移除) */
+/** 普通 :name 参数即使为 null 也按原生 SQL 语义绑定 */
 @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND age = :age")
 List<UserEntity> findAutoDynamicByAgeAndName(@Bind String name, @Bind @Nullable Integer age);
 ```
@@ -255,9 +255,9 @@ List<UserEntity> findAutoDynamicByAgeAndName(@Bind String name, @Bind @Nullable 
 **@Query + @Condition 片段**（必须使用显式 `{:name}`）:
 
 ```java
-/** 动态追加:age 非 null 时 AND age > ?(null 时仅按 name 查) */
+/** 动态片段:age 非 null 时追加 AND age > ?(null 时仅按 name 查) */
 @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND {:age}")
-List<UserEntity> find(@Bind String name, @Condition(op = Op.GT) @Nullable Integer age);
+List<UserEntity> find(@Bind String name, @Condition(value = "age", op = Op.GT) @Nullable Integer age);
 
 /** 静态追加:恒拼接(无 @Nullable),SQL 常量 + 静态绑定,零开销 */
 @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND {:minAge}")
@@ -277,18 +277,11 @@ List<UserEntity> find(@RawSql("age > 18") String filter, @Bind String name);
 标量 raw SQL 最多包含一个 `?`；class/record 参数可使用直接字段的 `:field` 占位符，
 字段值按出现顺序通过 JDBC 绑定。`requireJForgeSql` 默认要求对象类型标注 `@JForgeSql`。
 
-**@Query 未标注参数自动条件**(SQL 无 WHERE 时,普通参数按字段名自动补条件):
+**@Query 参数约束**:
 
-```java
-/** SQL 没有 WHERE,参数 `name` 未标 @Bind/@Condition → 自动补 WHERE user_name = ? */
-@Query("SELECT id, user_name, age FROM users")
-List<UserEntity> findByAutoQueryParameter(String name);
-```
-
-- 规则与 `@Select` 相同:非 `@Bind`/`@Condition`/`@Where` 参数自动追加 `列 = :参数名`(参数名映射实体字段,列自动引用列转换器);数组/集合自动 `IN`;`@Nullable`(或作用域默认可空)参数动态——null 时整段跳过
-- 参数与 SQL 占位符不冲突:手写 `:name` 仍需显式 `@Bind`;自动条件用参数名作伪占位符
-- **参数空性决定动态性**(JSpecify 判定,见"列空性"):可空参数(显式 `@Nullable` 或非 `@NullMarked`
-  作用域默认)null 时跳过(运行时拼接);非空参数(基本类型或 `@NullMarked` 作用域)恒拼接(进入 SQL 常量)
+- 每个参数必须标注且只能标注一个 `@Bind`、`@RawSql`、`@Condition` 或 `@Where`。
+- `:name` 只能绑定同名 `@Bind`；`{:name}` 只能展开同名片段注解。
+- Query 中 `@Condition(value = "...")` 的 value 是原生 SQL 列名，必须显式填写；`@Where` 条件对象的每个字段也必须显式标注语义注解。
 
 ### @Select 声明式查询（不写 SQL）
 
