@@ -200,19 +200,19 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 
     /** 自定义查询:命名占位符 :name 绑定到 @Bind 参数 */
     @Query("SELECT id, user_name, age FROM users WHERE age > :age")
-    List<UserEntity> findByAgeGreaterThan(@Bind("age") int age);
+    List<UserEntity> findByAgeGreaterThan(@Bind int age);
 
     /** 投影到 DTO record(按 SELECT 列序对应 record 组件) */
     @Query("SELECT id, user_name FROM users WHERE id = :id")
-    UserNameDto findNameById(@Bind("id") long id);
+    UserNameDto findNameById(@Bind long id);
 
     /** 标量返回值 */
     @Query("SELECT COUNT(*) FROM users WHERE age = :age")
-    long countByAge(@Bind("age") int age);
+    long countByAge(@Bind int age);
 
     /** 写语句返回影响行数 */
     @Query("UPDATE users SET age = :age WHERE id = :id")
-    int updateAge(@Bind("id") long id, @Bind("age") int age);
+    int updateAge(@Bind long id, @Bind int age);
 }
 ```
 
@@ -220,20 +220,21 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 
 **@Query 规则**:
 
-- 占位符 `:name` ↔ `@Bind("name")` 参数一一对应
+- 占位符 `:name` 必须对应同名 `@Bind` 参数；`@Bind` 不再有 `value` 属性
+- 片段占位符 `{:name}` 显式插入同名 `@RawSql`、`@Condition` 或 `@Where` 参数
 - SELECT → 按返回类型映射:实体(按列名)、DTO record(按列序)、标量、List 包装
 - 非 SELECT → 返回影响行数;配合 `@ReturnGeneratedKeys` 可回写生成键到实体参数
 - 每方法只能有一个语句注解
 
 **@Bind 绑定转换器**(按转换列查询):
-`@Bind(value = "d", converter = XxxConverter.class)` 把该参数的绑定从"按声明类型选 `setXxx`"
+`@Bind(converter = XxxConverter.class)` 把该参数的绑定从"按声明类型选 `setXxx`"
 改为 `ps.setObject(i, CONV.toDatabase(param), CONV.sqlType())`——参数与实体列经同一转换器
 生成相同存储表示才能命中(实体列存转换后文本,如 `LocalDate` → VARCHAR,查询参数必须同样
 转成文本):
 
 ```java
 @Query("SELECT * FROM convert_users WHERE birth_date = :d")
-ConvertUser findByBirthDate(@Bind(value = "d", converter = StringDateConverter.class) LocalDate d);
+ConvertUser findByBirthDate(@Bind(converter = StringDateConverter.class) LocalDate d);
 ```
 
 - 转换器可为同批源码或预编译(与实体列 `@Convert` 同一机制);转换器以 `static final` 字段嵌入
@@ -244,26 +245,37 @@ ConvertUser findByBirthDate(@Bind(value = "d", converter = StringDateConverter.c
 ```java
 /** WHERE 片段恰好一个占位符,对应参数标 @Nullable → 该片段动态(null 时整段移除) */
 @Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND age = :age")
-List<UserEntity> findAutoDynamicByAgeAndName(@Bind("name") String name, @Bind("age") @Nullable Integer age);
+List<UserEntity> findAutoDynamicByAgeAndName(@Bind String name, @Bind @Nullable Integer age);
 ```
 
 - 运行时参数为 `null` 时该片段**整段移除**,非 null 时拼接——连接符(`AND`/`OR`)由生成器维护,首个实际执行的条件得 `WHERE`、其后按用户写的连接符,动态片段跳过时连接符随之消失
 - 含动态片段的 @Query 运行时拼接 SQL(不生成常量字段);纯静态 @Query 仍是 SQL 常量 + 静态绑定(零开销)
 - 多占位符片段恒静态(不自动推断);参数空性按所在作用域判定(`@NullMarked` 内非标注解即非空)
 
-**@Query + @Condition 追加条件**(手写 SQL 之外自动追加条件):
+**@Query + @Condition 片段**（必须使用显式 `{:name}`）:
 
 ```java
 /** 动态追加:age 非 null 时 AND age > ?(null 时仅按 name 查) */
-@Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
-List<UserEntity> find(@Bind("name") String name, @Condition(op = Op.GT) @Nullable Integer age);
+@Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND {:age}")
+List<UserEntity> find(@Bind String name, @Condition(op = Op.GT) @Nullable Integer age);
 
 /** 静态追加:恒拼接(无 @Nullable),SQL 常量 + 静态绑定,零开销 */
-@Query("SELECT id, user_name, age FROM users WHERE user_name = :name")
-List<UserEntity> find(@Bind("name") String name, @Condition(value = "age", op = Op.GE) int minAge);
+@Query("SELECT id, user_name, age FROM users WHERE user_name = :name AND {:minAge}")
+List<UserEntity> find(@Bind String name, @Condition(value = "age", op = Op.GE) int minAge);
 ```
 
-- 标注 `@Condition` 的参数(可同时标 `@Bind`)自动追加为条件:`字段 = @Condition.value`(缺省按参数名) → 实体列,`op` 指定操作符;追加条件用 `AND` 连接(无 WHERE 时补 `WHERE`)
+- `@Condition`、`@Where`、`@RawSql` 只在对应 `{:name}` 位置展开，不再隐式追加到 SQL 末尾
+- 集合/数组条件使用 `IN`/`NOT IN`，空集合分别生成 `1 = 0`/`1 = 1`
+
+`@RawSql` 用于 Query 中的静态原生片段：
+
+```java
+@Query("SELECT * FROM users WHERE {:filter} AND user_name = :name")
+List<UserEntity> find(@RawSql("age > 18") String filter, @Bind String name);
+```
+
+标量 raw SQL 最多包含一个 `?`；class/record 参数可使用直接字段的 `:field` 占位符，
+字段值按出现顺序通过 JDBC 绑定。`requireJForgeSql` 默认要求对象类型标注 `@JForgeSql`。
 
 **@Query 未标注参数自动条件**(SQL 无 WHERE 时,普通参数按字段名自动补条件):
 

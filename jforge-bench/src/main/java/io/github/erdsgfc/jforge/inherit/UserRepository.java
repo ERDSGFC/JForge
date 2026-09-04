@@ -13,5 +13,5 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 
     /** 按年龄过滤查询（父接口的 name 属性按列名映射；实体新增列需同步 SELECT）。 */
     @Query("SELECT id, user_name, age, created_at FROM users WHERE age > :age")
-    List<UserEntity> findByAgeGreaterThan(@Bind("age") int age);
+    List<UserEntity> findByAgeGreaterThan(@Bind int age);
 }

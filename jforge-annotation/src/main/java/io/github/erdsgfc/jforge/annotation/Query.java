@@ -8,7 +8,8 @@ import java.lang.annotation.Target;
 /**
  * 在 {@link Dao} 仓库方法上声明一个自定义查询。
  *
- * <p>SQL 使用 {@code :name} 占位符，绑定到标注了 {@link Bind} 的方法参数上。
+ * <p>SQL 使用 {@code :name} 占位符绑定 {@link Bind} 参数，使用 {@code {:name}}
+ * 在原文指定位置插入 {@link RawSql}、{@link Where} 或 {@link Condition} 片段。
  * 生成的实现根据方法的返回类型映射结果：{@code @Table} 实体接口（按列名）、
  * record/DTO（按组件顺序）、单个值，或更新/删除的行数。</p>
  */
@@ -16,6 +17,6 @@ import java.lang.annotation.Target;
 @Target(ElementType.METHOD)
 public @interface Query {
 
-    /** 带 {@code :name} 占位符的 SQL 语句。 */
+    /** 带 {@code :name} 和 {@code {:name}} 占位符的 SQL 语句。 */
     String value();
 }

@@ -5,15 +5,10 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/**
- * 将仓库方法参数绑定到 {@link Query} 中的命名 {@code :placeholder}。
- */
+/** 将仓库方法参数按 Java 参数名绑定到 {@link Query} 中的命名 {@code :placeholder}。 */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.PARAMETER)
 public @interface Bind {
-
-    /** SQL 中的占位符名称（不含前导冒号）。 */
-    String value();
 
     /**
      * 可选的绑定转换器：挂上后该参数的绑定从"按声明类型选 {@code setXxx}"改为

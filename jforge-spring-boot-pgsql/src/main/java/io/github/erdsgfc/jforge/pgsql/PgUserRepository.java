@@ -82,10 +82,10 @@ public interface PgUserRepository extends BaseRepository<PgUser, Long> {
 
     /** 分页：PG 方言 {@code LIMIT ? OFFSET ?} 语法验证。 */
     @Query("SELECT * FROM pg_users WHERE age > :age ORDER BY id LIMIT :limit OFFSET :offset")
-    List<PgUser> pageByAge(@Bind("age") int age, @Bind("limit") int limit, @Bind("offset") int offset);
+    List<PgUser> pageByAge(@Bind int age, @Bind int limit, @Bind int offset);
 
     /** 动态 WHERE：方括号显式动态段（age 为 null 时跳过）。 */
     @Query("SELECT * FROM pg_users WHERE age = :age AND user_name = :name")
-    List<PgUser> findDynamicByAgeAndName(@Bind("age") @Nullable Integer age,
-            @Bind("name") String name);
+    List<PgUser> findDynamicByAgeAndName(@Bind @Nullable Integer age,
+            @Bind String name);
 }
