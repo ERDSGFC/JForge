@@ -1,6 +1,8 @@
 package io.github.erdsgfc.jforge.processor.generator.core;
 
 import com.palantir.javapoet.*;
+import io.github.erdsgfc.jforge.annotation.*;
+import io.github.erdsgfc.jforge.processor.ClassEnum;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
@@ -9,11 +11,17 @@ import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.util.Elements;
 import javax.tools.Diagnostic;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import static io.github.erdsgfc.jforge.processor.ClassEnum.*;
 
@@ -30,6 +38,7 @@ public final class RepositoryGenerator {
 
 
     private final ProcessingEnvironment processingEnv;
+    private final Elements elements;
     private final JForgeConfigHelper configHelper;
     private final CrudGenerator crudGenerator;
     private final QueryGenerator queryGenerator;
@@ -39,6 +48,7 @@ public final class RepositoryGenerator {
 
     public RepositoryGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper) {
         this.processingEnv = processingEnv;
+        this.elements = processingEnv.getElementUtils();
         this.configHelper = configHelper;
         this.crudGenerator = new CrudGenerator(configHelper);
         this.queryGenerator = new QueryGenerator(processingEnv, configHelper);
@@ -147,12 +157,57 @@ public final class RepositoryGenerator {
                 resultSet, sqlException)) {
             builder.addMethod(method);
         }
-        queryGenerator.queryMethods(info, builder, embedded, connection, preparedStatement, resultSet,
-                sqlException);
-        selectGenerator.selectMethods(info, builder, embedded, connection, preparedStatement, resultSet,
-                sqlException);
-        updateGenerator.updateMethods(info, builder, connection, preparedStatement, sqlException);
-        deleteGenerator.deleteMethods(info, builder, connection, preparedStatement, sqlException);
+        // 单次遍历完成全部 SQL 语义注解方法的校验与生成分发：接口方法只被扫描一遍
+        // （原来每个生成器都把 getEnclosedElements + 同名序号计数完整走一次）。
+        // 同名序号对每个方法统一计数（含无注解、重声明 CRUD 与其他注解的同名方法），
+        // 与原先各生成器内部"每个方法都计数"的语义一致——SQL 常量字段名的确定性不变。
+        // 实现方法按 DAO 声明顺序逐个直接生成（生成代码方法顺序与接口声明一致）。
+        Map<String, Integer> seen = new HashMap<>();
+        // @Query 转换器字段去重（DAO 级：多个 @Query 方法可能生成同名字段）。
+        Set<String> addedConverters = new HashSet<>();
+        for (Element enclosed : info.element.getEnclosedElements()) {
+            if (enclosed.getKind() != ElementKind.METHOD) {
+                continue;
+            }
+            ExecutableElement method = (ExecutableElement) enclosed;
+            int overloadIndex = seen.merge(method.getSimpleName().toString(), 1, Integer::sum) - 1;
+            boolean query = method.getAnnotation(Query.class) != null;
+            boolean select = method.getAnnotation(Select.class) != null;
+            boolean update = method.getAnnotation(Update.class) != null;
+            boolean delete = method.getAnnotation(Delete.class) != null;
+            if (!query && !select && !update && !delete) {
+                // 无 SQL 注解的抽象方法 impl 无从实现——与其等 javac 报笼统的
+                // "is not abstract and does not override abstract method"，不如在这里给出
+                // 可定位到方法的错误。无需注解的合法形态（排除在外）：
+                // - 默认/私有/静态方法：接口自带实现，生成器从不生成它们；
+                // - 重声明 BaseRepository 的 CRUD 方法（如 @BatchSize 覆盖 save(List)）：
+                //   实现由 CrudGenerator 无条件生成，见 overridesBaseRepositoryMethod。
+                if (method.getModifiers().contains(Modifier.ABSTRACT)
+                        && !overridesBaseRepositoryMethod(info, method)) {
+                    error(method, "@Dao method must declare one of @Query, @Select, @Update, or @Delete,"
+                            + " or redeclare a BaseRepository CRUD method");
+                }
+                continue;
+            }
+            // 互斥校验：一个方法只能带一种 SQL 语义注解。
+            if ((query ? 1 : 0) + (select ? 1 : 0) + (update ? 1 : 0) + (delete ? 1 : 0) > 1) {
+                error(method, "@Dao method must declare exactly one of @Query/@Select/@Update/@Delete,"
+                        + " found multiple on the same method");
+                continue;
+            }
+            DaoMethod call = new DaoMethod(method, overloadIndex);
+            if (query) {
+                queryGenerator.queryMethod(info, call, addedConverters, builder, embedded, connection,
+                        preparedStatement, resultSet, sqlException);
+            } else if (select) {
+                selectGenerator.selectMethod(info, call, builder, embedded, connection, preparedStatement,
+                        resultSet, sqlException);
+            } else if (update) {
+                updateGenerator.updateMethod(info, call, builder, connection, preparedStatement, sqlException);
+            } else {
+                deleteGenerator.deleteMethod(info, call, builder, connection, preparedStatement, sqlException);
+            }
+        }
 
         return builder.build();
     }
@@ -165,5 +220,30 @@ public final class RepositoryGenerator {
      */
     private void error(Element element, String message) {
         processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, message, element);
+    }
+
+    /**
+     * 方法是否重声明了 {@code BaseRepository} 的 CRUD 方法（如 {@code @BatchSize}
+     * 覆盖 {@code save(List<T>)}）：此类方法的实现由 {@code CrudGenerator} 无条件生成，
+     * 无需 SQL 注解。经 {@code Elements.overrides} 匹配（按继承层替换泛型实参并比较
+     * 签名）；签名不匹配的同名声明不会命中，落入"无 SQL 注解"报错。
+     *
+     * @param info   仓库信息（dao 元素是覆盖发生的类型上下文）
+     * @param method 待判定的仓库方法
+     * @return 方法在 dao 中覆盖了某个 BaseRepository 方法时返回 {@code true}
+     */
+    private boolean overridesBaseRepositoryMethod(JForgeProcessor.DaoInfo info, ExecutableElement method) {
+        // @Dao 直接继承 BaseRepository（parseDao 校验），类型必在编译类路径上。
+        TypeElement baseRepository = elements.getTypeElement(ClassEnum.BASE_REPOSITORY.getFullClassName());
+        if (baseRepository == null) {
+            return false;
+        }
+        for (Element enclosed : baseRepository.getEnclosedElements()) {
+            if (enclosed.getKind() == ElementKind.METHOD
+                    && elements.overrides(method, (ExecutableElement) enclosed, info.element)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

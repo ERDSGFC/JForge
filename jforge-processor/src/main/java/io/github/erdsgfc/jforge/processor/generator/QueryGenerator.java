@@ -2,7 +2,6 @@ package io.github.erdsgfc.jforge.processor.generator;
 
 import com.palantir.javapoet.*;
 import io.github.erdsgfc.jforge.annotation.*;
-import io.github.erdsgfc.jforge.processor.ClassEnum;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
@@ -49,7 +48,6 @@ public final class QueryGenerator {
     }
 
     private final ProcessingEnvironment processingEnv;
-    private final javax.lang.model.util.Elements elements;
     private final JForgeConfigHelper configHelper;
     private final CriteriaGenerator criteriaGenerator;
 
@@ -59,17 +57,20 @@ public final class QueryGenerator {
      */
     public QueryGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper) {
         this.processingEnv = processingEnv;
-        this.elements = processingEnv.getElementUtils();
         this.configHelper = configHelper;
         this.criteriaGenerator = new CriteriaGenerator(processingEnv.getMessager(),
                 Diagnostic.Kind.ERROR, processingEnv.getTypeUtils());
     }
 
     /**
-     * 为仓库上每个标注了 {@code @Query} 的方法生成实现方法
-     * (SQL 取 {@code <方法名>Sql} 字段)。
+     * 为单个 {@code @Query} 方法生成实现（SQL 取 {@code <方法名>Sql} 字段）。
+     * 由 {@code RepositoryGenerator} 在 DAO 方法单次遍历中按注解分发调用——接口方法
+     * 不再被多个生成器各自扫描，转换器字段经 {@code addedConverters} 跨方法去重
+     * （DAO 级集合由调用方持有）。
      *
      * @param info              仓库信息
+     * @param call              方法（含同名序号，SQL 字段名唯一性依赖它）
+     * @param addedConverters   本 DAO 已添加的转换器字段名集合（去重，调用方持有）
      * @param builder           接收方法的 impl 类构建器
      * @param embedded          已嵌入/待嵌入当前仓库的实体 impl 表（键 = 实体接口全限定名）
      * @param connection        Connection 类
@@ -77,92 +78,37 @@ public final class QueryGenerator {
      * @param resultSet         ResultSet 类
      * @param sqlException      SQLException 类
      */
-    public void queryMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
-                             Map<String, EmbeddedEntity> embedded, ClassName connection, ClassName preparedStatement,
-                             ClassName resultSet, ClassName sqlException) {
-        // 单次遍历同时处理 @Query 的转换器字段、固定 SQL 字段和实现方法，避免多个生成器
-        // 重复扫描 DAO 方法、读取注解和解析动态 WHERE。
-        Set<String> addedConverters = new HashSet<>();
-        // 同名方法序号（SQL 字段名唯一性）：对每个方法都计数（含非 @Query），
-        // 与"接口声明顺序中同名方法第几个"语义一致。
-        Map<String, Integer> seen = new HashMap<>();
-        for (Element enclosed : info.element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.METHOD) {
-                continue;
-            }
-            ExecutableElement method = (ExecutableElement) enclosed;
-            // 直接声明的抽象方法必须带 SQL 语义注解(@Query/@Select/@Update/@Delete 之一),
-            // 否则生成的 impl 没有实现可供覆盖——与其等 javac 报笼统的
-            // "is not abstract and does not override abstract method",不如在这里给出
-            // 可定位到方法的错误。无需注解的合法形态(排除在外):
-            // - 默认/私有/静态方法:接口自带实现,生成器从不生成它们;
-            // - 重声明 BaseRepository 的 CRUD 方法(如 @BatchSize 覆盖 save(List)):
-            //   实现由 CrudGenerator 无条件生成,见 overridesBaseRepositoryMethod。
-            if (method.getAnnotation(Query.class) == null
-                    && method.getAnnotation(Select.class) == null
-                    && method.getAnnotation(Update.class) == null
-                    && method.getAnnotation(Delete.class) == null
-                    && method.getModifiers().contains(Modifier.ABSTRACT)
-                    && !overridesBaseRepositoryMethod(info, method)) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "@Dao method must declare one of @Query, @Select, @Update, or @Delete,"
-                                + " or redeclare a BaseRepository CRUD method",
-                        method);
-            }
-            int overloadIndex = seen.merge(method.getSimpleName().toString(), 1, Integer::sum) - 1;
-            Query query = method.getAnnotation(Query.class);
-            if (query == null) {
-                continue;
-            }
-            if (query.value().indexOf('[') >= 0 || query.value().indexOf(']') >= 0) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "@Query no longer supports bracketed dynamic fragments; use {:name} with @RawSql/@Condition/@Where",
-                        method);
-                continue;
-            }
-            for (VariableElement parameter : method.getParameters()) {
-                ClassName converter = bindConverter(parameter);
-                if (converter != null) {
-                    String field = queryConverterFieldName(method.getSimpleName().toString(),
-                            parameter.getSimpleName().toString());
-                    if (addedConverters.add(field)) {
-                        builder.addField(SqlCodegen.converterField(converter, field));
-                    }
+    public void queryMethod(JForgeProcessor.DaoInfo info, DaoMethod call, Set<String> addedConverters,
+                            TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded, ClassName connection,
+                            ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
+        ExecutableElement method = call.method();
+        Query query = method.getAnnotation(Query.class);
+        if (query == null) {
+            return;
+        }
+        if (query.value().indexOf('[') >= 0 || query.value().indexOf(']') >= 0) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "@Query no longer supports bracketed dynamic fragments; use {:name} with @RawSql/@Condition/@Where",
+                    method);
+            return;
+        }
+        for (VariableElement parameter : method.getParameters()) {
+            ClassName converter = bindConverter(parameter);
+            if (converter != null) {
+                String field = queryConverterFieldName(method.getSimpleName().toString(),
+                        parameter.getSimpleName().toString());
+                if (addedConverters.add(field)) {
+                    builder.addField(SqlCodegen.converterField(converter, field));
                 }
             }
-            // queryMethod 校验失败时返回 null（已报错）——跳过而非 addMethod(null)，
-            // 否则 javapoet 抛 NPE 掩盖真实编译错误（与 @Select/@Update/@Delete 同规则）。
-            MethodSpec impl = queryMethod(info, method, query, overloadIndex, builder, embedded, connection,
-                    preparedStatement, resultSet, sqlException);
-            if (impl != null) {
-                builder.addMethod(impl);
-            }
         }
-    }
-
-    /**
-     * 方法是否重声明了 {@code BaseRepository} 的 CRUD 方法(如 {@code @BatchSize}
-     * 覆盖 {@code save(List<T>)}):此类方法的实现由 {@code CrudGenerator} 无条件生成,
-     * 无需 SQL 注解。经 {@code Elements.overrides} 匹配(按继承层替换泛型实参并比较
-     * 签名);签名不匹配的同名声明不会命中,落入"无 SQL 注解"报错。
-     *
-     * @param info   仓库信息(dao 元素是覆盖发生的类型上下文)
-     * @param method 待判定的仓库方法
-     * @return 方法在 dao 中覆盖了某个 BaseRepository 方法时返回 {@code true}
-     */
-    private boolean overridesBaseRepositoryMethod(JForgeProcessor.DaoInfo info, ExecutableElement method) {
-        // @Dao 直接继承 BaseRepository(parseDao 校验),类型必在编译类路径上。
-        TypeElement baseRepository = elements.getTypeElement(ClassEnum.BASE_REPOSITORY.getFullClassName());
-        if (baseRepository == null) {
-            return false;
+        // buildQueryMethod 校验失败时返回 null（已报错）——跳过而非 addMethod(null)，
+        // 否则 javapoet 抛 NPE 掩盖真实编译错误（与 @Select/@Update/@Delete 同规则）。
+        MethodSpec impl = buildQueryMethod(info, method, query, call.overloadIndex(), builder, embedded, connection,
+                preparedStatement, resultSet, sqlException);
+        if (impl != null) {
+            builder.addMethod(impl);
         }
-        for (Element enclosed : baseRepository.getEnclosedElements()) {
-            if (enclosed.getKind() == ElementKind.METHOD
-                    && elements.overrides(method, (ExecutableElement) enclosed, info.element)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
@@ -180,7 +126,7 @@ public final class QueryGenerator {
      * @param sqlException      SQLException 类
      * @return 查询方法规格
      */
-    private MethodSpec queryMethod(JForgeProcessor.DaoInfo info, ExecutableElement method, Query query,
+    private MethodSpec buildQueryMethod(JForgeProcessor.DaoInfo info, ExecutableElement method, Query query,
             int overloadIndex, TypeSpec.Builder builder, Map<String, EmbeddedEntity> embedded,
             ClassName connection, ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         String methodName = method.getSimpleName().toString();

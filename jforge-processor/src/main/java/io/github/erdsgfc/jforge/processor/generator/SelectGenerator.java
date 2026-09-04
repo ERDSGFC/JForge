@@ -62,6 +62,7 @@ public final class SelectGenerator {
      * 为仓库上每个标注了 {@code @Select} 的方法生成实现方法。
      *
      * @param info              仓库信息
+     * @param call              方法（含同名序号，SQL 字段名唯一性依赖它）
      * @param builder           接收方法的 impl 类构建器
      * @param embedded          已嵌入/待嵌入当前仓库的实体 impl 表（键 = 实体接口全限定名）
      * @param connection        Connection 类
@@ -69,29 +70,14 @@ public final class SelectGenerator {
      * @param resultSet         ResultSet 类
      * @param sqlException      SQLException 类
      */
-    public void selectMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
-                              Map<String, QueryGenerator.EmbeddedEntity> embedded, ClassName connection,
-                              ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
-        Map<String, Integer> seen = new HashMap<>();
-        for (Element enclosed : info.element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.METHOD) {
-                continue;
-            }
-            ExecutableElement method = (ExecutableElement) enclosed;
-            int overloadIndex = seen.merge(method.getSimpleName().toString(), 1, Integer::sum) - 1;
-            if (method.getAnnotation(Select.class) == null) {
-                continue;
-            }
-            if (method.getAnnotation(Query.class) != null) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "@Select and @Query are mutually exclusive on the same method", method);
-                continue;
-            }
-            MethodSpec impl = selectMethod(info, method, overloadIndex, builder, embedded, connection,
-                    preparedStatement, resultSet, sqlException);
-            if (impl != null) {
-                builder.addMethod(impl);
-            }
+    public void selectMethod(JForgeProcessor.DaoInfo info, DaoMethod call, TypeSpec.Builder builder,
+                             Map<String, QueryGenerator.EmbeddedEntity> embedded, ClassName connection,
+                             ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
+        ExecutableElement method = call.method();
+        MethodSpec impl = buildSelectMethod(info, method, call.overloadIndex(), builder, embedded, connection,
+                preparedStatement, resultSet, sqlException);
+        if (impl != null) {
+            builder.addMethod(impl);
         }
     }
 
@@ -112,7 +98,7 @@ public final class SelectGenerator {
      * record 组件列 / COUNT(*)，FROM 恒为宿主实体表），WHERE 条件按参数解析，
      * 生成 StringBuilder 拼接 + 类型精确绑定，结果映射委托 {@link QueryGenerator}。
      */
-    private MethodSpec selectMethod(JForgeProcessor.DaoInfo info, ExecutableElement method,
+    private MethodSpec buildSelectMethod(JForgeProcessor.DaoInfo info, ExecutableElement method,
             int overloadIndex, TypeSpec.Builder builder, Map<String, QueryGenerator.EmbeddedEntity> embedded,
             ClassName connection, ClassName preparedStatement, ClassName resultSet,
             ClassName sqlException) {

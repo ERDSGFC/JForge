@@ -14,9 +14,7 @@ import javax.lang.model.element.*;
 import javax.lang.model.type.TypeKind;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 生成 {@code Delete} 声明式删除方法：不写 SQL，按参数自动构造
@@ -37,34 +35,17 @@ public final class DeleteGenerator {
                 Diagnostic.Kind.ERROR, processingEnv.getTypeUtils());
     }
 
-    public void deleteMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
-                              ClassName connection, ClassName preparedStatement, ClassName sqlException) {
-        Map<String, Integer> seen = new HashMap<>();
-        for (Element enclosed : info.element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.METHOD) {
-                continue;
-            }
-            ExecutableElement method = (ExecutableElement) enclosed;
-            int overloadIndex = seen.merge(method.getSimpleName().toString(), 1, Integer::sum) - 1;
-            if (method.getAnnotation(Delete.class) == null) {
-                continue;
-            }
-            if (method.getAnnotation(Select.class) != null
-                    || method.getAnnotation(Query.class) != null
-                    || method.getAnnotation(Update.class) != null) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "@Delete is mutually exclusive with @Select/@Query/@Update on the same method",
-                        method);
-                continue;
-            }
-            MethodSpec impl = deleteMethod(info, builder, method, overloadIndex, connection, preparedStatement, sqlException);
-            if (impl != null) {
-                builder.addMethod(impl);
-            }
+    public void deleteMethod(JForgeProcessor.DaoInfo info, DaoMethod call, TypeSpec.Builder builder,
+                             ClassName connection, ClassName preparedStatement, ClassName sqlException) {
+        ExecutableElement method = call.method();
+        MethodSpec impl = buildDeleteMethod(info, builder, method, call.overloadIndex(), connection,
+                preparedStatement, sqlException);
+        if (impl != null) {
+            builder.addMethod(impl);
         }
     }
 
-    private MethodSpec deleteMethod(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
+    private MethodSpec buildDeleteMethod(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
             ExecutableElement method, int overloadIndex, ClassName connection, ClassName preparedStatement,
             ClassName sqlException) {
         String methodName = method.getSimpleName().toString();

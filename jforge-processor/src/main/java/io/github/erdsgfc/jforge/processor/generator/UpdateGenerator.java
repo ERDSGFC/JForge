@@ -18,9 +18,7 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 生成 {@code Update} 声明式更新方法：不写 SQL，按参数自动构造
@@ -70,32 +68,17 @@ public final class UpdateGenerator {
                 Diagnostic.Kind.ERROR, processingEnv.getTypeUtils());
     }
 
-    public void updateMethods(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
-                              ClassName connection, ClassName preparedStatement, ClassName sqlException) {
-        Map<String, Integer> seen = new HashMap<>();
-        for (Element enclosed : info.element.getEnclosedElements()) {
-            if (enclosed.getKind() != ElementKind.METHOD) {
-                continue;
-            }
-            ExecutableElement method = (ExecutableElement) enclosed;
-            int overloadIndex = seen.merge(method.getSimpleName().toString(), 1, Integer::sum) - 1;
-            if (method.getAnnotation(Update.class) == null) {
-                continue;
-            }
-            if (method.getAnnotation(Select.class) != null
-                    || method.getAnnotation(Query.class) != null) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "@Update is mutually exclusive with @Select/@Query on the same method", method);
-                continue;
-            }
-            MethodSpec impl = updateMethod(info, builder, method, overloadIndex, connection, preparedStatement, sqlException);
-            if (impl != null) {
-                builder.addMethod(impl);
-            }
+    public void updateMethod(JForgeProcessor.DaoInfo info, DaoMethod call, TypeSpec.Builder builder,
+                             ClassName connection, ClassName preparedStatement, ClassName sqlException) {
+        ExecutableElement method = call.method();
+        MethodSpec impl = buildUpdateMethod(info, builder, method, call.overloadIndex(), connection,
+                preparedStatement, sqlException);
+        if (impl != null) {
+            builder.addMethod(impl);
         }
     }
 
-    private MethodSpec updateMethod(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder, ExecutableElement method,
+    private MethodSpec buildUpdateMethod(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder, ExecutableElement method,
             int overloadIndex, ClassName connection, ClassName preparedStatement, ClassName sqlException) {
         String methodName = method.getSimpleName().toString();
 
