@@ -1,5 +1,8 @@
 package io.github.erdsgfc.jforge.core;
 
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
+
 import java.util.List;
 
 /**
@@ -24,7 +27,7 @@ public interface BaseRepository<T, ID> extends TransactionOperations {
      * @param entity 要持久化的实体（其 {@code @Id} 字段在生成时被更新）
      * @return 同一个实体实例，现在带上了它的 id
      */
-    T save(T entity);
+    @NonNull T save(@NonNull T entity);
 
     /**
      * 批量插入所有实体并回写生成的主键 id。
@@ -32,7 +35,7 @@ public interface BaseRepository<T, ID> extends TransactionOperations {
      * @param entities 要持久化的实体列表
      * @return 同一个列表实例，每个实体都带上了它的 id
      */
-    List<T> save(List<T> entities);
+    @NonNull List<T> save(@NonNull List<T> entities);
 
     /**
      * 删除该实体 id 映射的行。
@@ -40,7 +43,7 @@ public interface BaseRepository<T, ID> extends TransactionOperations {
      * @param entity 要删除的实体
      * @return 若删除了某行则返回 {@code true}
      */
-    boolean delete(T entity);
+    boolean delete(@NonNull T entity);
 
     /**
      * 删除这些实体 id 映射的行。
@@ -48,7 +51,7 @@ public interface BaseRepository<T, ID> extends TransactionOperations {
      * @param entities 要删除的实体列表
      * @return 被删除的行数
      */
-    int delete(List<T> entities);
+    int delete(@NonNull List<T> entities);
 
     /**
      * 删除指定 id 的行。
@@ -56,7 +59,7 @@ public interface BaseRepository<T, ID> extends TransactionOperations {
      * @param id 要删除行的主键
      * @return 若删除了某行则返回 {@code true}
      */
-    boolean deleteById(ID id);
+    boolean deleteById(@NonNull ID id);
 
     /**
      * 删除指定 id 列表的行。
@@ -64,7 +67,7 @@ public interface BaseRepository<T, ID> extends TransactionOperations {
      * @param ids 要删除行的主键列表
      * @return 被删除的行数
      */
-    int deleteByIds(List<ID> ids);
+    int deleteByIds(@NonNull List<ID> ids);
 
     /**
      * 按实体 id 匹配并更新其所有映射列。
@@ -72,7 +75,7 @@ public interface BaseRepository<T, ID> extends TransactionOperations {
      * @param entity 携带新值与待匹配 id 的实体
      * @return 若更新了某行则返回 {@code true}
      */
-    boolean update(T entity);
+    boolean update(@NonNull T entity);
 
     /**
      * 按 id 加载实体。
@@ -80,7 +83,7 @@ public interface BaseRepository<T, ID> extends TransactionOperations {
      * @param id 主键
      * @return 实体，若不存在则返回 {@code null}
      */
-    T findById(ID id);
+    @Nullable T findById(@NonNull ID id);
 
     /**
      * 按给定 id 列表加载实体。
@@ -88,14 +91,14 @@ public interface BaseRepository<T, ID> extends TransactionOperations {
      * @param ids 主键列表
      * @return 匹配的实体（顺序不保证，不存在的 id 会被跳过）
      */
-    List<T> findByIds(List<ID> ids);
+    @NonNull List<T> findByIds(@NonNull List<ID> ids);
 
     /**
      * 加载实体表的全部行。
      *
      * @return 所有实体
      */
-    List<T> findAll();
+    @NonNull List<T> findAll();
 
     /**
      * 返回实体表的总行数。
@@ -110,7 +113,7 @@ public interface BaseRepository<T, ID> extends TransactionOperations {
      * @param id 主键
      * @return 若该 id 的行存在则返回 {@code true}
      */
-    boolean existsById(ID id);
+    boolean existsById(@NonNull ID id);
 
     /**
      * 创建一个所有字段均为默认值的全新空实体。当调用方无法（或不允许）直接引用生成的
@@ -118,6 +121,6 @@ public interface BaseRepository<T, ID> extends TransactionOperations {
      *
      * @return 类型为 {@code T} 的新实体实例
      */
-    T createEntity();
+    @NonNull T createEntity();
 
 }

@@ -8,6 +8,15 @@ import org.jspecify.annotations.NonNull;
 public interface SysAdmin {
     @Id
     long  adminId();
-    @NonNull
+    SysAdmin adminId(long adminId);
+
     String  adminName();
+    SysAdmin adminName( String adminName);
+
+    String adminMobile();
+    SysAdmin adminMobile(String adminMobile);
+
+    String adminPassword();
+    SysAdmin adminPassword(String adminPassword);
+
 }
