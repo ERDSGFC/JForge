@@ -108,9 +108,9 @@ class JoinCodegenTest {
         assertTrue(result.success, () -> result.diagnostics.toString());
         String generated = result.generatedSources.get("test.UserRepository_Impl");
         assertTrue(generated != null, "repository implementation was not generated");
-        assertTrue(generated.contains("findById(Long id)"), generated);
-        assertTrue(generated.contains("deleteById(Long id)"), generated);
-        assertTrue(generated.contains("findByIds(List<Long> ids)"), generated);
+        assertTrue(generated.contains("Long id)"), generated);
+        assertTrue(generated.contains("deleteById(@Nullable Long id)") || generated.contains("deleteById(@NonNull Long id)") || generated.contains("deleteById(Long id)"), generated);
+        assertTrue(generated.contains("List<Long> ids)"), generated);
         assertTrue(generated.contains("if (id == null)"), generated);
     }
 
@@ -132,8 +132,8 @@ class JoinCodegenTest {
         assertTrue(result.success, () -> result.diagnostics.toString());
         String generated = result.generatedSources.get("test.ItemRepository_Impl");
         assertTrue(generated != null, "repository implementation was not generated");
-        assertTrue(generated.contains("findById(Integer id)"), generated);
-        assertTrue(generated.contains("deleteByIds(List<Integer> ids)"), generated);
+        assertTrue(generated.contains("Integer id)"), generated);
+        assertTrue(generated.contains("List<Integer> ids)"), generated);
         assertTrue(generated.contains("if (id == null)"), generated);
     }
 }

@@ -84,8 +84,8 @@ public interface PgUserRepository extends BaseRepository<PgUser, Long> {
     @Query("SELECT * FROM pg_users WHERE age > :age ORDER BY id LIMIT :limit OFFSET :offset")
     List<PgUser> pageByAge(@Bind int age, @Bind int limit, @Bind int offset);
 
-    /** 动态 WHERE：方括号显式动态段（age 为 null 时跳过）。 */
-    @Query("SELECT * FROM pg_users WHERE age = :age AND user_name = :name")
-    List<PgUser> findDynamicByAgeAndName(@Bind @Nullable Integer age,
+    /** 动态 WHERE：{:age} 段(age 为 null 时整段移除)。 */
+    @Query("SELECT * FROM pg_users WHERE {:age} AND user_name = :name")
+    List<PgUser> findDynamicByAgeAndName(@Condition(value = "age") @Nullable Integer age,
             @Bind String name);
 }
