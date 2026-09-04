@@ -86,7 +86,11 @@ public class JForgeProcessor extends AbstractProcessor {
         if (roundEnv.processingOver()) {
             // 所有轮次的 @Dao 都已解析完：一次性生成全部仓库 impl 与工厂——每个文件
             // 恰好写一次。依赖 javac 行为：最后一轮生成的文件仍会进入本编译单元的
-            // 编译（JDK 25 实测生成类的 .class 正常产出；ECJ 等未验证）。
+            // 编译（JDK 25 实测生成类的 .class 正常产出；ECJ 等未验证），但 javac
+            // 会提示"对最后一轮创建的文件不再进行批注处理"——对本框架无害：生成代码
+            // 只携带运行期注解（@Repository/@Autowired/@NonNull 等），需要编译期读取
+            // 的 @Table/@Dao/@JForgeConfig 都在用户源文件上、已于正常轮次处理完。
+            // 约束：生成代码不得携带任何依赖编译期处理的注解。
             for (DaoInfo dao : daos) {
                 repositoryGenerator.generate(dao);
             }

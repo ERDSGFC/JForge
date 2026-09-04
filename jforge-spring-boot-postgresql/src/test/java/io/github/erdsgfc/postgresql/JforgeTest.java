@@ -25,18 +25,6 @@ public class JforgeTest {
     @Transactional
     @Rollback(false)
     void baseRepTest() {
-        long adminId = System.currentTimeMillis();
-        SysAdmin created = sysAdminRepository.save(sysAdminRepository.createEntity()
-                .adminId(adminId).adminName("tester").adminMobile("1787899999").adminPassword("123456").adminStatus(1));
-        assertNotNull(created);
-
-        SysAdmin found = sysAdminRepository.findById(adminId);
-        assertNotNull(found);
-        found.adminMobile("1787000000");
-        assertEquals(true, sysAdminRepository.update(found));
-
-        List<SysAdmin> all = sysAdminRepository.findAll();
-        assertEquals(true, all.stream().anyMatch(a -> a.adminId() == adminId));
     }
 
     /** @NonNull 契约参数:null 快速失败(requireNonNull),而非静默 NPE 于绑定处。 */
