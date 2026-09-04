@@ -50,7 +50,6 @@ public class JForgeProcessor extends AbstractProcessor {
     /** 已生成仓库 impl 的全限定名：显式去重，不依赖 javac"每轮输入只含本轮文件"的隐式行为。 */
     private final Set<String> generatedRepositories = new HashSet<>();
     private final List<DaoInfo> daos = new ArrayList<>();
-    private int lastFactoriesSize;
 
     private JForgeConfigHelper configHelper;
     private RepositoryGenerator repositoryGenerator;
@@ -85,6 +84,13 @@ public class JForgeProcessor extends AbstractProcessor {
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         if (roundEnv.processingOver()) {
+            // 所有轮次的 @Dao 都已解析完：一次性生成全部仓库 impl 与工厂——每个文件
+            // 恰好写一次。依赖 javac 行为：最后一轮生成的文件仍会进入本编译单元的
+            // 编译（JDK 25 实测生成类的 .class 正常产出；ECJ 等未验证）。
+            for (DaoInfo dao : daos) {
+                repositoryGenerator.generate(dao);
+            }
+            writeFactories();
             return true;
         }
         // 每轮开头一次性收集全部 @JForgeConfig(package-info),后续查询只查表 +
@@ -102,14 +108,11 @@ public class JForgeProcessor extends AbstractProcessor {
             String implQualifiedName = info.daoPackage.isEmpty()
                     ? info.implName
                     : info.daoPackage + "." + info.implName;
+            // 跨轮去重：javac 可能把同一 @Dao 递送多轮，重复累积会让最后一轮的
+            // 全量生成把同一文件写两次（Filer: Attempt to recreate a file）。
             if (generatedRepositories.add(implQualifiedName)) {
-                repositoryGenerator.generate(info);
+                daos.add(info);
             }
-            daos.add(info);
-        }
-        if (daos.size() != lastFactoriesSize) {
-            writeFactories();
-            lastFactoriesSize = daos.size();
         }
         return true;
     }
