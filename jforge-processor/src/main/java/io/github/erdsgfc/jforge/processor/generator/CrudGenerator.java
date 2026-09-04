@@ -313,7 +313,10 @@ public final class CrudGenerator {
     private static CodeBlock idBindParam(JForgeProcessor.DaoInfo info,
             String expr, String indexExpr) {
         EntityModel.ColumnModel id = info.model.idColumn();
-        return SqlCodegen.bindParam(id.typeName, expr, indexExpr, id.nullable, id.isEnum,
+        // Repository ID parameters use a boxed type when the entity getter is primitive.
+        // A nullable binding prevents JDBC setter auto-unboxing from throwing on null.
+        boolean boxedRepositoryId = id.returnType.getKind().isPrimitive() && info.idType.isBoxedPrimitive();
+        return SqlCodegen.bindParam(id.typeName, expr, indexExpr, id.nullable || boxedRepositoryId, id.isEnum,
                 id.converter != null ? SqlCodegen.converterFieldName(info.model, id) : null);
     }
 
@@ -463,6 +466,9 @@ public final class CrudGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
                 .addParameter(info.idType, "id");
+        method.beginControlFlow("if (id == null)")
+                .addStatement("return false")
+                .endControlFlow();
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "deleteByIdSql", false, configHelper.logSql(info.element));
         method.addCode(idBindParam(info, "id", 1));
         method.addCode("\n");
@@ -569,6 +575,9 @@ public final class CrudGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(info.entityType)
                 .addParameter(info.idType, "id");
+        method.beginControlFlow("if (id == null)")
+                .addStatement("return null")
+                .endControlFlow();
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "findByIdSql", false, configHelper.logSql(info.element));
         method.addCode(idBindParam(info, "id", 1));
         method.addCode("\n");
@@ -684,7 +693,10 @@ public final class CrudGenerator {
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
-                .addParameter(info.idType, "id")
+                .addParameter(info.idType, "id");
+        method.beginControlFlow("if (id == null)")
+                .addStatement("return false")
+                .endControlFlow()
                 .addStatement("return countById(id) > 0");
         return method.build();
     }
@@ -706,6 +718,9 @@ public final class CrudGenerator {
                 .addModifiers(Modifier.PRIVATE)
                 .returns(TypeName.LONG)
                 .addParameter(info.idType, "id");
+        method.beginControlFlow("if (id == null)")
+                .addStatement("return 0L")
+                .endControlFlow();
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "countByIdSql", false,
                 configHelper.logSql(info.element));
         method.addCode(idBindParam(info, "id", 1));

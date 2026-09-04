@@ -89,4 +89,51 @@ class JoinCodegenTest {
         assertTrue(generated != null, "repository implementation was not generated");
         assertTrue(generated.contains("u.display_name = ?"), generated);
     }
+    @Test
+    void acceptsPrimitiveEntityIdWithWrapperRepositoryId() throws Exception {
+        String source = """
+                package test;
+                import io.github.erdsgfc.jforge.annotation.*;
+                import io.github.erdsgfc.jforge.core.BaseRepository;
+                import java.util.List;
+                @Table(name = "users") interface User {
+                    @Id long id(); User id(long v);
+                    String name(); User name(String v);
+                }
+                @Dao public interface UserRepository extends BaseRepository<User, Long> {
+                }
+                """;
+        CompilationHelper.CompilationResult result = CompilationHelper.compile(
+                "test.UserRepository", source, new JForgeProcessor());
+        assertTrue(result.success, () -> result.diagnostics.toString());
+        String generated = result.generatedSources.get("test.UserRepository_Impl");
+        assertTrue(generated != null, "repository implementation was not generated");
+        assertTrue(generated.contains("findById(Long id)"), generated);
+        assertTrue(generated.contains("deleteById(Long id)"), generated);
+        assertTrue(generated.contains("findByIds(List<Long> ids)"), generated);
+        assertTrue(generated.contains("if (id == null)"), generated);
+    }
+
+    @Test
+    void acceptsIntEntityIdWithIntegerRepositoryId() throws Exception {
+        String source = """
+                package test;
+                import io.github.erdsgfc.jforge.annotation.*;
+                import io.github.erdsgfc.jforge.core.BaseRepository;
+                import java.util.List;
+                @Table(name = "items") interface Item {
+                    @Id int id(); Item id(int v);
+                }
+                @Dao public interface ItemRepository extends BaseRepository<Item, Integer> {
+                }
+                """;
+        CompilationHelper.CompilationResult result = CompilationHelper.compile(
+                "test.ItemRepository", source, new JForgeProcessor());
+        assertTrue(result.success, () -> result.diagnostics.toString());
+        String generated = result.generatedSources.get("test.ItemRepository_Impl");
+        assertTrue(generated != null, "repository implementation was not generated");
+        assertTrue(generated.contains("findById(Integer id)"), generated);
+        assertTrue(generated.contains("deleteByIds(List<Integer> ids)"), generated);
+        assertTrue(generated.contains("if (id == null)"), generated);
+    }
 }
