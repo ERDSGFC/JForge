@@ -848,7 +848,7 @@ public final class QueryGenerator {
         }
         Condition condition = parameter.getAnnotation(Condition.class);
         if (condition != null) {
-            WhereCondition c = WhereCondition.resolveHost(info, method, parameter, processingEnv, "@Query", true);
+            WhereCondition c = WhereCondition.resolveHost(info, method, parameter, processingEnv, "@Query", Map.of(info.model.entityQualifiedName(), info.model), true);
             if (c == null) return null;
             return new FragmentPlan(null, List.of(), c, null,
                     c.dynamic() || c.collection() || c.array() || c.optional(), parameter);

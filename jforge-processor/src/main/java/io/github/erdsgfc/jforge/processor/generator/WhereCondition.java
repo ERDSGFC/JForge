@@ -61,19 +61,6 @@ record WhereCondition(String columnName, String op, String paramName, String typ
 
     static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
                                       VariableElement parameter, ProcessingEnvironment env,
-                                      String diagnosticPrefix, boolean queryContext) {
-        return resolveHost(info, method, parameter, env, diagnosticPrefix,
-                Map.of(info.model.entityQualifiedName(), info.model), queryContext);
-    }
-
-    static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
-                                      VariableElement parameter, ProcessingEnvironment env,
-                                      String diagnosticPrefix, Map<String, EntityModel> entities) {
-        return resolveHost(info, method, parameter, env, diagnosticPrefix, entities, false);
-    }
-
-    static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
-                                      VariableElement parameter, ProcessingEnvironment env,
                                       String diagnosticPrefix, Map<String, EntityModel> entities,
                                       boolean queryContext) {
         String paramName = parameter.getSimpleName().toString();

@@ -175,7 +175,7 @@ public final class SelectGenerator {
                 continue;
             }
             WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
-                    processingEnv, "@Select", entities);
+                    processingEnv, "@Select", entities, false);
             if (condition == null) {
                 return null;
             }
