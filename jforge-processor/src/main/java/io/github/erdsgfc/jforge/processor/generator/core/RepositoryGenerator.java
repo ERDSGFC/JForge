@@ -149,19 +149,11 @@ public final class RepositoryGenerator {
                 builder.addField(SqlCodegen.converterField(info.model, column));
             }
         }
-
-        // 行映射 helper 与 CRUD 方法。
-        builder.addMethod(crudGenerator.rowMapperMethod(info, entityImpl, sqlException, resultSet));
-        builder.addMethod(crudGenerator.countByIdMethod(info, sqlException, connection, preparedStatement, resultSet));
-        for (MethodSpec method : crudGenerator.crudMethods(info, entityImpl, connection, preparedStatement,
-                resultSet, sqlException)) {
-            builder.addMethod(method);
-        }
         // 单次遍历完成全部 SQL 语义注解方法的校验与生成分发：接口方法只被扫描一遍
         // （原来每个生成器都把 getEnclosedElements + 同名序号计数完整走一次）。
-        // 同名序号对每个方法统一计数（含无注解、重声明 CRUD 与其他注解的同名方法），
-        // 与原先各生成器内部"每个方法都计数"的语义一致——SQL 常量字段名的确定性不变。
-        // 实现方法按 DAO 声明顺序逐个直接生成（生成代码方法顺序与接口声明一致）。
+        // 同名序号对所有同名抽象方法统一计数（含无注解与重声明 CRUD 的方法），
+        // 与原先各生成器内部"每个方法都计数"的语义一致——SQL 常量字段名的确定性
+        // 不变。实现方法按 DAO 声明顺序逐个直接生成（生成代码顺序与接口声明一致）。
         Map<String, Integer> seen = new HashMap<>();
         // @Query 转换器字段去重（DAO 级：多个 @Query 方法可能生成同名字段）。
         Set<String> addedConverters = new HashSet<>();
@@ -170,25 +162,33 @@ public final class RepositoryGenerator {
                 continue;
             }
             ExecutableElement method = (ExecutableElement) enclosed;
-            int overloadIndex = seen.merge(method.getSimpleName().toString(), 1, Integer::sum) - 1;
             boolean query = method.getAnnotation(Query.class) != null;
             boolean select = method.getAnnotation(Select.class) != null;
             boolean update = method.getAnnotation(Update.class) != null;
             boolean delete = method.getAnnotation(Delete.class) != null;
+            if (!method.getModifiers().contains(Modifier.ABSTRACT)) {
+                // 默认/私有/静态方法：接口自带实现，生成器从不生成它们。SQL 语义注解
+                // 只对抽象方法有意义——标在非抽象方法上是矛盾声明，显式报错而非静默忽略。
+                if (query || select  || update || delete) {
+                    error(method, "@Dao SQL annotations (@Query/@Select/@Update/@Delete) require an abstract"
+                            + " method: default/private/static methods are user-implemented, not generated");
+                }
+                continue;
+            }
             if (!query && !select && !update && !delete) {
                 // 无 SQL 注解的抽象方法 impl 无从实现——与其等 javac 报笼统的
-                // "is not abstract and does not override abstract method"，不如在这里给出
-                // 可定位到方法的错误。无需注解的合法形态（排除在外）：
-                // - 默认/私有/静态方法：接口自带实现，生成器从不生成它们；
-                // - 重声明 BaseRepository 的 CRUD 方法（如 @BatchSize 覆盖 save(List)）：
-                //   实现由 CrudGenerator 无条件生成，见 overridesBaseRepositoryMethod。
-                if (method.getModifiers().contains(Modifier.ABSTRACT)
-                        && !overridesBaseRepositoryMethod(info, method)) {
+                // "is not abstract and does not override abstract method"，不如在这里
+                // 给出可定位到方法的错误。合法的无注解形态只剩重声明 BaseRepository
+                // 的 CRUD 方法（如 @BatchSize 覆盖 save(List)，实现由 CrudGenerator
+                // 无条件生成，见 overridesBaseRepositoryMethod）。
+                if (!overridesBaseRepositoryMethod(info, method)) {
                     error(method, "@Dao method must declare one of @Query, @Select, @Update, or @Delete,"
                             + " or redeclare a BaseRepository CRUD method");
                 }
                 continue;
             }
+            int overloadIndex = seen.merge(method.getSimpleName().toString(), 1, Integer::sum) - 1;
+
             // 互斥校验：一个方法只能带一种 SQL 语义注解。
             if ((query ? 1 : 0) + (select ? 1 : 0) + (update ? 1 : 0) + (delete ? 1 : 0) > 1) {
                 error(method, "@Dao method must declare exactly one of @Query/@Select/@Update/@Delete,"
@@ -208,7 +208,13 @@ public final class RepositoryGenerator {
                 deleteGenerator.deleteMethod(info, call, builder, connection, preparedStatement, sqlException);
             }
         }
-
+        // 行映射 helper 与 CRUD 方法。
+        builder.addMethod(crudGenerator.rowMapperMethod(info, entityImpl, sqlException, resultSet));
+        builder.addMethod(crudGenerator.countByIdMethod(info, sqlException, connection, preparedStatement, resultSet));
+        for (MethodSpec method : crudGenerator.crudMethods(info, entityImpl, connection, preparedStatement,
+                resultSet, sqlException)) {
+            builder.addMethod(method);
+        }
         return builder.build();
     }
 
