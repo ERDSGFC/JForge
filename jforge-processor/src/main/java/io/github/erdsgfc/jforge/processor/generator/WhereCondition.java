@@ -45,20 +45,18 @@ record WhereCondition(String columnName, String op, String paramName, String typ
                       List<RawSqlSupport.Binding> rawBindings) {
 
     /**
-     * 解析绑定到宿主实体列的 {@code @Condition} 参数：字段名取 {@link Condition#value()}
+     * 解析绑定到实体列的 {@code @Condition} 参数：字段名取 {@link Condition#value()}
      * （缺省按参数名）、操作符取 {@link Condition#op()}、rawSql 直接透传。参数类型分派：
      * 数组/集合 → IN/NOT IN 条件（支持 EQ/NE；多维数组与 rawSql 组合报错）；Optional → IS NULL
      * 语义；其余 → 普通列条件。动态性按参数 JSpecify 空性判定（基本类型恒静态）。
+     * 唯一全量入口——调用方显式传实体映射与查询上下文（不设便捷重载，避免多参歧义）。
      *
+     * @param entities         可按 {@code @Condition(entity)} 引用的实体模型表（键 = 实体全限定名）；
+     *                         宿主实体必须在内，连接实体由 {@code @Select} 的 {@code @Join} 解析加入
+     * @param queryContext     {@code @Query} 场景：{@code @Condition} 的 value 指原生 SQL 列名
+     *                         而非实体属性（必须显式填写）
      * @return 解析结果；校验失败已报错并返回 {@code null}（调用方跳过方法生成）
      */
-    static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
-                                      VariableElement parameter, ProcessingEnvironment env,
-                                      String diagnosticPrefix) {
-        return resolveHost(info, method, parameter, env, diagnosticPrefix,
-                Map.of(info.model.entityQualifiedName(), info.model), false);
-    }
-
     static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
                                       VariableElement parameter, ProcessingEnvironment env,
                                       String diagnosticPrefix, Map<String, EntityModel> entities,
