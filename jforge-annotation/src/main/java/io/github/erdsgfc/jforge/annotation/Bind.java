@@ -6,7 +6,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /** 将仓库方法参数按 Java 参数名绑定到 {@link Query} 中的命名 {@code :placeholder}。 */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.PARAMETER)
 public @interface Bind {
 

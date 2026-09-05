@@ -22,7 +22,7 @@ import java.lang.annotation.Target;
  * package com.example;
  * }</pre>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target({ElementType.PACKAGE, ElementType.TYPE})
 public @interface JForgeConfig {
 

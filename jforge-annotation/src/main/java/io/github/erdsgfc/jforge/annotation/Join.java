@@ -30,7 +30,7 @@ import java.lang.annotation.Target;
  *       @Condition(value = "id", entity = Company.class) long companyId);
  * }</pre>
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 @Repeatable(Joins.class)
 public @interface Join {
@@ -69,7 +69,7 @@ public @interface Join {
      * 描述一个 ON 等值条件：{@link #local()} 属于 {@link Join#from()}，
      * {@link #target()} 属于 {@link Join#entity()}。
      */
-    @Retention(RetentionPolicy.RUNTIME)
+    @Retention(RetentionPolicy.CLASS)
     @Target({})
     @interface On {
 

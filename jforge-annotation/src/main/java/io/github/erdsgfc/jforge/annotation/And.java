@@ -10,7 +10,7 @@ import java.lang.annotation.Target;
  * {@code AND} 连接（缺省行为，标注与否等价）。用于明确表达，或与 {@link Or} 混排时
  * 保证语义清晰。
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target({ElementType.FIELD, ElementType.RECORD_COMPONENT})
 public @interface And {
 }

@@ -35,7 +35,7 @@ import java.lang.annotation.Target;
  * {@link And}/{@link Or} 仅用于连接修饰，不能替代语义注解。Query 中的
  * {@code @Condition.value} 必须显式填写，并表示原生 SQL 列名。</p>
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 public @interface Where {
     /**

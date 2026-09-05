@@ -10,7 +10,7 @@ import java.lang.annotation.Target;
  * 继承自 {@code io.github.erdsgfc.jforge.core.BaseRepository} 的 CRUD 方法，
  * 以及所有标注了 {@link Query} 的方法。
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.TYPE)
 public @interface Dao {
 

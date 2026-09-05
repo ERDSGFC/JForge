@@ -18,7 +18,7 @@ import java.lang.annotation.Target;
  * // → WHERE user_name = ? OR age > ? OR (city = ? AND street = ?)
  * }</pre>
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target({ElementType.FIELD, ElementType.RECORD_COMPONENT})
 public @interface Or {
 }

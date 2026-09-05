@@ -10,7 +10,7 @@ import java.lang.annotation.Target;
  * 标量片段最多包含一个 {@code ?}；class/record 片段可使用直接字段的命名
  * {@code :field} 占位符，字段值仍通过 JDBC 绑定。
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 public @interface RawSql {
     /** 原生 SQL 文本。 */

@@ -15,7 +15,7 @@ import java.lang.annotation.Target;
  * 生成的实现根据方法的返回类型映射结果：{@code @Table} 实体接口（按列名）、
  * record/DTO（按组件顺序）、单个值，或更新/删除的行数。</p>
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 public @interface Query {
 

@@ -21,7 +21,7 @@ import java.lang.annotation.Target;
  * // → WHERE 1=1 AND age > ? AND user_name = ?
  * }</pre>
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 public @interface Condition {
 

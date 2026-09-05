@@ -27,7 +27,7 @@ import java.lang.annotation.Target;
  *
  * <p>值为 {@code 0} 时，对被标注的元素禁用批处理（行在单条连接上逐条插入）。</p>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target({ElementType.TYPE, ElementType.METHOD})
 public @interface BatchSize {
 

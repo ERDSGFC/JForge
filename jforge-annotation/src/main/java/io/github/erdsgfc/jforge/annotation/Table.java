@@ -9,7 +9,7 @@ import java.lang.annotation.Target;
 /**
  * 设置实体对应的表名
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.TYPE)
 public @interface Table {
 

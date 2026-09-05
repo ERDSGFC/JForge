@@ -22,7 +22,7 @@ import java.lang.annotation.Target;
  * // → UPDATE users SET user_name = ?, age = ? WHERE id = ?
  * }</pre>
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 public @interface Update {
 }

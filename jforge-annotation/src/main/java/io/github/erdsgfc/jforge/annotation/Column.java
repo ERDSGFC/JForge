@@ -8,7 +8,7 @@ import java.lang.annotation.Target;
 /**
  * 将字段映射到列。缺省时，字段名直接用作列名（camelCase 保持不变）。
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 public @interface Column {
 

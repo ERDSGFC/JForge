@@ -32,7 +32,7 @@ import java.lang.annotation.Target;
  * 动态语义：字段/参数值可空（JSpecify 空性）为 {@code null} → 跳过该 SET（保持列原值）；
  * {@code Optional} 空 → {@code SET 列 = NULL}（显式置空）、有值 → {@code SET 列 = ?}。
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.RECORD_COMPONENT})
 public @interface UpdateSet {
 

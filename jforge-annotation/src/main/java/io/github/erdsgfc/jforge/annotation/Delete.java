@@ -21,7 +21,7 @@ import java.lang.annotation.Target;
  * // → DELETE FROM users WHERE id = ?
  * }</pre>
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 public @interface Delete {
 }

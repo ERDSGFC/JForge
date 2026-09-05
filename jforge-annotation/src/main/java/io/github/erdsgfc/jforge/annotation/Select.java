@@ -30,7 +30,7 @@ import java.lang.annotation.Target;
  * long countByAge(@Condition(op = Op.GT) Integer age);             // SELECT COUNT(*) WHERE age > ?
  * }</pre>
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 public @interface Select {
 }

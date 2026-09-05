@@ -18,7 +18,7 @@ import java.lang.annotation.Target;
  * {@link JForgeConverter#sqlType()} 决定（默认 {@code JDBCType.OTHER}），转换器
  * 须接受并处理 {@code null}。</p>
  */
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 public @interface Convert {
 

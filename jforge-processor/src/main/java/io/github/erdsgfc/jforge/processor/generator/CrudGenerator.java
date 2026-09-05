@@ -721,7 +721,7 @@ public final class CrudGenerator {
     public MethodSpec countByIdMethod(JForgeProcessor.DaoInfo info, ClassName sqlException,
                                       ClassName connection, ClassName preparedStatement, ClassName resultSet) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("countById")
-                .addModifiers(Modifier.PUBLIC)
+                .addModifiers(Modifier.PRIVATE)
                 .returns(TypeName.LONG)
                 .addParameter(Nullability.withNonNull(info.idType), "id");
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "countByIdSql", false,
