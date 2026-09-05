@@ -591,7 +591,7 @@ public final class QueryGenerator {
             return new WhereFragment(first ? "" : " AND ", where.rawSql());
         }
         WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
-                processingEnv, "@Query");
+                processingEnv, "@Query", Map.of(info.model.entityQualifiedName(), info.model), false);
         if (condition == null) {
             return null;
         }

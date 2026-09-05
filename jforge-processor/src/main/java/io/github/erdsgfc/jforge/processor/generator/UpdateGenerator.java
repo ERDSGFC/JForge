@@ -19,6 +19,7 @@ import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 生成 {@code Update} 声明式更新方法：不写 SQL，按参数自动构造
@@ -108,7 +109,7 @@ public final class UpdateGenerator {
                 criteriaUnits.addAll(units);
             } else {
             WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
-                    processingEnv, "@Condition");
+                    processingEnv, "@Condition", Map.of(info.model.entityQualifiedName(), info.model), false);
                 if (condition == null) {
                     return null;
                 }

@@ -15,6 +15,7 @@ import javax.lang.model.type.TypeKind;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 生成 {@code Delete} 声明式删除方法：不写 SQL，按参数自动构造
@@ -62,7 +63,7 @@ public final class DeleteGenerator {
                 criteriaUnits.addAll(units);
             } else {
                 WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
-                    processingEnv, "@Condition");
+                    processingEnv, "@Condition", Map.of(info.model.entityQualifiedName(), info.model), false);
                 if (condition == null) {
                     return null;
                 }
