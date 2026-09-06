@@ -13,5 +13,5 @@ public interface SysAdminRepository extends BaseRepository<SysAdmin, Long> {
     long updateAdminStatus(@UpdateSet int adminStatus, @Condition long [] adminId);
 
     @Delete
-    long deleteAdmin(@Condition(op = Op.GE) long adminId, @Nullable Integer adminStatus);
+    long deleteAdmin(@Condition(op = Op.GE) long adminId, Integer adminStatus);
 }

@@ -7,6 +7,7 @@ import com.palantir.javapoet.TypeSpec;
 import io.github.erdsgfc.jforge.annotation.*;
 import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
+import io.github.erdsgfc.jforge.processor.utils.Nullability;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
@@ -16,6 +17,7 @@ import javax.tools.Diagnostic;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 生成 {@code Delete} 声明式删除方法：不写 SQL，按参数自动构造
@@ -54,8 +56,12 @@ public final class DeleteGenerator {
         // WHERE 条件：@Condition 参数 + @Where 条件对象。
         List<WhereCondition> conditions = new ArrayList<>();
         List<CriteriaGenerator.Unit> criteriaUnits = new ArrayList<>();
+        boolean criteriaNullable = false; // 任一 @Where 参数可空 → 整体运行时可能跳过,静态折叠不可用
         for (VariableElement parameter : method.getParameters()) {
             if (parameter.getAnnotation(Where.class) != null) {
+                if (Nullability.isNullableParameter(parameter)) {
+                    criteriaNullable = true;
+                }
                 List<CriteriaGenerator.Unit> units = criteriaGenerator.parse(info, method, parameter, false);
                 if (units == null) {
                     return null;
@@ -85,19 +91,45 @@ public final class DeleteGenerator {
         }
         boolean logSql = configHelper.logSql(info.element);
 
-        // 全静态：WHERE 无动态 + 无 @Where 条件对象 → SQL 常量 + 静态绑定。
-        // 静态形态 = 全部条件无 null 守卫(optional 可进静态——非空契约 opt.get()
-        // 绑定;IS NULL 只在可空 Optional 下生成)。
-        boolean allStatic = criteriaUnits.isEmpty()
-                && conditions.stream().allMatch(WhereCondition::staticCompatible);
+        // 非空契约参数（@Condition/@Where，非基本/非数组/非集合）在方法顶部快速失败——
+        // null 直送会静默绑 NULL 或深处抛模糊 NPE（数组/集合的动态路径在占位符
+        // 拼接处已有检查，顶层不重复）。
+        for (VariableElement parameter : method.getParameters()) {
+            if (WhereCondition.needsRequireNonNull(parameter, processingEnv)) {
+                spec.addStatement("$T.requireNonNull($N, $S)", Objects.class,
+                        parameter.getSimpleName(), parameter.getSimpleName() + " must not be null");
+            }
+        }
+
+        // 全静态：WHERE 无动态参数，且条件对象（若存在）参数非空、字段全静态 →
+        // SQL 常量 + 静态绑定（条件对象组同样折叠，不做运行时 StringBuilder 拼接）。
+        boolean allStatic = !criteriaNullable
+                && conditions.stream().allMatch(WhereCondition::staticCompatible)
+                && CriteriaGenerator.staticCompatible(criteriaUnits);
         if (allStatic) {
             StringBuilder sql = new StringBuilder(baseSql);
-            WhereCondition.appendStaticWhereSql(sql, conditions);
+            boolean hasDirect = !conditions.isEmpty();
+            if (hasDirect) {
+                WhereCondition.appendStaticWhereSql(sql, conditions);
+            }
+            if (!criteriaUnits.isEmpty()) {
+                // 条件对象组：前导连接符与动态形态一致（无直接条件时首个得 WHERE）,
+                // 组整体括号包裹,嵌套 @Where 递归(staticCompatible 保证组恒非空,
+                // 无需空组回退)。
+                sql.append(hasDirect ? " AND " : " WHERE ");
+                sql.append("(");
+                CriteriaGenerator.appendStaticSql(sql, criteriaUnits);
+                sql.append(")");
+            }
             String sqlField = SqlFieldGenerator.methodSqlFieldName(methodName, overloadIndex);
             builder.addField(FieldSpec.builder(String.class, sqlField,
                     Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL).initializer("$S", sql.toString()).build());
             SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, false, logSql);
             WhereCondition.appendStaticBinds(spec, conditions, 1);
+            if (!criteriaUnits.isEmpty()) {
+                CriteriaGenerator.appendStaticBinds(spec, criteriaUnits,
+                        1 + WhereCondition.staticBindCount(conditions));
+            }
             spec.addStatement("return ps.executeUpdate()");
             SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(),
                     sql.toString(), logSql);
@@ -116,7 +148,7 @@ public final class DeleteGenerator {
         criteriaGenerator.emitGroupAppend(spec, criteriaUnits, "where", " AND ");
         // 守卫仅在可能发生空 WHERE 时生成(dynamic 条件可能跳过/条件对象组可能回退)——
         // 全静态条件恒拼,守卫恒 false。
-        if (conditions.stream().anyMatch(c -> c.dynamic()) || !criteriaUnits.isEmpty()) {
+        if (conditions.stream().anyMatch(WhereCondition::dynamic) || !criteriaUnits.isEmpty()) {
             spec.beginControlFlow("if (where.equals($S))", " WHERE ");
             if (method.getReturnType().getKind() == TypeKind.BOOLEAN) {
                 spec.addStatement("return false");

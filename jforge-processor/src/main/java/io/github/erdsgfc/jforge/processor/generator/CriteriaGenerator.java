@@ -593,6 +593,103 @@ public final class CriteriaGenerator {
         }
     }
 
+    // ---- 静态折叠（全静态条件对象 → SQL 常量） ------------------------------------
+
+    /**
+     * 条件单元序列是否全静态：组内每个单元（递归到嵌套组）都无 null 守卫、
+     * 非 Optional、非集合/数组——条件数量与占位符数量编译期确定，可折叠进 SQL
+     * 常量字段。Optional 即使无 null 守卫也需要运行时 {@code isPresent} 分支
+     * （IS NULL 与有值两种 SQL 形态），不满足。
+     *
+     * @param units 条件单元序列（可空/空 = 恒真）
+     * @return 全部单元静态时返回 {@code true}
+     */
+    static boolean staticCompatible(List<Unit> units) {
+        if (units == null) {
+            return true;
+        }
+        for (Unit unit : units) {
+            if (unit.guard != null || unit.optional || unit.collection || unit.array) {
+                return false;
+            }
+            if (unit.nested != null && !staticCompatible(unit.nested)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 渲染条件对象组内单元序列的静态 SQL 文本（不含外层括号与前导连接符，调用方
+     * 负责）：首个单元无前导连接符，其后连接符取各单元 {@code conn}（与动态形态的
+     * where 前缀变量推进一致）；嵌套 {@code @Where} 组渲染为括号并递归。
+     *
+     * @param sql   接收文本的缓冲
+     * @param units 全静态单元序列（须先经 {@link #staticCompatible} 判定）
+     */
+    static void appendStaticSql(StringBuilder sql, List<Unit> units) {
+        boolean first = true;
+        for (Unit unit : units) {
+            if (!first) {
+                sql.append(unit.conn);
+            }
+            first = false;
+            appendStaticUnitSql(sql, unit);
+        }
+    }
+
+    private static void appendStaticUnitSql(StringBuilder sql, Unit unit) {
+        if (unit.nested != null) {
+            sql.append("(");
+            appendStaticSql(sql, unit.nested);
+            sql.append(")");
+            return;
+        }
+        if (unit.rawSql != null) {
+            sql.append(" ").append(unit.rawSql);
+            return;
+        }
+        sql.append(" ").append(unit.column).append(" ").append(unit.op).append(" ?");
+    }
+
+    /**
+     * 全静态条件对象单元序列的绑定代码（与拼接同序、数值索引递增，返回结束索引供
+     * 调用方接续）：嵌套组递归；{@code rawSql} 走其绑定表；无 null/Optional/集合
+     * 守卫——{@link #staticCompatible} 已保证，绑定值与动态形态一致（可选值表达式
+     * 恒为字段 getter 调用，经命中列的转换器绑定）。
+     *
+     * @param spec  方法构建器
+     * @param units 全静态单元序列
+     * @param index 起始绑定索引（1-based）
+     * @return 绑定后的下一个索引
+     */
+    static int appendStaticBinds(MethodSpec.Builder spec, List<Unit> units, int index) {
+        int i = index;
+        for (Unit unit : units) {
+            i = appendStaticUnitBind(spec, unit, i);
+        }
+        return i;
+    }
+
+    private static int appendStaticUnitBind(MethodSpec.Builder spec, Unit unit, int index) {
+        if (unit.nested != null) {
+            return appendStaticBinds(spec, unit.nested, index);
+        }
+        if (unit.rawSql != null) {
+            for (RawSqlSupport.Binding binding : unit.rawBindings) {
+                spec.addCode(SqlCodegen.bindParam(binding.typeName(), binding.expression(), index++,
+                        binding.nullable(), false, null));
+                spec.addCode("\n");
+            }
+            return index;
+        }
+        spec.addCode(SqlCodegen.bindParam(unit.bindType,
+                unit.valueExpr != null ? unit.valueExpr : unit.readExpr, index++,
+                false, false, unit.converterField));
+        spec.addCode("\n");
+        return index;
+    }
+
     private void error(ExecutableElement method, String message) {
         messager.printMessage(errorKind, message, method);
     }

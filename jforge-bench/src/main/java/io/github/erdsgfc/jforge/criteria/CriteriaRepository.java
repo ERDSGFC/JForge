@@ -9,6 +9,7 @@ import io.github.erdsgfc.jforge.annotation.Update;
 import io.github.erdsgfc.jforge.annotation.Where;
 import io.github.erdsgfc.jforge.annotation.Op;
 import io.github.erdsgfc.jforge.core.BaseRepository;
+import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 import java.util.List;
@@ -82,4 +83,16 @@ public interface CriteriaRepository extends BaseRepository<CriteriaUser, Long> {
     /** rawSql 删除条件：WHERE age > 25。 */
     @Delete
     int deleteOldRaw(@Condition(rawSql = "age > 25") Integer ignored);
+
+    /** 条件对象全静态字段（显式 @NonNull）→ WHERE 折叠进 SQL 常量（静态路径）。 */
+    @Select
+    List<CriteriaUser> findStatic(@NonNull @Where UserStaticCriteria criteria);
+
+    /** 全静态条件对象驱动声明式更新（SET + WHERE 均为 SQL 常量）。 */
+    @Update
+    int updateNameViaStatic(@NonNull @UpdateSet String name, @NonNull @Where UserStaticCriteria criteria);
+
+    /** 全静态条件对象驱动声明式删除（WHERE 为 SQL 常量）。 */
+    @Delete
+    int deleteViaStatic(@NonNull @Where UserStaticCriteria criteria);
 }

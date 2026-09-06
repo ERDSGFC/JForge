@@ -133,11 +133,16 @@ record WhereCondition(String columnName, String op, String paramName, String typ
             // @Query is native SQL: Condition.value names the SQL column directly,
             // rather than an entity property subject to naming/converter mapping.
             String qualified = condition.value();
+            // 按列名反查 @Condition(entity) 命中的实体（缺省宿主）列的转换器。
+            // converter 字段只按宿主模型生成进仓库——非宿主列即使带 @Convert 也不挂，
+            // 与下方非 queryContext 分支的宿主限定同规则。
             String converter = null;
-            for (EntityModel.ColumnModel column : info.model.columns()) {
-                if (column.columnName.equals(condition.value()) && column.converter != null) {
-                    converter = SqlCodegen.converterFieldName(info.model, column);
-                    break;
+            if (fieldEntity == info.model) {
+                for (EntityModel.ColumnModel column : fieldEntity.columns()) {
+                    if (column.columnName.equals(condition.value()) && column.converter != null) {
+                        converter = SqlCodegen.converterFieldName(info.model, column);
+                        break;
+                    }
                 }
             }
             return new WhereCondition(qualified, op, paramName, bindType, dynamic, optional, valueExpr,
@@ -315,5 +320,42 @@ record WhereCondition(String columnName, String op, String paramName, String typ
                     index++, false, false, c.converterField));
             spec.addCode("\n");
         }
+    }
+
+    /**
+     * 静态条件序列的占位符数量（rawSql 条件按其绑定表计数，其余恒 1 个 {@code ?}）——
+     * 供条件对象静态绑定接续起始索引（条件绑定先于条件对象组，与占位符顺序一致）。
+     *
+     * @param conditions 全静态条件序列（须先经 {@link #staticCompatible} 判定）
+     * @return 占位符总数
+     */
+    static int staticBindCount(List<WhereCondition> conditions) {
+        int count = 0;
+        for (WhereCondition c : conditions) {
+            count += c.rawSql != null ? c.rawBindings.size() : 1;
+        }
+        return count;
+    }
+
+    /**
+     * 非空契约参数是否需要方法顶部的 {@code Objects.requireNonNull} 快速失败：
+     * 非基本类型、无 {@code @Nullable} 且非数组/集合。null 直送会静默绑 NULL 或在
+     * 深处抛模糊 NPE；数组/集合的动态路径在占位符拼接处已有快速失败（静态路径不含
+     * 集合），顶层不再重复。{@code Optional} 非空契约同样要求（{@code isPresent()}
+     * 调用需要非空接收者）。
+     *
+     * @param parameter 方法参数
+     * @param env       处理环境（isIterable 判定）
+     * @return 需要 requireNonNull 时返回 {@code true}
+     */
+    static boolean needsRequireNonNull(VariableElement parameter, ProcessingEnvironment env) {
+        TypeMirror type = env.getTypeUtils().stripAnnotations(parameter.asType());
+        if (type.getKind().isPrimitive() || type.getKind() == TypeKind.ARRAY) {
+            return false;
+        }
+        if (isIterable(type, env)) {
+            return false; // 动态路径的 IN 占位符拼接处已有 requireNonNull
+        }
+        return !Nullability.isNullableParameter(parameter);
     }
 }

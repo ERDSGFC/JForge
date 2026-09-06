@@ -8,6 +8,7 @@ import io.github.erdsgfc.jforge.annotation.*;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
+import io.github.erdsgfc.jforge.processor.utils.Nullability;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
 import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
@@ -165,8 +166,12 @@ public final class SelectGenerator {
         // @Where 参数是条件对象——递归展开为片段（值条件/括号分组/Optional IS NULL）。
         List<WhereCondition> conditions = new ArrayList<>();
         List<CriteriaGenerator.Unit> criteriaUnits = new ArrayList<>();
+        boolean criteriaNullable = false; // 任一 @Where 参数可空 → 整体运行时可能跳过,静态折叠不可用
         for (VariableElement parameter : method.getParameters()) {
             if (parameter.getAnnotation(Where.class) != null) {
+                if (Nullability.isNullableParameter(parameter)) {
+                    criteriaNullable = true;
+                }
                 List<CriteriaGenerator.Unit> units = criteriaGenerator.parse(info, method, parameter, false);
                 if (units == null) {
                     return null;
@@ -209,22 +214,47 @@ public final class SelectGenerator {
         }
 
         boolean logSql = configHelper.logSql(info.element);
-        // @Where 条件对象恒动态（字段运行时判断）——存在即走动态形态。
-        // 静态形态 = 全部条件无 null 守卫(optional 可进静态——非空契约 opt.get()
-        // 绑定;IS NULL 只在可空 Optional 下生成)。
-        boolean allStatic = criteriaUnits.isEmpty()
-                && conditions.stream().allMatch(WhereCondition::staticCompatible);
+
+        // 非空契约参数（@Condition/@Where，非基本/非数组/非集合）在方法顶部快速失败——
+        // null 直送会静默绑 NULL 或深处抛模糊 NPE（数组/集合的动态路径在占位符
+        // 拼接处已有检查，顶层不重复）。
+        for (VariableElement parameter : method.getParameters()) {
+            if (WhereCondition.needsRequireNonNull(parameter, processingEnv)) {
+                spec.addStatement("$T.requireNonNull($N, $S)", Objects.class,
+                        parameter.getSimpleName(), parameter.getSimpleName() + " must not be null");
+            }
+        }
+
+        // 全静态：WHERE 无动态参数，且条件对象（若存在）参数非空、字段全静态 →
+        // 生成完整 SQL 常量字段 + 静态索引绑定（条件对象组同样折叠，运行时零拼接）。
+        boolean allStatic = !criteriaNullable
+                && conditions.stream().allMatch(WhereCondition::staticCompatible)
+                && CriteriaGenerator.staticCompatible(criteriaUnits);
         if (allStatic) {
-            // 全静态条件（无 @Nullable 参数）：WHERE 子句与绑定索引均编译期确定——
-            // 生成完整 SQL 常量字段 + 静态索引绑定（与 @Query 同一形态，运行时零拼接）。
+            // WHERE 子句与绑定索引均编译期确定（与 @Query 同一形态，运行时零拼接）。
             StringBuilder fullSqlBuilder = new StringBuilder(baseSql);
-            WhereCondition.appendStaticWhereSql(fullSqlBuilder, conditions);
+            boolean hasDirect = !conditions.isEmpty();
+            if (hasDirect) {
+                WhereCondition.appendStaticWhereSql(fullSqlBuilder, conditions);
+            }
+            if (!criteriaUnits.isEmpty()) {
+                // 条件对象组：前导连接符与动态形态一致（无直接条件时首个得 WHERE）,
+                // 组整体括号包裹,嵌套 @Where 递归(staticCompatible 保证组恒非空)。
+                fullSqlBuilder.append(hasDirect ? " AND " : " WHERE ");
+                fullSqlBuilder.append("(");
+                CriteriaGenerator.appendStaticSql(fullSqlBuilder, criteriaUnits);
+                fullSqlBuilder.append(")");
+            }
             String fullSql = fullSqlBuilder.toString();
             String sqlField = SqlFieldGenerator.methodSqlFieldName(methodName, overloadIndex);
             builder.addField(FieldSpec.builder(String.class, sqlField,
                     Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL).initializer("$S", fullSql).build());
             SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, false, logSql);
             WhereCondition.appendStaticBinds(spec, conditions, 1);
+            if (!criteriaUnits.isEmpty()) {
+                CriteriaGenerator.appendStaticBinds(spec, criteriaUnits,
+                        1 + WhereCondition.staticBindCount(conditions));
+            }
             spec.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
             queryGenerator.appendResultMapping(spec, info, method, builder, embedded, returnType, baseSql);
             spec.endControlFlow();

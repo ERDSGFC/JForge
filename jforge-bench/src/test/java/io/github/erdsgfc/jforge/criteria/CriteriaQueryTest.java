@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 条件对象（@Where 分组/嵌套括号）与 Optional IS NULL 的集成测试。 */
@@ -385,5 +386,49 @@ class CriteriaQueryTest {
         List<CriteriaUser> users = repo.findComplex(criteria);
 
         assertEquals(2, users.size(), "age > 18 matches qin and wang");
+    }
+
+    private UserStaticCriteria staticCriteria(String name, int minAge, String city, String street) {
+        UserStaticCriteria criteria = new UserStaticCriteria();
+        criteria.name = name;
+        criteria.age = minAge;
+        StaticAddressCriteria address = new StaticAddressCriteria();
+        address.city = city;
+        address.street = street;
+        criteria.address = address;
+        return criteria;
+    }
+
+    /** 条件对象全静态字段（@NonNull）→ WHERE 折叠进 SQL 常量：与动态形态等价命中。 */
+    @Test
+    void staticCriteriaFoldsToConstantSql() {
+        UserStaticCriteria criteria = staticCriteria("qin", 20, "beijing", "wangfujing");
+
+        // user_name = ? AND age > ? AND (city = ? AND street = ?)：qin(25,beijing) 命中。
+        assertEquals(1, repo.findStatic(criteria).size());
+        assertEquals("qin", repo.findStatic(criteria).get(0).name());
+
+        criteria.address.street = "nanjing";       // 街道失配 → 0 行
+        assertTrue(repo.findStatic(criteria).isEmpty());
+    }
+
+    /** 全静态条件对象驱动 @Update / @Delete（SQL 常量路径）。 */
+    @Test
+    void staticCriteriaUpdateAndDelete() {
+        UserStaticCriteria criteria = staticCriteria("lu", 5, "shanghai", "nanjing");
+
+        assertEquals(1, repo.updateNameViaStatic("lu2", criteria));
+        assertEquals(0, repo.findAll().stream().filter(u -> "lu".equals(u.name())).count());
+        assertEquals(1, repo.findAll().stream().filter(u -> "lu2".equals(u.name())).count());
+
+        criteria.name = "lu2";
+        assertEquals(1, repo.deleteViaStatic(criteria));
+        assertEquals(2, repo.findAll().size());
+    }
+
+    /** 非空契约参数：null 快速失败（Objects.requireNonNull），而非深处模糊 NPE。 */
+    @Test
+    void staticCriteriaNullFailsFast() {
+        assertThrows(NullPointerException.class, () -> repo.findStatic(null));
     }
 }

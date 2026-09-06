@@ -20,6 +20,7 @@ import javax.tools.Diagnostic;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 生成 {@code Update} 声明式更新方法：不写 SQL，按参数自动构造
@@ -87,6 +88,7 @@ public final class UpdateGenerator {
         List<SetUnit> sets = new ArrayList<>();
         List<WhereCondition> conditions = new ArrayList<>();
         List<CriteriaGenerator.Unit> criteriaUnits = new ArrayList<>();
+        boolean criteriaNullable = false; // 任一 @Where 参数可空 → 整体运行时可能跳过,静态折叠不可用
         for (VariableElement parameter : method.getParameters()) {
             if (parameter.getAnnotation(UpdateSet.class) != null) {
                 SetUnit unit = resolveSet(info, method, parameter);
@@ -96,7 +98,10 @@ public final class UpdateGenerator {
                 sets.add(unit);
             } else if (parameter.getAnnotation(Where.class) != null) {
                 // 条件对象:顶层 @UpdateSet 字段是 SET 修改列(值表达式 = criteria.getX()),
-                // 其余字段是 WHERE 条件。
+                // 其余字段是 WHERE 条件。参数可空 → 整体运行时可能跳过,静态折叠不可用。
+                if (Nullability.isNullableParameter(parameter)) {
+                    criteriaNullable = true;
+                }
                 List<SetUnit> criteriaSets = resolveCriteriaSets(info, method, parameter);
                 if (criteriaSets == null) {
                     return null;
@@ -136,11 +141,22 @@ public final class UpdateGenerator {
         }
         boolean logSql = configHelper.logSql(info.element);
 
-        // 全静态：SET 无动态 + WHERE 无动态 + 无 @Where 条件对象 → SQL 常量 + 静态绑定。
-        // 静态形态 = 全部 SET/条件无 null 守卫(optional 可进静态——非空契约 opt.get())。
-        boolean allStatic = criteriaUnits.isEmpty()
+        // 非空契约参数（@UpdateSet/@Condition/@Where，非基本/非数组/非集合）在方法顶部
+        // 快速失败——null 直送会静默绑 NULL 或深处抛模糊 NPE（数组/集合的动态路径在
+        // 占位符拼接处已有检查，顶层不重复）。
+        for (VariableElement parameter : method.getParameters()) {
+            if (WhereCondition.needsRequireNonNull(parameter, processingEnv)) {
+                spec.addStatement("$T.requireNonNull($N, $S)", Objects.class,
+                        parameter.getSimpleName(), parameter.getSimpleName() + " must not be null");
+            }
+        }
+
+        // 全静态：SET 无动态 + WHERE 无动态，且条件对象（若存在）参数非空、字段全静态 →
+        // SQL 常量 + 静态绑定（条件对象组同样折叠，不做运行时 StringBuilder 拼接）。
+        boolean allStatic = !criteriaNullable
                 && sets.stream().noneMatch(s -> s.dynamic)
-                && conditions.stream().allMatch(WhereCondition::staticCompatible);
+                && conditions.stream().allMatch(WhereCondition::staticCompatible)
+                && CriteriaGenerator.staticCompatible(criteriaUnits);
         if (allStatic) {
             StringBuilder sql = new StringBuilder(baseSql + " SET ");
             for (int i = 0; i < sets.size(); i++) {
@@ -150,7 +166,18 @@ public final class UpdateGenerator {
                 SetUnit unit = sets.get(i);
                 sql.append(unit.rawSql != null ? unit.rawSql : unit.column + " = ?");
             }
-            WhereCondition.appendStaticWhereSql(sql, conditions);
+            boolean hasDirect = !conditions.isEmpty();
+            if (hasDirect) {
+                WhereCondition.appendStaticWhereSql(sql, conditions);
+            }
+            if (!criteriaUnits.isEmpty()) {
+                // 条件对象组：前导连接符与动态形态一致（无直接条件时首个得 WHERE）,
+                // 组整体括号包裹,嵌套 @Where 递归(staticCompatible 保证组恒非空)。
+                sql.append(hasDirect ? " AND " : " WHERE ");
+                sql.append("(");
+                CriteriaGenerator.appendStaticSql(sql, criteriaUnits);
+                sql.append(")");
+            }
             String sqlField = SqlFieldGenerator.methodSqlFieldName(methodName, overloadIndex);
             builder.addField(FieldSpec.builder(String.class, sqlField,
                     Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL).initializer("$S", sql.toString()).build());
@@ -172,6 +199,10 @@ public final class UpdateGenerator {
                 spec.addCode("\n");
             }
             WhereCondition.appendStaticBinds(spec, conditions, index);
+            if (!criteriaUnits.isEmpty()) {
+                CriteriaGenerator.appendStaticBinds(spec, criteriaUnits,
+                        index + WhereCondition.staticBindCount(conditions));
+            }
             spec.addStatement("return ps.executeUpdate()");
             SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(),
                     sql.toString(), logSql);
