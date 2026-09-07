@@ -267,12 +267,32 @@ public final class SelectGenerator {
         spec.addStatement("$T conn = getConnection()", connection);
         // 拼接阶段：无 WHERE 1=1——where 变量维护 " WHERE "/" AND " 前缀，
         // 运行时第一个执行的条件拼 WHERE、其后拼 AND（动态条件全为 null 时无 WHERE）。
-        spec.addStatement("$T sql = new $T($S)", ClassName.get(StringBuilder.class),
-                ClassName.get(StringBuilder.class), baseSql);
-        // 动态形态必有 WHERE（全静态已在上方 return）——where 前缀变量恒声明。
-        spec.addStatement("$T where = $S", ClassName.get(String.class), " WHERE ");
-        for (WhereCondition condition : conditions) {
-            WhereCondition.appendSql(spec, condition);
+        // 静态前缀折叠：条件序列头部连续的全静态条件在编译期并入 SQL 常量字段，
+        // 运行时 StringBuilder 从常量起拼——不再逐调用重复拼接恒定前缀。
+        int staticPrefix = 0;
+        while (staticPrefix < conditions.size()
+                && conditions.get(staticPrefix).staticCompatible()) {
+            staticPrefix++;
+        }
+        if (staticPrefix > 0) {
+            StringBuilder prefix = new StringBuilder(baseSql);
+            WhereCondition.appendStaticWhereSql(prefix, conditions.subList(0, staticPrefix));
+            String prefixField = methodName + "PrefixSql"
+                    + (overloadIndex > 0 ? "_" + overloadIndex : "");
+            builder.addField(FieldSpec.builder(String.class, prefixField,
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .initializer("$S", prefix.toString()).build());
+            spec.addStatement("$T sql = new $T($L)", ClassName.get(StringBuilder.class),
+                    ClassName.get(StringBuilder.class), prefixField);
+            // 前缀已消费首个 WHERE——剩余动态段从 AND 续拼。
+            spec.addStatement("$T where = $S", ClassName.get(String.class), " AND ");
+        } else {
+            spec.addStatement("$T sql = new $T($S)", ClassName.get(StringBuilder.class),
+                    ClassName.get(StringBuilder.class), baseSql);
+            spec.addStatement("$T where = $S", ClassName.get(String.class), " WHERE ");
+        }
+        for (int i = staticPrefix; i < conditions.size(); i++) {
+            WhereCondition.appendSql(spec, conditions.get(i));
         }
         criteriaGenerator.emitGroupAppend(spec, criteriaUnits, "where", " AND ");
         if (logSql) {

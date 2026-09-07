@@ -10,7 +10,7 @@ import org.springframework.stereotype.Repository;
 public interface SysAdminRepository extends BaseRepository<SysAdmin, Long> {
 
     @Update
-    long updateAdminStatus(@UpdateSet int adminStatus, @Condition long [] adminId);
+    long updateAdminStatus(@UpdateSet int adminStatus, @Condition("adminStatus") int adminOldStatus, @Condition long [] adminId);
 
     @Delete
     long deleteAdmin(@Condition(op = Op.GE) long adminId, Integer adminStatus);

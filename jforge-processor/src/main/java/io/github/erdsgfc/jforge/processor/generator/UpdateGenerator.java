@@ -211,25 +211,58 @@ public final class UpdateGenerator {
 
         // 动态形态：sql 变量 + where 前缀变量 + 双阶段 if 展开。
         spec.addStatement("$T conn = getConnection()", connection);
-        spec.addStatement("$T sql = new $T($S)", ClassName.get(StringBuilder.class),
-                ClassName.get(StringBuilder.class), baseSql + " SET");
-        spec.addStatement("$T setConn = $S", ClassName.get(String.class), "");
-        for (SetUnit unit : sets) {
-            emitSetAppend(spec, unit, "setConn");
+        // 静态前缀折叠：SET 全静态时整段 SET 文本编译期确定——并入 SQL 常量字段，
+        // 运行时不再逐 SET 拼接；条件序列头部的连续全静态条件也并入（前缀已含
+        // WHERE，where 守卫无需再生成）。SET 含 dynamic（null 跳过）时前缀无法
+        // 确定，SET 部分保持全量动态。
+        boolean setsStatic = sets.stream().noneMatch(s -> s.dynamic);
+        int staticPrefix = 0;
+        while (setsStatic && staticPrefix < conditions.size()
+                && conditions.get(staticPrefix).staticCompatible()) {
+            staticPrefix++;
+        }
+        if (setsStatic) {
+            StringBuilder prefix = new StringBuilder(baseSql + " SET ");
+            for (int i = 0; i < sets.size(); i++) {
+                if (i > 0) {
+                    prefix.append(", ");
+                }
+                SetUnit unit = sets.get(i);
+                prefix.append(unit.rawSql != null ? unit.rawSql : unit.column + " = ?");
+            }
+            if (staticPrefix > 0) {
+                WhereCondition.appendStaticWhereSql(prefix, conditions.subList(0, staticPrefix));
+            }
+            String prefixField = methodName + "PrefixSql"
+                    + (overloadIndex > 0 ? "_" + overloadIndex : "");
+            builder.addField(FieldSpec.builder(String.class, prefixField,
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .initializer("$S", prefix.toString()).build());
+            spec.addStatement("$T sql = new $T($L)", ClassName.get(StringBuilder.class),
+                    ClassName.get(StringBuilder.class), prefixField);
+        } else {
+            spec.addStatement("$T sql = new $T($S)", ClassName.get(StringBuilder.class),
+                    ClassName.get(StringBuilder.class), baseSql + " SET");
+            spec.addStatement("$T setConn = $S", ClassName.get(String.class), "");
+            for (SetUnit unit : sets) {
+                emitSetAppend(spec, unit, "setConn");
+            }
         }
         boolean hasWhere = !conditions.isEmpty() || !criteriaUnits.isEmpty();
         if (hasWhere) {
-            spec.addStatement("$T where = $S", ClassName.get(String.class), " WHERE ");
+            spec.addStatement("$T where = $S", ClassName.get(String.class),
+                    staticPrefix > 0 ? " AND " : " WHERE ");
         }
-        for (WhereCondition condition : conditions) {
-            WhereCondition.appendSql(spec, condition);
+        for (int i = staticPrefix; i < conditions.size(); i++) {
+            WhereCondition.appendSql(spec, conditions.get(i));
         }
         criteriaGenerator.emitGroupAppend(spec, criteriaUnits, "where", " AND ");
         // 守卫仅在"可能发生"时生成,避免静态条件的死分支:
-        // - where 守卫:存在 @Nullable 动态条件(可能整段跳过)或条件对象(组可能全空回退)
-        //   时才可能无条件——全静态条件恒拼,守卫恒 false;
+        // - where 守卫:前缀未含 WHERE(staticPrefix == 0)且存在可能整体缺失的动态
+        //   条件/条件对象组时生成;前缀已含 WHERE 时 SQL 恒有 WHERE,守卫恒不触发;
         // - setConn 守卫:存在 dynamic SET(null 跳过)时才可能 SET 为空——静态 SET 恒拼。
-        if (conditions.stream().anyMatch(c -> c.dynamic()) || !criteriaUnits.isEmpty()) {
+        if (staticPrefix == 0
+                && (conditions.stream().anyMatch(c -> c.dynamic()) || !criteriaUnits.isEmpty())) {
             spec.beginControlFlow("if (where.equals($S))", " WHERE ");
             spec.addStatement("return 0");
             spec.endControlFlow();

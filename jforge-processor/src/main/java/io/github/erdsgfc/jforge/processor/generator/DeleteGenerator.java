@@ -138,17 +138,40 @@ public final class DeleteGenerator {
 
         // 动态形态。
         spec.addStatement("$T conn = getConnection()", connection);
-        spec.addStatement("$T sql = new $T($S)", ClassName.get(StringBuilder.class),
-                ClassName.get(StringBuilder.class), baseSql);
-        // 动态形态必有 WHERE（全静态已在上方 return）——where 前缀变量恒声明。
-        spec.addStatement("$T where = $S", ClassName.get(String.class), " WHERE ");
-        for (WhereCondition condition : conditions) {
-            WhereCondition.appendSql(spec, condition);
+        // 静态前缀折叠：条件序列头部连续的全静态条件（无 null 守卫/Optional/集合）
+        // 在编译期并入 SQL 常量字段，运行时 StringBuilder 从常量起拼——不再逐调用
+        // 重复拼接恒定前缀。前缀已含 WHERE，防无条件 DELETE 的守卫无需再生成。
+        int staticPrefix = 0;
+        while (staticPrefix < conditions.size()
+                && conditions.get(staticPrefix).staticCompatible()) {
+            staticPrefix++;
+        }
+        if (staticPrefix > 0) {
+            StringBuilder prefix = new StringBuilder(baseSql);
+            WhereCondition.appendStaticWhereSql(prefix, conditions.subList(0, staticPrefix));
+            String prefixField = methodName + "PrefixSql"
+                    + (overloadIndex > 0 ? "_" + overloadIndex : "");
+            builder.addField(FieldSpec.builder(String.class, prefixField,
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .initializer("$S", prefix.toString()).build());
+            spec.addStatement("$T sql = new $T($L)", ClassName.get(StringBuilder.class),
+                    ClassName.get(StringBuilder.class), prefixField);
+            // 前缀已消费首个 WHERE——剩余动态段从 AND 续拼。
+            spec.addStatement("$T where = $S", ClassName.get(String.class), " AND ");
+        } else {
+            spec.addStatement("$T sql = new $T($S)", ClassName.get(StringBuilder.class),
+                    ClassName.get(StringBuilder.class), baseSql);
+            spec.addStatement("$T where = $S", ClassName.get(String.class), " WHERE ");
+        }
+        for (int i = staticPrefix; i < conditions.size(); i++) {
+            WhereCondition.appendSql(spec, conditions.get(i));
         }
         criteriaGenerator.emitGroupAppend(spec, criteriaUnits, "where", " AND ");
-        // 守卫仅在可能发生空 WHERE 时生成(dynamic 条件可能跳过/条件对象组可能回退)——
-        // 全静态条件恒拼,守卫恒 false。
-        if (conditions.stream().anyMatch(WhereCondition::dynamic) || !criteriaUnits.isEmpty()) {
+        // 守卫仅在"WHERE 可能整体缺失"时生成：前缀已含 WHERE 时恒安全；
+        // 否则 dynamic 条件可能全跳过/条件对象组可能全空回退。
+        if (staticPrefix == 0
+                && (conditions.stream().anyMatch(WhereCondition::dynamic)
+                        || !criteriaUnits.isEmpty())) {
             spec.beginControlFlow("if (where.equals($S))", " WHERE ");
             if (method.getReturnType().getKind() == TypeKind.BOOLEAN) {
                 spec.addStatement("return false");

@@ -35,6 +35,6 @@ public class JforgeTest {
 
     @Test
     void updateAdminStatus() {
-        long l = sysAdminRepository.updateAdminStatus(1, new long[]{1L, 2L});
+        long l = sysAdminRepository.updateAdminStatus(1, 2, new long[]{1L, 2L});
     }
 }
