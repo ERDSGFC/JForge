@@ -370,6 +370,7 @@ public final class EntityModel {
      * 恢复转换器类型元素——转换器类可为同批源码,不要求已编译。类型约束
      * ({@code extends JForgeConverter})由注解声明保证,无需处理器强校验。
      */
+    @SuppressWarnings("all")
     private ClassName converterOf(ExecutableElement element) {
         Convert convert = element.getAnnotation(Convert.class);
         if (convert == null) {
