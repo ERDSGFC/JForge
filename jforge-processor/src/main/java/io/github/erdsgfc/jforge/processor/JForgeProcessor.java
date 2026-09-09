@@ -47,6 +47,7 @@ public class JForgeProcessor extends AbstractProcessor {
     /** 已生成仓库 impl 的全限定名：显式去重，不依赖 javac"每轮输入只含本轮文件"的隐式行为。 */
     private final Set<String> generatedRepositories = new HashSet<>();
     private final List<DaoInfo> daos = new ArrayList<>();
+    private int lastFactoriesSize;
     private final Map<String, EntityModel> entities = new HashMap<>();
 
     private JForgeConfigHelper configHelper;
@@ -82,22 +83,12 @@ public class JForgeProcessor extends AbstractProcessor {
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         if (roundEnv.processingOver()) {
-            // 所有轮次的 @Dao 都已解析完：一次性生成全部仓库 impl 与工厂——每个文件
-            // 恰好写一次。依赖 javac 行为：最后一轮生成的文件仍会进入本编译单元的
-            // 编译（JDK 25 实测生成类的 .class 正常产出；ECJ 等未验证），但 javac
-            // 会提示"对最后一轮创建的文件不再进行批注处理"——对本框架无害：生成代码
-            // 只携带运行期注解（@Repository/@Autowired/@NonNull 等），需要编译期读取
-            // 的 @Table/@Dao/@JForgeConfig 都在用户源文件上、已于正常轮次处理完。
-            // 约束：生成代码不得携带任何依赖编译期处理的注解。
-            for (DaoInfo dao : daos) {
-                repositoryGenerator.generate(dao);
-            }
-            writeFactories();
             return true;
         }
         // 每轮开头一次性收集全部 @JForgeConfig(package-info),后续查询只查表 +
         // 字符串前缀继承,不依赖元素模型的包层次导航。
         configHelper.collect(roundEnv.getElementsAnnotatedWith(JForgeConfig.class));
+        ArrayList<DaoInfo> roundDaoInfo = new ArrayList<>();
         for (Element element : roundEnv.getElementsAnnotatedWith(Dao.class)) {
             if (element.getKind() != ElementKind.INTERFACE) {
                 continue;
@@ -114,8 +105,16 @@ public class JForgeProcessor extends AbstractProcessor {
             // 全量生成把同一文件写两次（Filer: Attempt to recreate a file）。
             if (generatedRepositories.add(implQualifiedName)) {
                 daos.add(info);
+                roundDaoInfo.add(info);
                 entities.put(info.model.entityQualifiedName(), info.model);
             }
+        }
+        for (DaoInfo info : roundDaoInfo) {
+            repositoryGenerator.generate(info);
+        }
+        if (daos.size() != lastFactoriesSize) {
+            writeFactories();
+            lastFactoriesSize = daos.size();
         }
         return true;
     }
