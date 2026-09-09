@@ -14,7 +14,6 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 import static io.github.erdsgfc.jforge.processor.ClassEnum.JDBC_RESULT_SET;
 import static io.github.erdsgfc.jforge.processor.ClassEnum.ORM_EXCEPTION;
