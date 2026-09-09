@@ -677,14 +677,17 @@ public final class CriteriaGenerator {
         }
         if (unit.rawSql != null) {
             for (RawSqlSupport.Binding binding : unit.rawBindings) {
+                Nullability.requireNonNull(spec, binding.expression());
                 spec.addCode(SqlCodegen.bindParam(binding.typeName(), binding.expression(), index++,
                         binding.nullable(), false, null));
                 spec.addCode("\n");
             }
             return index;
         }
+        String expression = unit.valueExpr != null ? unit.valueExpr : unit.readExpr;
+        Nullability.requireNonNull(spec, expression);
         spec.addCode(SqlCodegen.bindParam(unit.bindType,
-                unit.valueExpr != null ? unit.valueExpr : unit.readExpr, index++,
+                expression, index++,
                 false, false, unit.converterField));
         spec.addCode("\n");
         return index;

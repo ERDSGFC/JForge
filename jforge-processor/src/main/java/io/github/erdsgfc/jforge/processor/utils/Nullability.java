@@ -91,6 +91,11 @@ public final class Nullability {
                 operation + ": " + name + " must not be null");
     }
 
+    public static void requireNonNull(MethodSpec.Builder method, String expression) {
+        method.addStatement("$T.requireNonNull($L, $S)", Objects.class, expression,
+                expression + " must not be null");
+    }
+
     private static boolean hasAnnotation(Element element, String annotationName) {
         return element != null && element.getAnnotationMirrors().stream()
                 .anyMatch(mirror -> mirror.getAnnotationType().toString().equals(annotationName));
