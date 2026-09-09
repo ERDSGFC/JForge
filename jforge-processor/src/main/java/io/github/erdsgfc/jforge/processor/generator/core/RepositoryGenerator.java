@@ -45,11 +45,13 @@ public final class RepositoryGenerator {
     private final SelectGenerator selectGenerator;
     private final UpdateGenerator updateGenerator;
     private final DeleteGenerator deleteGenerator;
+    private final Map<String, EntityModel> entities;
 
-    public RepositoryGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper) {
+    public RepositoryGenerator(ProcessingEnvironment processingEnv, JForgeConfigHelper configHelper, Map<String, EntityModel> entities) {
         this.processingEnv = processingEnv;
         this.elements = processingEnv.getElementUtils();
         this.configHelper = configHelper;
+        this.entities = entities;
         this.crudGenerator = new CrudGenerator(configHelper);
         this.queryGenerator = new QueryGenerator(processingEnv, configHelper);
         this.selectGenerator = new SelectGenerator(processingEnv, configHelper, queryGenerator);

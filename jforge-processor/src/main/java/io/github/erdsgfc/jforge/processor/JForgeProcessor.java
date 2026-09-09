@@ -19,10 +19,7 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 import static io.github.erdsgfc.jforge.processor.ClassEnum.*;
 
@@ -50,6 +47,7 @@ public class JForgeProcessor extends AbstractProcessor {
     /** 已生成仓库 impl 的全限定名：显式去重，不依赖 javac"每轮输入只含本轮文件"的隐式行为。 */
     private final Set<String> generatedRepositories = new HashSet<>();
     private final List<DaoInfo> daos = new ArrayList<>();
+    private final Map<String, EntityModel> entities = new HashMap<>();
 
     private JForgeConfigHelper configHelper;
     private RepositoryGenerator repositoryGenerator;
@@ -71,7 +69,7 @@ public class JForgeProcessor extends AbstractProcessor {
     public synchronized void init(ProcessingEnvironment processingEnv) {
         super.init(processingEnv);
         configHelper = new JForgeConfigHelper(processingEnv);
-        repositoryGenerator = new RepositoryGenerator(processingEnv, configHelper);
+        repositoryGenerator = new RepositoryGenerator(processingEnv, configHelper, entities);
     }
 
     /**
@@ -116,6 +114,7 @@ public class JForgeProcessor extends AbstractProcessor {
             // 全量生成把同一文件写两次（Filer: Attempt to recreate a file）。
             if (generatedRepositories.add(implQualifiedName)) {
                 daos.add(info);
+                entities.put(info.model.entityQualifiedName(), info.model);
             }
         }
         return true;
