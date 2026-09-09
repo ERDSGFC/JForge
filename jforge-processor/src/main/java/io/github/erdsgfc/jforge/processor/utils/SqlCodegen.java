@@ -217,6 +217,7 @@ public final class SqlCodegen {
         if (quote.isEmpty() || name.indexOf(quote.charAt(0)) >= 0) {
             return name;
         }
+        // todo pgsql ddl CREATE TABLE "Users",不会被折叠为小写吧，应该让用户来控制小写还是大写
         for (int i = 0; i < name.length(); i++) {
             if (Character.isUpperCase(name.charAt(i))) {
                 return name;
