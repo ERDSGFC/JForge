@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge.processor.generator;
+package io.github.erdsgfc.jforge.processor.generator.core;
 
 import javax.lang.model.element.ExecutableElement;
 

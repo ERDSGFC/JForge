@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge.processor.generator;
+package io.github.erdsgfc.jforge.processor.generator.core;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
@@ -39,7 +39,7 @@ import java.util.Map;
  * @param elementTypeName 数组/集合的元素类型（生成 IN/NOT IN 绑定局部变量声明的 JavaPoet 类型；
  *                        非集合条件时为 {@code null}）
  */
-record WhereCondition(String columnName, String op, String paramName, String typeName, boolean dynamic,
+public record WhereCondition(String columnName, String op, String paramName, String typeName, boolean dynamic,
                       boolean optional, String valueExpr, String rawSql, String converterField,
                       boolean collection, boolean array, TypeName elementTypeName,
                       List<RawSqlSupport.Binding> rawBindings) {
@@ -57,7 +57,7 @@ record WhereCondition(String columnName, String op, String paramName, String typ
      *                         而非实体属性（必须显式填写）
      * @return 解析结果；校验失败已报错并返回 {@code null}（调用方跳过方法生成）
      */
-    static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
+    public static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
                                       VariableElement parameter, ProcessingEnvironment env,
                                       String diagnosticPrefix, Map<String, EntityModel> entities,
                                       boolean queryContext) {
@@ -186,7 +186,7 @@ record WhereCondition(String columnName, String op, String paramName, String typ
      * 非 Optional、非数组/集合（IN 的占位符数量运行时才知）。注意 Optional 条件不一定
      * "动态"（可能无 null 守卫），但 IS NULL 分支需要运行时判断——同样不兼容静态常量。
      */
-    boolean staticCompatible() {
+    public boolean staticCompatible() {
         return !dynamic && !collection && !array && !optional;
     }
 
@@ -198,7 +198,7 @@ record WhereCondition(String columnName, String op, String paramName, String typ
      * （零临时内存）——占位符先入局部缓冲，空集判定在循环后才知道（不能先拼
      * {@code "IN ("} 再回退，{@code IN ()} 是非法 SQL）。</p>
      */
-    static void appendSql(MethodSpec.Builder spec, WhereCondition c) {
+    public static void appendSql(MethodSpec.Builder spec, WhereCondition c) {
         if (c.dynamic) spec.beginControlFlow("if ($N != null)", c.paramName);
         if (c.collection || c.array) {
             // @NonNull 契约的数组/集合(dynamic=false,无 null 守卫)在这里快速失败——
@@ -259,7 +259,7 @@ record WhereCondition(String columnName, String op, String paramName, String typ
      * IN/NOT IN 条件按元素逐个绑定（元素可空走 setObject）；rawSql 无 {@code ?} 的纯常量
      * 条件不绑定；Optional 只在 {@code isPresent} 分支绑定（IS NULL 无占位符）。
      */
-    static void appendBind(MethodSpec.Builder spec, WhereCondition c) {
+    public static void appendBind(MethodSpec.Builder spec, WhereCondition c) {
         if (c.dynamic) spec.beginControlFlow("if ($N != null)", c.paramName);
         if (c.collection || c.array) {
             // 集合/数组都直接遍历入参绑值(零临时内存;空集时循环 0 次,与拼接阶段
@@ -287,7 +287,7 @@ record WhereCondition(String columnName, String op, String paramName, String typ
         if (c.dynamic) spec.endControlFlow();
     }
 
-    static void appendStaticWhereSql(StringBuilder sql, List<WhereCondition> conditions) {
+    public static void appendStaticWhereSql(StringBuilder sql, List<WhereCondition> conditions) {
         if (conditions.isEmpty()) return;
         sql.append(" WHERE ");
         for (int i = 0; i < conditions.size(); i++) {
@@ -297,7 +297,7 @@ record WhereCondition(String columnName, String op, String paramName, String typ
         }
     }
 
-    static void appendStaticBinds(MethodSpec.Builder spec, List<WhereCondition> conditions, int index) {
+    public static void appendStaticBinds(MethodSpec.Builder spec, List<WhereCondition> conditions, int index) {
         for (WhereCondition c : conditions) {
             if (c.rawSql != null) {
                 for (RawSqlSupport.Binding binding : c.rawBindings) {
@@ -320,7 +320,7 @@ record WhereCondition(String columnName, String op, String paramName, String typ
      * @param conditions 全静态条件序列（须先经 {@link #staticCompatible} 判定）
      * @return 占位符总数
      */
-    static int staticBindCount(List<WhereCondition> conditions) {
+    public static int staticBindCount(List<WhereCondition> conditions) {
         int count = 0;
         for (WhereCondition c : conditions) {
             count += c.rawSql != null ? c.rawBindings.size() : 1;
@@ -339,7 +339,7 @@ record WhereCondition(String columnName, String op, String paramName, String typ
      * @param env       处理环境（isIterable 判定）
      * @return 需要 requireNonNull 时返回 {@code true}
      */
-    static boolean needsRequireNonNull(VariableElement parameter, ProcessingEnvironment env) {
+    public static boolean needsRequireNonNull(VariableElement parameter, ProcessingEnvironment env) {
         TypeMirror type = env.getTypeUtils().stripAnnotations(parameter.asType());
         if (type.getKind().isPrimitive() || type.getKind() == TypeKind.ARRAY) {
             return false;

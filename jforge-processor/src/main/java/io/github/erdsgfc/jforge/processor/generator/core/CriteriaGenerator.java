@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge.processor.generator;
+package io.github.erdsgfc.jforge.processor.generator.core;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
@@ -38,7 +38,7 @@ import java.util.List;
 public final class CriteriaGenerator {
 
     /** 条件对象类型字段 → 展开单元。 */
-    static final class Unit {
+    public static final class Unit {
         final String conn;          // 与上一条件的连接符（" AND "/" OR "；首个 "")
         final String column;        // 列名（值条件）；null = 嵌套组
         final String op;            // 操作符 SQL（"="/">"/"IS NULL"…）
@@ -90,7 +90,7 @@ public final class CriteriaGenerator {
     /** 嵌套括号组的组内前缀变量名序号（单线程处理器，自增即可唯一）。 */
     private int varSeq;
 
-    CriteriaGenerator(javax.annotation.processing.Messager messager, Diagnostic.Kind errorKind, Types types) {
+    public CriteriaGenerator(javax.annotation.processing.Messager messager, Diagnostic.Kind errorKind, Types types) {
         this.messager = messager;
         this.errorKind = errorKind;
         this.types = types;
@@ -107,14 +107,14 @@ public final class CriteriaGenerator {
      *                      场景都不允许含 {@code @UpdateSet} 字段。
      * @return 展开单元；解析失败已报错返回 {@code null}
      */
-    List<Unit> parse(JForgeProcessor.DaoInfo info, ExecutableElement method, VariableElement parameter,
-            boolean updateContext) {
+    public List<Unit> parse(JForgeProcessor.DaoInfo info, ExecutableElement method, VariableElement parameter,
+                            boolean updateContext) {
         return parse(info, method, parameter, updateContext, false);
     }
 
     /** Query 专用解析：要求每个条件字段显式声明语义注解，并要求 Condition.value。 */
-    List<Unit> parse(JForgeProcessor.DaoInfo info, ExecutableElement method, VariableElement parameter,
-            boolean updateContext, boolean queryContext) {
+    public List<Unit> parse(JForgeProcessor.DaoInfo info, ExecutableElement method, VariableElement parameter,
+                            boolean updateContext, boolean queryContext) {
         TypeMirror type = parameter.asType();
         if (type.getKind() != TypeKind.DECLARED) {
             error(method, "@Where parameter must be a criteria object type: " + type);
@@ -145,7 +145,7 @@ public final class CriteriaGenerator {
      * @param whereVar where 前缀变量名（" WHERE " 初值，调用方声明）
      * @param nextConn 该片段之后的连接符（下一片段的 conn 或 " AND "）
      */
-    void emitAppend(MethodSpec.Builder spec, List<Unit> units, String whereVar, String nextConn) {
+    public void emitAppend(MethodSpec.Builder spec, List<Unit> units, String whereVar, String nextConn) {
         for (int i = 0; i < units.size(); i++) {
             Unit unit = units.get(i);
             String after = i + 1 < units.size() ? units.get(i + 1).conn : nextConn;
@@ -154,7 +154,7 @@ public final class CriteriaGenerator {
     }
 
     /** 追加绑定代码（与拼接同条件展开，索引变量递增）。 */
-    void emitBind(MethodSpec.Builder spec, List<Unit> units, String indexVar) {
+    public void emitBind(MethodSpec.Builder spec, List<Unit> units, String indexVar) {
         for (Unit unit : units) {
             emitUnitBind(spec, unit, indexVar);
         }
@@ -167,7 +167,7 @@ public final class CriteriaGenerator {
      * 无前缀,其后按连接符)。空组(组内全部 guard 未命中,只拼了前缀 + "()")
      * 回退到起始长度——不消费外层 where 前缀,不产生非法空括号。
      */
-    void emitGroupAppend(MethodSpec.Builder spec, List<Unit> units, String whereVar, String after) {
+    public void emitGroupAppend(MethodSpec.Builder spec, List<Unit> units, String whereVar, String after) {
         // 空条件列表:没有组可拼——调用方(条件对象为空时也统一调用本方法)直接返回,
         // 避免生成 gsN + "()" + 回退 的纯无用代码。
         if (units == null || units.isEmpty()) {
@@ -386,8 +386,8 @@ public final class CriteriaGenerator {
     }
 
     /** 条件对象字段的读取方法名：getXxx()（getter 惯例）或 xxx()（record accessor）。 */
-    String readMethodName(TypeElement criteriaType, VariableElement field,
-            ExecutableElement method) {
+    public String readMethodName(TypeElement criteriaType, VariableElement field,
+                                 ExecutableElement method) {
         String name = field.getSimpleName().toString();
         String getter = "get" + Character.toUpperCase(name.charAt(0)) + name.substring(1);
         for (Element enclosed : criteriaType.getEnclosedElements()) {
@@ -408,7 +408,7 @@ public final class CriteriaGenerator {
     }
 
     /** Optional/OptionalInt/OptionalLong/OptionalDouble。 */
-    static boolean isOptional(TypeMirror type) {
+    public static boolean isOptional(TypeMirror type) {
         if (type.getKind() != TypeKind.DECLARED) {
             return false;
         }
@@ -418,7 +418,7 @@ public final class CriteriaGenerator {
     }
 
     /** Optional 的值读取方法（get()/getAsInt()/…）与绑定类型。 */
-    static String optionalValueType(TypeMirror type, Types types) {
+    public static String optionalValueType(TypeMirror type, Types types) {
         DeclaredType declared = (DeclaredType) type;
         String name = ((TypeElement) declared.asElement()).getQualifiedName().toString();
         return switch (name) {
@@ -570,7 +570,7 @@ public final class CriteriaGenerator {
     }
 
     /** Optional 族的值读取方法：get()/getAsInt()/getAsLong()/getAsDouble()。 */
-    static String optionalValueMethod(TypeMirror type) {
+    public static String optionalValueMethod(TypeMirror type) {
         String name = ((TypeElement) ((DeclaredType) type).asElement()).getQualifiedName().toString();
         return switch (name) {
             case "java.util.Optional" -> ".get()";
@@ -604,7 +604,7 @@ public final class CriteriaGenerator {
      * @param units 条件单元序列（可空/空 = 恒真）
      * @return 全部单元静态时返回 {@code true}
      */
-    static boolean staticCompatible(List<Unit> units) {
+    public static boolean staticCompatible(List<Unit> units) {
         if (units == null) {
             return true;
         }
@@ -627,7 +627,7 @@ public final class CriteriaGenerator {
      * @param sql   接收文本的缓冲
      * @param units 全静态单元序列（须先经 {@link #staticCompatible} 判定）
      */
-    static void appendStaticSql(StringBuilder sql, List<Unit> units) {
+    public static void appendStaticSql(StringBuilder sql, List<Unit> units) {
         boolean first = true;
         for (Unit unit : units) {
             if (!first) {
@@ -663,7 +663,7 @@ public final class CriteriaGenerator {
      * @param index 起始绑定索引（1-based）
      * @return 绑定后的下一个索引
      */
-    static int appendStaticBinds(MethodSpec.Builder spec, List<Unit> units, int index) {
+    public static int appendStaticBinds(MethodSpec.Builder spec, List<Unit> units, int index) {
         int i = index;
         for (Unit unit : units) {
             i = appendStaticUnitBind(spec, unit, i);

@@ -1,4 +1,4 @@
-package io.github.erdsgfc.jforge.processor.generator;
+package io.github.erdsgfc.jforge.processor.generator.core;
 
 import io.github.erdsgfc.jforge.annotation.DialectSupport;
 import io.github.erdsgfc.jforge.annotation.JForgeSql;
@@ -24,12 +24,12 @@ import java.util.Map;
  * {@code :fieldName} 占位符；每个占位符都会被替换为 {@code ?}，并按其在 SQL 中出现的
  * 顺序生成绑定。对象字段只解析声明类型的直接字段或 record component，不进行递归展开。</p>
  */
-final class RawSqlSupport {
+public final class RawSqlSupport {
     /** 一个 rawSql 占位符对应的 JDBC 绑定信息。 */
-    record Binding(String expression, String typeName, boolean nullable) {}
+    public record Binding(String expression, String typeName, boolean nullable) {}
 
     /** 已转换占位符的 SQL 文本及按出现顺序排列的绑定信息。 */
-    record Plan(String sql, List<Binding> bindings) {
+    public record Plan(String sql, List<Binding> bindings) {
         /** 返回 SQL 中是否至少存在一个值占位符。 */
         boolean hasBindings() { return !bindings.isEmpty(); }
     }
@@ -50,9 +50,9 @@ final class RawSqlSupport {
      * @param dialect 当前实体使用的数据库方言
      * @return 解析后的计划；报告编译错误后返回 {@code null}
      */
-    static Plan resolve(String rawSql, TypeMirror parameterType, Element declaration,
-            String rootExpression, boolean requireJForgeSql, Messager messager, Types types,
-            ExecutableElement method, DialectSupport dialect) {
+    public static Plan resolve(String rawSql, TypeMirror parameterType, Element declaration,
+                               String rootExpression, boolean requireJForgeSql, Messager messager, Types types,
+                               ExecutableElement method, DialectSupport dialect) {
         SqlCodegen.PlaceholderResult placeholders = SqlCodegen.parsePlaceholders(rawSql, dialect);
         String sql = placeholders.sql();
         List<String> names = placeholders.names();
