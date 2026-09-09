@@ -406,7 +406,7 @@ public final class SqlCodegen {
     }
 
     /** 返回 PostgreSQL dollar-quote 分隔符结束位置，非分隔符返回 -1。 */
-    private static int dollarQuoteDelimiterEnd(String sql, int start) {
+    public static int dollarQuoteDelimiterEnd(String sql, int start) {
         int i = start + 1;
         if (i < sql.length() && sql.charAt(i) == '$') {
             return i + 1;
@@ -414,10 +414,9 @@ public final class SqlCodegen {
         if (i >= sql.length() || !(Character.isLetter(sql.charAt(i)) || sql.charAt(i) == '_')) {
             return -1;
         }
-        i++;
-        while (i < sql.length() && (Character.isLetterOrDigit(sql.charAt(i)) || sql.charAt(i) == '_')) {
+        do {
             i++;
-        }
+        } while (i < sql.length() && (Character.isLetterOrDigit(sql.charAt(i)) || sql.charAt(i) == '_'));
         return i < sql.length() && sql.charAt(i) == '$' ? i + 1 : -1;
     }
 

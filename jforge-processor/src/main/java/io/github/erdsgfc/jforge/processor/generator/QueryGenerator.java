@@ -909,7 +909,7 @@ public final class QueryGenerator {
             if (c == '\'' || (c == '"' && dialect.quote().equals("\"")) || (c == '`' && dialect.supportsBacktickQuotedIdentifiers())) { quote = String.valueOf(c); text.append(c); mapping.append(c); i++; continue; }
             if (c == '-' && i + 1 < sql.length() && sql.charAt(i + 1) == '-') { text.append("--"); mapping.append("--"); i += 2; line = true; continue; }
             if (c == '/' && i + 1 < sql.length() && sql.charAt(i + 1) == '*') { text.append("/*"); mapping.append("/*"); i += 2; block = true; continue; }
-            if (c == '$' && dialect.supportsDollarQuotedStrings()) { int end = dollarQuoteDelimiterEnd(sql, i); if (end >= 0) { quote = sql.substring(i, end); text.append(quote); mapping.append(quote); i = end; continue; } }
+            if (c == '$' && dialect.supportsDollarQuotedStrings()) { int end = SqlCodegen.dollarQuoteDelimiterEnd(sql, i); if (end >= 0) { quote = sql.substring(i, end); text.append(quote); mapping.append(quote); i = end; continue; } }
             if (dialect.supportsDoubleColonCast() && c == ':' && i + 1 < sql.length() && sql.charAt(i + 1) == ':') { text.append("::"); mapping.append("::"); i += 2; continue; }
             if (c == '{' && i + 2 < sql.length() && sql.charAt(i + 1) == ':' && Character.isJavaIdentifierStart(sql.charAt(i + 2))) {
                 int end = i + 2; while (end < sql.length() && Character.isJavaIdentifierPart(sql.charAt(end))) end++;
@@ -950,14 +950,6 @@ public final class QueryGenerator {
         }
         if (text.length() > 0) tokens.add(new QueryToken(text.toString(), null, false, "", ""));
         return new QueryScan(List.copyOf(tokens), mapping.toString(), explicitQuestionMarks);
-    }
-
-    private static int dollarQuoteDelimiterEnd(String sql, int start) {
-        int i = start + 1;
-        if (i < sql.length() && sql.charAt(i) == '$') return i + 1;
-        if (i >= sql.length() || !(Character.isLetter(sql.charAt(i)) || sql.charAt(i) == '_')) return -1;
-        i++; while (i < sql.length() && (Character.isLetterOrDigit(sql.charAt(i)) || sql.charAt(i) == '_')) i++;
-        return i < sql.length() && sql.charAt(i) == '$' ? i + 1 : -1;
     }
 
     /**
