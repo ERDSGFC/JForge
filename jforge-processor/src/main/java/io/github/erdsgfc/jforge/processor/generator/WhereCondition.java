@@ -63,6 +63,7 @@ record WhereCondition(String columnName, String op, String paramName, String typ
                                       boolean queryContext) {
         String paramName = parameter.getSimpleName().toString();
         Condition condition = parameter.getAnnotation(Condition.class);
+        // @query 原生sql 必须填 value
         if (queryContext && (condition == null || condition.value().isEmpty())) {
             env.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     diagnosticPrefix + " @Condition must specify a non-empty value", parameter);
@@ -71,7 +72,8 @@ record WhereCondition(String columnName, String op, String paramName, String typ
         String fieldName = condition != null && !condition.value().isEmpty()
                 ? condition.value() : paramName;
         EntityModel fieldEntity = info.model;
-        if (condition != null) {
+        // @Delete @Update 不支持关联其他entity
+        if (condition != null && !entities.isEmpty()) {
             TypeMirror entityType = conditionEntity(condition);
             if (entityType != null) {
                 fieldEntity = entities.get(entityType.toString());
@@ -130,27 +132,14 @@ record WhereCondition(String columnName, String op, String paramName, String typ
                     plan.sql(), null, false, false, null, plan.bindings());
         }
         if (queryContext) {
-            // @Query is native SQL: Condition.value names the SQL column directly,
-            // rather than an entity property subject to naming/converter mapping.
+
             String qualified = condition.value();
-            // 按列名反查 @Condition(entity) 命中的实体（缺省宿主）列的转换器。
-            // converter 字段只按宿主模型生成进仓库——非宿主列即使带 @Convert 也不挂，
-            // 与下方非 queryContext 分支的宿主限定同规则。
-            String converter = null;
-            if (fieldEntity == info.model) {
-                for (EntityModel.ColumnModel column : fieldEntity.columns()) {
-                    if (column.columnName.equals(condition.value()) && column.converter != null) {
-                        converter = SqlCodegen.converterFieldName(info.model, column);
-                        break;
-                    }
-                }
-            }
             return new WhereCondition(qualified, op, paramName, bindType, dynamic, optional, valueExpr,
-                    null, converter, collection, array, elementType, List.of());
+                    null, null, collection, array, elementType, List.of());
         }
         for (EntityModel.ColumnModel column : fieldEntity.columns()) {
             if (column.fieldName.equals(fieldName)) {
-                String converter = fieldEntity == info.model && column.converter != null
+                String converter = column.converter != null
                         ? SqlCodegen.converterFieldName(info.model, column) : null;
                 String qualified = fieldEntity == info.model
                         ? SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column.columnName)
@@ -179,6 +168,8 @@ record WhereCondition(String columnName, String op, String paramName, String typ
     private static boolean isIterable(TypeMirror type, ProcessingEnvironment env) {
         if (type.getKind() != TypeKind.DECLARED) return false;
         TypeMirror iterable = env.getElementUtils().getTypeElement("java.lang.Iterable").asType();
+        // isAssignable 比 isSubtype() 更接近 Java 编译器的赋值兼容性。
+        // erasure 获取 Java 泛型擦除后的类型。List<String> 得到 List
         return env.getTypeUtils().isAssignable(env.getTypeUtils().erasure(type),
                 env.getTypeUtils().erasure(iterable));
     }

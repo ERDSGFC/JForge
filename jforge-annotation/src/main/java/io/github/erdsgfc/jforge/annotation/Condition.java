@@ -37,6 +37,7 @@ public @interface Condition {
     Op op() default Op.EQ;
 
     /**
+     * 不支持 {@link Delete} 和 {@link Update}
      * 条件字段所属实体。默认的 {@code void.class} 表示当前仓库的宿主实体；指定其他实体时，
      * 该实体必须由当前 {@link Select} 方法上的 {@link Join} 引入。处理器据此解析列名并添加
      * 表限定符，避免多表查询中的同名列歧义。

@@ -69,7 +69,7 @@ public final class DeleteGenerator {
                 criteriaUnits.addAll(units);
             } else {
                 WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
-                    processingEnv, "@Condition", Map.of(info.model.entityQualifiedName(), info.model), false);
+                    processingEnv, "@Condition", Map.of(), false);
                 if (condition == null) {
                     return null;
                 }
