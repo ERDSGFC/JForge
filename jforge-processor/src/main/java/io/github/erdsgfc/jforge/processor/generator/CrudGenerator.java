@@ -121,6 +121,7 @@ public final class CrudGenerator {
         }
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "saveSql",
                 model.idGenerated() && !returning, configHelper.logSql(info.element));
+//        bindColumns();
         int index = 1;
         for (EntityModel.ColumnModel column : insertColumns) {
             method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"),
@@ -139,16 +140,14 @@ public final class CrudGenerator {
                 method.beginControlFlow("if (rs.next())");
                 method.addStatement("$L.$L(rs.$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
                         model.idColumn().setterName, TypeNameUtils.jdbcGetter(model.idColumn().typeName));
-                method.endControlFlow();
-                method.endControlFlow();
             } else {
                 method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", JDBC_RESULT_SET.getJavaPoetClassName());
                 method.beginControlFlow("if (keys.next())");
                 method.addStatement("$L.$L(keys.$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
                         model.idColumn().setterName, TypeNameUtils.jdbcGetter(model.idColumn().typeName));
-                method.endControlFlow();
-                method.endControlFlow();
             }
+            method.endControlFlow();
+            method.endControlFlow();
         }
         method.addStatement("return entity");
         SqlCodegen.endTxBlockExpr(method, sqlException, "save", info.model.tableName(),
@@ -413,8 +412,8 @@ public final class CrudGenerator {
         }
         List<? extends VariableElement> params = method.getParameters();
         return params.size() == 1
-                && params.get(0).asType().getKind() == TypeKind.DECLARED
-                && ((DeclaredType) params.get(0).asType()).asElement().getSimpleName().contentEquals("List");
+                && params.getFirst().asType().getKind() == TypeKind.DECLARED
+                && ((DeclaredType) params.getFirst().asType()).asElement().getSimpleName().contentEquals("List");
     }
 
     /**

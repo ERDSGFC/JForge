@@ -432,8 +432,8 @@ public final class SqlCodegen {
      *                          IN 查询用 {@code sql.toString()}）
      * @param generatedKeys     是否使用 {@code RETURN_GENERATED_KEYS}
      */
-    public static MethodSpec.Builder beginTxBlock(MethodSpec.Builder method, ClassName connection,
-            ClassName preparedStatement, String sqlExpr, boolean generatedKeys, boolean logSql) {
+    public static void beginTxBlock(MethodSpec.Builder method, ClassName connection,
+                                    ClassName preparedStatement, String sqlExpr, boolean generatedKeys, boolean logSql) {
         method.addStatement("$T conn = getConnection()", connection);
         if (logSql) {
             method.beginControlFlow("if (log.isDebugEnabled())");
@@ -441,10 +441,11 @@ public final class SqlCodegen {
             method.endControlFlow();
         }
         if (generatedKeys) {
-            return method.beginControlFlow("try ($T ps = conn.prepareStatement($L, $T.RETURN_GENERATED_KEYS))",
+            method.beginControlFlow("try ($T ps = conn.prepareStatement($L, $T.RETURN_GENERATED_KEYS))",
                     preparedStatement, sqlExpr, JDBC_STATEMENT.getJavaPoetClassName());
+            return;
         }
-        return method.beginControlFlow("try ($T ps = conn.prepareStatement($L))", preparedStatement, sqlExpr);
+        method.beginControlFlow("try ($T ps = conn.prepareStatement($L))", preparedStatement, sqlExpr);
     }
 
     /**
