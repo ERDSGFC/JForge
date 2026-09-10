@@ -64,6 +64,7 @@ public class JForgeProcessor extends AbstractProcessor {
         public EntityModel model;
         public String implName;
         public boolean springBean = false;
+        public boolean fieldRequireNonNull = true;
     }
 
     @Override
@@ -133,6 +134,10 @@ public class JForgeProcessor extends AbstractProcessor {
         info.daoSimpleName = dao.getSimpleName().toString();
         info.daoPackage = CommonUtils.packageOf(info.daoQualifiedName);
         info.implName = info.daoSimpleName + configHelper.implSuffix(dao);
+        Dao daoAnn = dao.getAnnotation(Dao.class);
+        if (daoAnn != null) {
+            info.fieldRequireNonNull = daoAnn.fieldRequireNonNull();
+        }
 
         TypeMirror entityMirror = null;
         TypeMirror idMirror = null;

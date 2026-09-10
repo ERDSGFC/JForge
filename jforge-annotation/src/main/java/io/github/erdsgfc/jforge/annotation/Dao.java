@@ -13,5 +13,9 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.CLASS)
 @Target(ElementType.TYPE)
 public @interface Dao {
-
+    /**
+     * 是否给每个字段设置空判断
+     * @return boolean
+     */
+    boolean fieldRequireNonNull() default true;
 }
