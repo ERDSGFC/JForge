@@ -108,6 +108,7 @@ public final class SqlCodegen {
     public static CodeBlock bindParam(String typeName, TypeName javaType, String expr, String indexExpr, boolean nullable, boolean isEnum,
                                       String converterField, boolean requireNonNull) {
         CodeBlock.Builder codeBlock = CodeBlock.builder();
+        // 不为空 && 不是基础类型 && 并且null判断
         if (!nullable && !javaType.isPrimitive() && requireNonNull) {
             codeBlock.addStatement(Nullability.requireNonNull(expr));
         }
