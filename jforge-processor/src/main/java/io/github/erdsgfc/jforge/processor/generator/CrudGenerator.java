@@ -134,7 +134,7 @@ public final class CrudGenerator {
                 method.beginControlFlow("try ($T rs = ps.getGeneratedKeys())", JDBC_RESULT_SET.getJavaPoetClassName());
             }
             method.beginControlFlow("if (rs.next())");
-            appendIdWriteback(method, model, entityImpl, "entity", "1");
+            appendIdWriteback(method, model, entityImpl, "entity");
             method.endControlFlow();
             method.endControlFlow();
         }
@@ -206,12 +206,12 @@ public final class CrudGenerator {
             method.addStatement("batchStart++");
             method.beginControlFlow("if (batchStart % batchSize == 0)");
             method.addStatement("ps.executeBatch()");
-            appendBatchKeysWriteback(method, info, entityImpl, resultSet, "batchStart - batchSize", "batchStart");
+            appendBatchKeysWriteback(method, info, entityImpl, resultSet, "batchStart - batchSize");
             method.endControlFlow();
             method.endControlFlow();
             method.beginControlFlow("if (batchStart % batchSize != 0)");
             method.addStatement("ps.executeBatch()");
-            appendBatchKeysWriteback(method, info, entityImpl, resultSet, "batchStart - batchStart % batchSize", "batchStart");
+            appendBatchKeysWriteback(method, info, entityImpl, resultSet, "batchStart - batchStart % batchSize");
             method.endControlFlow();
         } else {
             // 不批处理：在共享连接上每行执行一次 executeUpdate。
@@ -221,7 +221,7 @@ public final class CrudGenerator {
             if (idGenerated) {
                 method.beginControlFlow("try ($T rs = ps.getGeneratedKeys())", resultSet);
                 method.beginControlFlow("if (rs.next())");
-                appendIdWriteback(method, model, entityImpl, "entity", "1");
+                appendIdWriteback(method, model, entityImpl, "entity");
                 method.endControlFlow();
                 method.endControlFlow();
             }
@@ -269,13 +269,12 @@ public final class CrudGenerator {
      * @param model      实体模型（取 id 列的转换器/枚举/可空元数据）
      * @param entityImpl 实体 impl 嵌套类名（只读 id 强转回写用）
      * @param expr       实体引用表达式（如 {@code "entity"} 或 {@code "entities.get(i)"}）
-     * @param index      键在结果集中的列索引表达式（通常为 {@code "1"}）
      */
     private static void appendIdWriteback(MethodSpec.Builder method, EntityModel model,
-            ClassName entityImpl, String expr, String index) {
+            ClassName entityImpl, String expr) {
         EntityModel.ColumnModel id = model.idColumn();
         method.addCode(SqlCodegen.readColumn(id.typeName, id.javaType, id.javaClassType,
-                idWritebackReceiver(model, entityImpl, expr), id.setterName, index,
+                idWritebackReceiver(model, entityImpl, expr), id.setterName, "1",
                 id.nullable, id.isEnum,
                 id.converter != null ? SqlCodegen.converterFieldName(model, id) : null));
         method.addCode("\n");
@@ -316,7 +315,7 @@ public final class CrudGenerator {
     private static void appendInBindings(MethodSpec.Builder method, JForgeProcessor.DaoInfo info) {
         method.addStatement("int i = 1");
         method.beginControlFlow("for ($T id : ids)", info.idType);
-        method.addCode(idBindParam(info, "id", "i"));
+        method.addCode(idBindParam(info));
         method.addCode("\n");
         method.addStatement("i++");
         method.endControlFlow();
@@ -326,17 +325,12 @@ public final class CrudGenerator {
      * 绑定主键参数并复用主键列的枚举/可空/转换器元数据，避免 ID CRUD 路径绕过
      * {@code @Convert} 或对可空包装类型错误地调用 setXxx(null)。
      */
-//    private static CodeBlock idBindParam(JForgeProcessor.DaoInfo info,
-//            String expr, int index) {
-//        return idBindParam(info, expr, String.valueOf(index));
-//    }
 
-    private static CodeBlock idBindParam(JForgeProcessor.DaoInfo info,
-            String expr, String indexExpr) {
+    private static CodeBlock idBindParam(JForgeProcessor.DaoInfo info) {
         EntityModel.ColumnModel id = info.model.idColumn();
         // Repository ID parameters use a boxed type when the entity getter is primitive.
         // A nullable binding prevents JDBC setter auto-unboxing from throwing on null.
-        return SqlCodegen.bindParam(info.idType.toString(), info.idType, expr, indexExpr, id.nullable, id.isEnum,
+        return SqlCodegen.bindParam(info.idType.toString(), info.idType, "id", "i", id.nullable, id.isEnum,
                 id.converter != null ? SqlCodegen.converterFieldName(info.model, id) : null, info.fieldRequireNonNull);
     }
 
@@ -345,15 +339,14 @@ public final class CrudGenerator {
      * 实体（键按插入顺序返回），起始位置为块内相对索引表达式 {@code startExpr}。
      * 实体没有生成主键时不生成任何代码。
      *
-     * @param method    方法构建器
-     * @param info      仓库信息
+     * @param method     方法构建器
+     * @param info       仓库信息
      * @param entityImpl 生成的实体 impl 嵌套类（只读 id 强转回写用）
-     * @param resultSet ResultSet 类
-     * @param startExpr 块首实体在列表中的索引
-     * @param endExpr   块尾实体索引（回写上限，防驱动键数与块行数不符时错位）
+     * @param resultSet  ResultSet 类
+     * @param startExpr  块首实体在列表中的索引
      */
     private void appendBatchKeysWriteback(MethodSpec.Builder method, JForgeProcessor.DaoInfo info,
-            ClassName entityImpl, ClassName resultSet, String startExpr, String endExpr) {
+            ClassName entityImpl, ClassName resultSet, String startExpr) {
         if (!info.model.idGenerated()) {
             return;
         }
@@ -361,8 +354,8 @@ public final class CrudGenerator {
         method.addStatement("int i = $L", startExpr);
         // 回写上限 = 本块尾:驱动返回的键数与块行数不符时(驱动差异/失败),防止
         // 越界把键错位写进下一块实体或静默漏写——宁可少写也不写错。
-        method.beginControlFlow("while (rs.next() && i < $L)", endExpr);
-        appendIdWriteback(method, info.model, entityImpl, "entities.get(i)", "1");
+        method.beginControlFlow("while (rs.next() && i < $L)", "batchStart");
+        appendIdWriteback(method, info.model, entityImpl, "entities.get(i)");
         method.addStatement("i++");
         method.endControlFlow();
         method.endControlFlow();
@@ -567,7 +560,10 @@ public final class CrudGenerator {
         boolean logSql = configHelper.logSql(info.element);
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "updateSql", false, logSql);
         bindColumns(method, model, entityImpl, updateColumns, info.fieldRequireNonNull);
-        method.addCode(idBindParam(info, "entity." + model.idColumn().getterName + "()", updateColumns.size() +1));
+        EntityModel.ColumnModel idColumn = info.model.idColumn();
+        method.addCode(SqlCodegen.bindParam(idColumn.typeName, idColumn.javaType, "entity." + model.idColumn().getterName + "()", updateColumns.size() +1, idColumn.nullable,
+                idColumn.isEnum, idColumn.converter != null ? SqlCodegen.converterFieldName(info.model, idColumn) : null, info.fieldRequireNonNull));
+        method.addCode("\n");
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
         SqlCodegen.endTxBlockExpr(method, sqlException, "update", info.model.tableName(), "updateSql", logSql);
@@ -595,7 +591,9 @@ public final class CrudGenerator {
         boolean logSql = configHelper.logSql(info.element);
         Nullability.requireNonNull(method, "findById", "id", "id");
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "findByIdSql", false, logSql);
-//        method.addCode(idBindParam(info, "id", 1));
+        EntityModel.ColumnModel idColumn = info.model.idColumn();
+        method.addCode(SqlCodegen.bindParam(idColumn.typeName, idColumn.javaType, "id", "1", idColumn.nullable,
+                idColumn.isEnum, idColumn.converter != null ? SqlCodegen.converterFieldName(info.model, idColumn) : null, false));
         method.addCode("\n");
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
         method.beginControlFlow("if (!rs.next())");
@@ -737,9 +735,8 @@ public final class CrudGenerator {
         boolean logSql = configHelper.logSql(info.element);
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "countByIdSql", false,
                 logSql);
-        EntityModel.ColumnModel idColumn = info.model.idColumn();
-        method.addCode(SqlCodegen.bindParam(idColumn.typeName, idColumn.javaType, "id", "1", idColumn.nullable, idColumn.isEnum,
-                idColumn.converter != null ? SqlCodegen.converterFieldName(info.model, idColumn) : null, info.fieldRequireNonNull));
+        method.addCode(SqlCodegen.bindParam(info.model.idColumn().typeName, info.model.idColumn().javaType, "id", "1", info.model.idColumn().nullable,
+                info.model.idColumn().isEnum, info.model.idColumn().converter != null ? SqlCodegen.converterFieldName(info.model, info.model.idColumn()) : null, false));
         method.addCode("\n");
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
         method.addStatement("rs.next()");
