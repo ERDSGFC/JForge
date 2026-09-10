@@ -765,4 +765,31 @@ public final class CrudGenerator {
         method.addStatement("return e");
         return method.build();
     }
+    /**
+     * 构建私有 {@code mapRow} 方法:按列索引把当前 ResultSet 行映射为新的实体 impl
+     * (列顺序始终等于字段顺序)。
+     *
+     * @param info         仓库信息
+     * @param entityImpl   生成的实体 impl 类
+     * @param sqlException SQLException 类
+     * @param resultSet    ResultSet 类
+     * @return mapRow 方法规格
+     */
+    public MethodSpec joinRowMapperMethod(JForgeProcessor.DaoInfo info, ClassName entityImpl, ClassName sqlException, ClassName resultSet) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("mapRow")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(entityImpl)
+                .addParameter(resultSet, "rs")
+                .addParameter(ParameterSpec.builder(TypeName.INT, "startIndex").build())
+                .addException(sqlException)
+                .addStatement("$T e = new $T()", entityImpl, entityImpl);
+        List<EntityModel.ColumnModel> columns = info.model.columns();
+        for (int i = 0; i < columns.size(); i++) {
+            EntityModel.ColumnModel column = columns.get(i);
+            method.addStatement(SqlCodegen.readColumn(column.typeName, column.javaType, column.javaClassType, "e", column.setterName, "startIndex + " + i,
+                    column.nullable, column.isEnum, column.converter != null ? SqlCodegen.converterFieldName(info.model, column) : null));
+        }
+        method.addStatement("return e");
+        return method.build();
+    }
 }

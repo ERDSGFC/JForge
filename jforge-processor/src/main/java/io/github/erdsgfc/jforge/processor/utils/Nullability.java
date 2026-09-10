@@ -1,5 +1,6 @@
 package io.github.erdsgfc.jforge.processor.utils;
 
+import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
 
@@ -93,6 +94,10 @@ public final class Nullability {
 
     public static void requireNonNull(MethodSpec.Builder method, String expression) {
         method.addStatement("$T.requireNonNull($L, $S)", Objects.class, expression,
+                expression + " must not be null");
+    }
+    public static CodeBlock requireNonNull(String expression) {
+        return CodeBlock.of("$T.requireNonNull($L, $S)", Objects.class, expression,
                 expression + " must not be null");
     }
 

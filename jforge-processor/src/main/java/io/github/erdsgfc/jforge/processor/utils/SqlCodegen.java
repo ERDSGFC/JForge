@@ -82,6 +82,53 @@ public final class SqlCodegen {
     }
 
     /**
+     * 构建实体字段的绑定语句（int 版 {@link #bindParam(String, String, int, boolean, boolean, String)}
+     * 的单一实现，索引为编译期常量或运行时表达式）：可空列走 {@code ps.setObject(index, expr)}
+     * ——setXxx 对 {@code null} 值自动拆箱抛 NPE（如 {@code setInt} 接收 {@code Integer}
+     * null），而 setObject 天然把 null 绑定为 SQL NULL、非 null 值由驱动按参数推断类型；
+     * 枚举列走 {@code setObject(index, expr, Types.OTHER)}——pgjdbc 对无显式类型的
+     * 枚举对象无法推断 SQL 类型；转换器列走 {@code setObject(index, CONV.toDatabase(expr),
+     * CONV.sqlType().getVendorTypeNumber())}——int 类型码发送（3 参 SQLType 版本 pgjdbc
+     * 对 JDBCType.OTHER 未实现），默认 OTHER=1111 由驱动/数据库按目标列推断，覆盖
+     * {@code sqlType()} 返回 JDBCType 时钉死具体类型；非可空列类型精确 {@code setXxx}。
+     *
+     * @param typeName       字段类型字符串
+     * @param expr           值表达式（实体 getter 调用）
+     * @param indexExpr      基于 1 的索引表达式（编译期常量或运行时表达式如 {@code "i++"}）
+     * @param nullable       列是否可空（可空实体字段可能在运行时为 {@code null}）
+     * @param isEnum         列是否为枚举类型
+     * @param converterField 转换器静态字段名（@Convert 列；{@code null} = 无转换器）
+     * @param requireNonNull 是否判断 not null
+     * @return 绑定代码块
+     */
+    public static CodeBlock bindParam(String typeName, ClassName javaType, String expr, String indexExpr, boolean nullable, boolean isEnum,
+                                      String converterField, boolean requireNonNull) {
+        CodeBlock.Builder codeBlock = CodeBlock.builder();
+        if (!nullable && !javaType.isPrimitive() && requireNonNull) {
+            codeBlock.addStatement(Nullability.requireNonNull(expr));
+        }
+        if (converterField != null) {
+            // 转换器绑定:setObject(i, v, CONV.sqlType().getVendorTypeNumber())——转 int
+            // 类型码发送(3 参 SQLType 版本 pgjdbc 对 JDBCType.OTHER 未实现,抛"方法尚未
+            // 实现");默认 OTHER=1111(unknown),由 PG/H2 按目标列推断(jsonb 等不接受
+            // varchar 隐式转换的类型也能绑定);用户覆盖 sqlType() 返回 JDBCType 时钉死
+            // 具体类型码(驱动自定义 SQLType 需驱动支持其 vendorTypeNumber 语义)。
+            codeBlock.addStatement("$L.setObject($L, $L.toDatabase($L), $L.sqlType().getVendorTypeNumber());",
+                    "ps", indexExpr, converterField, expr, converterField);
+        } else if (isEnum) {
+            codeBlock.addStatement("$L.setObject($L, $L, $T.OTHER);", "ps", indexExpr, expr,
+                    ClassName.get("java.sql", "Types"));
+        } else if (nullable) {
+            codeBlock.addStatement("$L.setObject($L, $L);", "ps", indexExpr, expr);
+
+        } else {
+            codeBlock.addStatement("$L.$L($L, $L);",
+                    "ps", TypeNameUtils.jdbcSetter(typeName), indexExpr, expr);
+        }
+        return codeBlock.build();
+    }
+
+    /**
      * 按索引构建列读取语句，并经实体 setter 映射。用于生成的 CRUD——其中 SELECT 列顺序
      * 始终与字段顺序一致。
      *
@@ -99,6 +146,27 @@ public final class SqlCodegen {
     public static CodeBlock readColumn(String typeName, TypeName javaType, TypeName javaClassType,
             String entityVar, String setterName, int index,
             boolean nullable, boolean isEnum, String converterField) {
+        return readColumn(typeName, javaType, javaClassType, entityVar, setterName, String.valueOf(index), nullable, isEnum, converterField);
+    }
+
+    /**
+     * 按索引构建列读取语句，并经实体 setter 映射。用于生成的 CRUD——其中 SELECT 列顺序
+     * 始终与字段顺序一致。
+     *
+     * @param typeName       字段类型字符串
+     * @param javaType       字段的 JavaPoet 类型（已去除 TYPE_USE 注解）
+     * @param javaClassType  用于 {@code getObject(..., type.class)} 的擦除类型
+     * @param entityVar      实体变量名
+     * @param setterName     builder setter 方法名
+     * @param index          基于 1 的列索引
+     * @param nullable       列是否可空
+     * @param isEnum         列是否为枚举类型（{@code 枚举.valueOf(rs.getString(i))} 读取）
+     * @param converterField 转换器静态字段名（{@code CONV.toEntity(rs.getObject(i))} 读取）
+     * @return 读取代码块
+     */
+    public static CodeBlock readColumn(String typeName, TypeName javaType, TypeName javaClassType,
+                                       String entityVar, String setterName, String index,
+                                       boolean nullable, boolean isEnum, String converterField) {
         if (converterField != null) {
             // 转换器列:裸 rs.getObject(i) 取驱动的默认数据库表示(如 PG jsonb → PGobject),
             // 经 toEntity 由转换器转成实体字段类型——适配任意数据库类型(null 透传)。
