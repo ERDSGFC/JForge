@@ -252,7 +252,7 @@ public final class CrudGenerator {
             List<EntityModel.ColumnModel> columns) {
         int index = 1;
         for (EntityModel.ColumnModel column : columns) {
-            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"),
+            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(column, entityImpl),
                     index++, column.nullable, column.isEnum,
                     column.converter != null ? SqlCodegen.converterFieldName(model, column) : null));
             method.addCode("\n");
@@ -265,13 +265,13 @@ public final class CrudGenerator {
      * 取默认值——宿主类不实现实体接口,TypeName.super 语法只能在嵌套类里用);
      * 普通属性列用 {@code receiver.getter()} 读实体字段。
      */
-    private static String getterCall(EntityModel model, EntityModel.ColumnModel column,
-            ClassName entityImpl, String receiver) {
+    private static String getterCall(EntityModel.ColumnModel column,
+                                     ClassName entityImpl) {
         if (column.defaultGetter) {
-            return "((" + entityImpl.simpleName() + ") " + receiver + ")."
+            return "((" + entityImpl.simpleName() + ") " + "entity" + ")."
                     + EntityModel.defaultMethodName(column.getterName) + "()";
         }
-        return receiver + "." + column.getterName + "()";
+        return "entity" + "." + column.getterName + "()";
     }
 
     /**
