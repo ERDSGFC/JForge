@@ -176,7 +176,7 @@ public final class CriteriaGenerator {
         int seq = ++varSeq;
         spec.addStatement("int gs$L = sql.length()", seq);
         spec.addStatement("sql.append($L).append($S)", whereVar, "(");
-        spec.addStatement("$T w$L = $S", ClassName.get("java.lang", "String"), seq, "");
+        spec.addStatement("$T w$L = $S", ClassName.get(String.class), seq, "");
         emitAppend(spec, units, "w" + seq, " AND ");
         spec.addStatement("sql.append($S)", ")");
         // 空组回退:内容仅前缀 + "()" 时撤销,where 前缀未被消费。

@@ -8,8 +8,7 @@ import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 
-import static io.github.erdsgfc.jforge.processor.ClassEnum.JDBC_STATEMENT;
-import static io.github.erdsgfc.jforge.processor.ClassEnum.ORM_EXCEPTION;
+import static io.github.erdsgfc.jforge.processor.ClassEnum.*;
 
 /**
  * 构建各生成仓库实现共享的 JDBC 代码片段（参数绑定、行映射）。所有类型决策都在编译期
@@ -72,7 +71,7 @@ public final class SqlCodegen {
         }
         if (isEnum) {
             return CodeBlock.of("$L.setObject($L, $L, $T.OTHER);", "ps", indexExpr, expr,
-                    ClassName.get("java.sql", "Types"));
+                    JDBC_SQL_TYPES.getJavaPoetClassName());
         }
         if (nullable) {
             return CodeBlock.of("$L.setObject($L, $L);", "ps", indexExpr, expr);
@@ -117,7 +116,7 @@ public final class SqlCodegen {
                     "ps", indexExpr, converterField, expr, converterField);
         } else if (isEnum) {
             codeBlock.addStatement("$L.setObject($L, $L, $T.OTHER);", "ps", indexExpr, expr,
-                    ClassName.get("java.sql", "Types"));
+                    JDBC_SQL_TYPES.getJavaPoetClassName());
         } else if (nullable) {
             codeBlock.addStatement("$L.setObject($L, $L);", "ps", indexExpr, expr);
 

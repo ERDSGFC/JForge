@@ -15,6 +15,7 @@ public enum ClassEnum {
     JDBC_PREPARED_STATEMENT("java.sql", "PreparedStatement"),
     JDBC_CONNECTION("java.sql", "Connection"),
     JDBC_SQLEXCEPTION("java.sql", "SQLException"),
+    JDBC_SQL_TYPES("java.sql", "Types"),
     SPRING_REPOSITORY("org.springframework.stereotype", "Repository"),
     SPRING_AUTOWIRED("org.springframework.beans.factory.annotation", "Autowired"),
     SLF4J_LOGGER("org.slf4j", "Logger"),
