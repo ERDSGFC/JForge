@@ -39,6 +39,11 @@ public final class SqlCodegen {
         return bindParam(typeName, expr, String.valueOf(index), nullable, isEnum, converterField);
     }
 
+    public static CodeBlock bindParam(String typeName, TypeName javaType, String expr, int index, boolean nullable, boolean isEnum,
+                                      String converterField, boolean requireNonNull) {
+        return bindParam(typeName, javaType, expr, String.valueOf(index), nullable, isEnum, converterField, requireNonNull);
+    }
+
     /**
      * 构建实体字段的绑定语句（int 版 {@link #bindParam(String, String, int, boolean, boolean, String)}
      * 的单一实现，索引为编译期常量或运行时表达式）：可空列走 {@code ps.setObject(index, expr)}
@@ -100,7 +105,7 @@ public final class SqlCodegen {
      * @param requireNonNull 是否判断 not null
      * @return 绑定代码块
      */
-    public static CodeBlock bindParam(String typeName, ClassName javaType, String expr, String indexExpr, boolean nullable, boolean isEnum,
+    public static CodeBlock bindParam(String typeName, TypeName javaType, String expr, String indexExpr, boolean nullable, boolean isEnum,
                                       String converterField, boolean requireNonNull) {
         CodeBlock.Builder codeBlock = CodeBlock.builder();
         if (!nullable && !javaType.isPrimitive() && requireNonNull) {
@@ -112,16 +117,16 @@ public final class SqlCodegen {
             // 实现");默认 OTHER=1111(unknown),由 PG/H2 按目标列推断(jsonb 等不接受
             // varchar 隐式转换的类型也能绑定);用户覆盖 sqlType() 返回 JDBCType 时钉死
             // 具体类型码(驱动自定义 SQLType 需驱动支持其 vendorTypeNumber 语义)。
-            codeBlock.addStatement("$L.setObject($L, $L.toDatabase($L), $L.sqlType().getVendorTypeNumber());",
+            codeBlock.add("$L.setObject($L, $L.toDatabase($L), $L.sqlType().getVendorTypeNumber());",
                     "ps", indexExpr, converterField, expr, converterField);
         } else if (isEnum) {
-            codeBlock.addStatement("$L.setObject($L, $L, $T.OTHER);", "ps", indexExpr, expr,
+            codeBlock.add("$L.setObject($L, $L, $T.OTHER);", "ps", indexExpr, expr,
                     JDBC_SQL_TYPES.getJavaPoetClassName());
         } else if (nullable) {
-            codeBlock.addStatement("$L.setObject($L, $L);", "ps", indexExpr, expr);
+            codeBlock.add("$L.setObject($L, $L);", "ps", indexExpr, expr);
 
         } else {
-            codeBlock.addStatement("$L.$L($L, $L);",
+            codeBlock.add("$L.$L($L, $L);",
                     "ps", TypeNameUtils.jdbcSetter(typeName), indexExpr, expr);
         }
         return codeBlock.build();

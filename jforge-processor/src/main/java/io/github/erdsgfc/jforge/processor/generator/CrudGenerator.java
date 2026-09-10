@@ -121,7 +121,7 @@ public final class CrudGenerator {
         }
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "saveSql",
                 model.idGenerated() && !returning, configHelper.logSql(info.element));
-        bindColumns(method, model, entityImpl, insertColumns);
+        bindColumns(method, model, entityImpl, insertColumns, info.fieldRequireNonNull);
         if (!returning) {
             method.addStatement("ps.executeUpdate()");
         }
@@ -208,7 +208,7 @@ public final class CrudGenerator {
             method.addStatement("int batchSize = $L", batchSize);
             method.addStatement("int batchStart = 0");
             method.beginControlFlow("for ($T entity : entities)", info.entityType);
-            bindColumns(method, model, entityImpl, insertColumns);
+            bindColumns(method, model, entityImpl, insertColumns, info.fieldRequireNonNull);
             method.addStatement("ps.addBatch()");
             method.addStatement("batchStart++");
             method.beginControlFlow("if (batchStart % batchSize == 0)");
@@ -223,7 +223,7 @@ public final class CrudGenerator {
         } else {
             // 不批处理：在共享连接上每行执行一次 executeUpdate。
             method.beginControlFlow("for ($T entity : entities)", info.entityType);
-            bindColumns(method, model, entityImpl, insertColumns);
+            bindColumns(method, model, entityImpl, insertColumns, info.fieldRequireNonNull);
             method.addStatement("ps.executeUpdate()");
             if (idGenerated) {
                 method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", resultSet);
@@ -249,12 +249,11 @@ public final class CrudGenerator {
      * @param columns INSERT 列
      */
     private void bindColumns(MethodSpec.Builder method, EntityModel model, ClassName entityImpl,
-            List<EntityModel.ColumnModel> columns) {
+            List<EntityModel.ColumnModel> columns, boolean requireNonNull) {
         int index = 1;
         for (EntityModel.ColumnModel column : columns) {
-            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(column, entityImpl),
-                    index++, column.nullable, column.isEnum,
-                    column.converter != null ? SqlCodegen.converterFieldName(model, column) : null));
+            method.addCode(SqlCodegen.bindParam(column.typeName, column.javaType, getterCall(column, entityImpl), index++,
+                    column.nullable, column.isEnum, column.converter != null ? SqlCodegen.converterFieldName(model, column) : null, requireNonNull));
             method.addCode("\n");
         }
     }
@@ -265,8 +264,7 @@ public final class CrudGenerator {
      * 取默认值——宿主类不实现实体接口,TypeName.super 语法只能在嵌套类里用);
      * 普通属性列用 {@code receiver.getter()} 读实体字段。
      */
-    private static String getterCall(EntityModel.ColumnModel column,
-                                     ClassName entityImpl) {
+    public static String getterCall(EntityModel.ColumnModel column, ClassName entityImpl) {
         if (column.defaultGetter) {
             return "((" + entityImpl.simpleName() + ") " + "entity" + ")."
                     + EntityModel.defaultMethodName(column.getterName) + "()";
@@ -545,7 +543,7 @@ public final class CrudGenerator {
             return method.build();
         }
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "updateSql", false, configHelper.logSql(info.element));
-        bindColumns(method, model, entityImpl, updateColumns);
+        bindColumns(method, model, entityImpl, updateColumns, info.fieldRequireNonNull);
         method.addCode(idBindParam(info, "entity." + model.idColumn().getterName + "()", updateColumns.size() +1));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
