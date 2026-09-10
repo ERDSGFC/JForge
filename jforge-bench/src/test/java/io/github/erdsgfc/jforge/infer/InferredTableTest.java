@@ -59,9 +59,10 @@ class InferredTableTest {
     void tableNamingNoneKeepsEntityNameAsIs() throws SQLException {
         ExactNameRepository exactRepo = new JForge(ds).repository(ExactNameRepository.class);
         try (Connection conn = ds.getConnection(); Statement st = conn.createStatement()) {
-            // 原样表名含大写——建表与查询两端都无引号，靠折叠规则匹配（与列名 NONE 语义一致）。
-            st.execute("DROP TABLE IF EXISTS ExactNameEntity");
-            st.execute("CREATE TABLE ExactNameEntity (id BIGSERIAL PRIMARY KEY, name VARCHAR(100))");
+            // 原样表名含大写——生成 SQL 会包裹为 "ExactNameEntity" 精确匹配，
+            // 因此 DDL 也必须加引号，否则 H2/PG 折叠为小写导致表不存在。
+            st.execute("DROP TABLE IF EXISTS \"ExactNameEntity\"");
+            st.execute("CREATE TABLE \"ExactNameEntity\" (id BIGSERIAL PRIMARY KEY, name VARCHAR(100))");
         }
 
         ExactNameEntity saved = exactRepo.save(exactRepo.createEntity().name("exact").id(null));

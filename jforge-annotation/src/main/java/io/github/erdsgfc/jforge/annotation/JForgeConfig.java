@@ -44,14 +44,21 @@ public @interface JForgeConfig {
     /** 追加到生成的实现类简单名后的后缀（默认 {@code "_Impl"}）。 */
     String implSuffix() default "_Impl";
 
-    /** 当没有 {@code @Column} 注解时使用的列名推断策略（默认 {@link NamingStrategy#NONE}）。 */
+    /**
+     * 当没有 {@code @Column} 注解时使用的列名推断策略（默认 {@link NamingStrategy#NONE}）。
+     *
+     * <p>推断出的列名会被方言引用符包裹、按精确名匹配数据库；{@link NamingStrategy#NONE}
+     * 保留原样（含驼峰/大写），相应的 DDL 需同样加引号才匹配——详见
+     * {@link NamingStrategy#NONE} 的"与 DDL 的契约"。</p>
+     */
     NamingStrategy naming() default NamingStrategy.NONE;
 
     /**
      * 当没有 {@code @Table} 注解（或 {@code name} 为空）时使用的表名推断策略
      * （默认 {@link NamingStrategy#CAMEL_TO_SNAKE}——snake_case 表名是数据库惯例，
      * 与列名策略相互独立：列名默认 {@code NONE} 保持原样，表名默认 snake）。
-     * {@code NONE} 时表名 = 实体接口简单名原样（如 {@code UserEntity}）。
+     * {@code NONE} 时表名 = 实体接口简单名原样（如 {@code UserEntity}），
+     * 同样按精确名匹配，DDL 需加引号（{@code CREATE TABLE "UserEntity"}）。
      */
     NamingStrategy tableNaming() default NamingStrategy.CAMEL_TO_SNAKE;
 

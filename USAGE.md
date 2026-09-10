@@ -56,6 +56,19 @@ interface UserEntity extends BaseEntity<UserEntity> {
 泛型实参替换后,父接口的 builder setter 返回子接口类型(`T name(String)` → `UserEntity name(String)`),
 **链式调用跨接口不中断**。不满足约束(多类型参数或实参非自身)时编译报错。
 
+### 表名/列名与 DDL 的契约
+
+生成的 SQL 会按方言引用符包裹表名与列名(PG/SQLite 双引号、MySQL 反引号),数据库端做**精确匹配、不折叠大小写**。因此**你的 DDL 必须写出与模型完全一致的精确名**:
+
+| 模型里的名字 | 需要的 DDL | 说明 |
+|---|---|---|
+| `users`(默认表名策略 `CAMEL_TO_SNAKE`) | `CREATE TABLE users (...)` | 无引号折叠为小写,与包裹后的 `"users"` 一致 ✅ |
+| `Users`(`@Table(name = "Users")`) | `CREATE TABLE "Users" (...)` | **必须加引号**;无引号会折叠为 `users` → 表不存在 |
+| `userName`(列名策略 `NONE` 保留原样的驼峰属性) | `CREATE TABLE t ("userName" ...)` | 同上——`NONE` 的"原样"靠引用符才成立 |
+
+一句话:**想用驼峰/大写名,DDL 里就加引号**;想配无引号的普通 DDL,就让名字是全小写(默认策略正是如此)。
+框架不再靠"名字里有没有大写字母"猜测你的 DDL 写法——是否精确匹配完全由你的名字决定。
+
 ### 只读列与 default 默认值
 
 **不写 setter = 该列不由用户维护**;`@Column.write()` 显式控制列参与 INSERT/UPDATE 的组合:
@@ -453,7 +466,7 @@ package com.example.data;
 | 属性 | 默认 | 说明 |
 |---|---|---|
 | `dialect` | POSTGRESQL | SQL 方言：POSTGRESQL（真 PG，生成键走 `INSERT ... RETURNING`）/ MYSQL / SQLITE / H2（2.3 不支持 RETURNING，走 JDBC 标准）——**H2 测试/应用必须显式标 `Dialect.H2`**，`POSTGRESQL` 现仅用于真 PG |
-| `naming` | NONE | 列名推断策略(无 @Column 时) |
+| `naming` | NONE | 列名推断策略(无 @Column 时)；`NONE` = 方法名原样 |
 | `tableNaming` | CAMEL_TO_SNAKE | 表名推断策略(无 @Table 或 name 为空时)；`NONE` = 实体接口名原样 |
 | `implSuffix` | `_Impl` | 生成类后缀(仓库 impl 及其嵌套的实体 impl) |
 | `springBeans` | false | 生成 `@Repository` + `@Autowired` 构造器 |

@@ -269,31 +269,34 @@ public final class SqlCodegen {
 
     /**
      * 用方言引用符包裹自动生成的标识符（表名/列名），实现数据库端精确匹配：
-     * PG/SQLite 双引号、MySQL 反引号。包裹规则（保守，避免破坏既有行为）——
+     * PG/SQLite 双引号、MySQL 反引号。包裹规则——
      * <ul>
-     *   <li>名字已含方言引用符（用户自行引用的显式名，如 {@code @Table(name="\"Users\"")}）不包；</li>
-     *   <li>名字含大写字母不包——未引用的 DDL（{@code CREATE TABLE Users}）在 PG 折叠为小写存储，
-     *       包裹会让生成 SQL 按大小写精确查找而失败；</li>
-     *   <li>其余（自动推导的 camelToSnake 小写名、显式小写名）包裹——修复保留字列
-     *       （{@code order}/{@code key}）与 Linux MySQL 表名大小写敏感问题。</li>
+     *   <li>名字已含方言引用符（用户自行引用的显式名，如 {@code @Table(name="\"Users\"")}）不包
+     *       ——用户已显式表达"按此精确名匹配"，原样透传，也作为需要与引用 DDL 对齐时的
+     *       显式写法；</li>
+     *   <li>其余一律包裹——包括含大写字母的名字（如 {@code @Table(name="Users")}、
+     *       {@link io.github.erdsgfc.jforge.annotation.NamingStrategy#NONE} 下保留原样的
+     *       驼峰列名 {@code "userName"}）。</li>
      * </ul>
-     * 只用于自动生成的 SQL 文本；用户 SQL（{@code @Query} 方法体、{@code rawSql} 片段）
-     * 原样透传、永不包裹。ResultSet 按标签读取（{@code rs.getString(name)}）也不包裹。
+     *
+     * <p><strong>与 DDL 的契约</strong>：包裹意味着数据库端做<em>精确匹配</em>（不折叠大小写）。
+     * 因此用户 DDL 必须与模型中的名字完全一致——引用 DDL（{@code CREATE TABLE "Users"}）
+     * 直接匹配；若 DDL 未引用（{@code CREATE TABLE Users}，PG 折叠为小写存储），则模型里
+     * 应显式写成折叠后的形式（{@code @Table(name="users")}）。此前的实现靠"名字含大写则
+     * 不包裹"猜测 DDL 是否引用，两种写法无法兼得且语义不可预测（{@code NamingStrategy.NONE}
+     * 承诺的"原样列名"实际被折叠，驼峰列名永远查不到），故改为显式契约。</p>
+     *
+     * <p>只用于自动生成的 SQL 文本；用户 SQL（{@code @Query} 方法体、{@code rawSql} 片段）
+     * 原样透传、永不包裹。ResultSet 按标签读取（{@code rs.getString(name)}）也不包裹。</p>
      *
      * @param dialect 生效的方言支持（引用符来源）
      * @param name    标识符（原始名，如 {@code "user_name"}）
-     * @return 包裹后的标识符（如 {@code "\"user_name\""}），不满足包裹规则时原样返回
+     * @return 包裹后的标识符（如 {@code "\"user_name\""}）；名字已含引用符或方言无引用符时原样返回
      */
     public static String quoteIdentifier(DialectSupport dialect, String name) {
         String quote = dialect.quote();
         if (quote.isEmpty() || name.indexOf(quote.charAt(0)) >= 0) {
             return name;
-        }
-        // todo pgsql ddl CREATE TABLE "Users",不会被折叠为小写吧，应该让用户来控制小写还是大写
-        for (int i = 0; i < name.length(); i++) {
-            if (Character.isUpperCase(name.charAt(i))) {
-                return name;
-            }
         }
         return quote + name + quote;
     }

@@ -53,9 +53,18 @@ H2 有独立方言（`Dialect.H2`，`MODE=PostgreSQL` 下 `BIGSERIAL`/引用符�
 **大小写折叠**（未加引号的标识符被统一大小写）：PostgreSQL 折叠为**小写**；H2 / MySQL / Oracle 折叠为**大写**。加引号 = 精确名字，不折叠。注意：H2 的 `MODE=PostgreSQL` **不**折叠小写（实测 2.3.232 无引号标识符仍存为大写）——测试库需另加 `DATABASE_TO_LOWER=TRUE` 模拟真 PG 折叠（JForge 测试配置已带）。
 
 **对 JForge 的含义**：自动生成的标识符（`@Table` 缺省表名、命名策略/`@Column` 派生的列名）在生成 SQL 时按方言引用符包裹（`DialectSupport.quote()`，PG/SQLite 双引号、MySQL 反引号），数据库端做**精确匹配**。包裹规则（`SqlCodegen.quoteIdentifier`）：
-- 名字已含方言引用符（用户自行引用的显式名，如 `@Table(name="\"Users\"")`）→ 不包；
-- 名字含大写字母 → 不包（无引号 DDL 在 PG 折叠为小写存储，包裹会让按大小写精确查找失败）；
-- 其余（自动推导的小写名、显式小写名）→ 包裹。
+- 名字已含方言引用符（用户自行引用的显式名，如 `@Table(name="\"Users\"")`）→ 不包——用户已显式表达"按此精确名匹配"；
+- 其余（含自动推导的小写名、显式小写名、含大写字母的名字）→ **一律包裹**。
+
+**与 DDL 的契约**（重要）：包裹 = 精确匹配、不折叠大小写，因此 DDL 必须写出与模型完全一致的精确名：
+
+| 模型里的名字 | 需要的 DDL |
+|---|---|
+| `users`（默认 `CAMEL_TO_SNAKE`） | `CREATE TABLE users (...)` ——无引号折叠为小写，与包裹后的 `"users"` 一致 ✅ |
+| `Users`（`@Table(name="Users")`） | `CREATE TABLE "Users" (...)` ——必须加引号，无引号会被折叠为 `users` 而查不到 |
+| `userName`（`NONE` 列名策略） | `CREATE TABLE t ("userName" ...)` ——同上，`NONE` 的"原样"依赖引用符才成立 |
+
+> 早期实现曾用"名字含大写字母则不包裹"来**猜测** DDL 是否加引号：猜"未加引号"时 `NONE` 的驼峰列名会被静默折叠（文档承诺的"原样列名"不成立、列永远查不到），猜"已加引号"时引用 DDL 又匹配不上——两种意图在注解里无法区分。现已改为显式契约：是否精确匹配由**名字里有没有引用符**决定，不再猜测。
 
 **收益**：保留字（`order`、`key` 作列名）可用；Linux MySQL 表名大小写敏感问题消除；混合大小写显式名精确命中。**边界**：用户 SQL（`@Query` 方法体、`@Condition`/`@UpdateSet` 的 `rawSql` 片段）原样透传、永不包裹；ResultSet 按标签读取（`rs.getString(name)`）同样不包。表名/列名在模型中保持原始名（重名列检测、`@Condition` 字段解析、错误消息都用它），引用符只在 SQL 发射点施加。
 
