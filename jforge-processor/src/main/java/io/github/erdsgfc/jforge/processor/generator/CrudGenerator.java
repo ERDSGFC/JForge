@@ -121,28 +121,24 @@ public final class CrudGenerator {
         }
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "saveSql",
                 model.idGenerated() && !returning, configHelper.logSql(info.element));
-//        bindColumns();
-        int index = 1;
-        for (EntityModel.ColumnModel column : insertColumns) {
-            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"),
-                    index++, column.nullable, column.isEnum,
-                    column.converter != null ? SqlCodegen.converterFieldName(model, column) : null));
-            method.addCode("\n");
-        }
+        bindColumns(method, model, entityImpl, insertColumns);
         if (!returning) {
             method.addStatement("ps.executeUpdate()");
         }
         // 生成键回写:接口有 setter 直接调用;只读 id(无 setter)强转到嵌套类调用
         // private 填充 setter(nestmates 允许宿主类访问嵌套类私有成员)。
+
         if (model.idGenerated()) {
             if (returning) {
                 method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
                 method.beginControlFlow("if (rs.next())");
+                // todo 这里为什么没有使用 io.github.erdsgfc.jforge.processor.utils.SqlCodegen.readColumn(java.lang.String, com.palantir.javapoet.TypeName, com.palantir.javapoet.TypeName, java.lang.String, java.lang.String, int, boolean, boolean, java.lang.String)
                 method.addStatement("$L.$L(rs.$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
                         model.idColumn().setterName, TypeNameUtils.jdbcGetter(model.idColumn().typeName));
             } else {
                 method.beginControlFlow("try ($T keys = ps.getGeneratedKeys())", JDBC_RESULT_SET.getJavaPoetClassName());
                 method.beginControlFlow("if (keys.next())");
+                // todo 这里为什么没有使用 io.github.erdsgfc.jforge.processor.utils.SqlCodegen.readColumn(java.lang.String, com.palantir.javapoet.TypeName, com.palantir.javapoet.TypeName, java.lang.String, java.lang.String, int, boolean, boolean, java.lang.String)
                 method.addStatement("$L.$L(keys.$L(1))", idWritebackReceiver(model, entityImpl, "entity"),
                         model.idColumn().setterName, TypeNameUtils.jdbcGetter(model.idColumn().typeName));
             }
@@ -549,14 +545,8 @@ public final class CrudGenerator {
             return method.build();
         }
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "updateSql", false, configHelper.logSql(info.element));
-        int index = 1;
-        for (EntityModel.ColumnModel column : updateColumns) {
-            method.addCode(SqlCodegen.bindParam(column.typeName, getterCall(model, column, entityImpl, "entity"),
-                    index++, column.nullable, column.isEnum,
-                    column.converter != null ? SqlCodegen.converterFieldName(model, column) : null));
-            method.addCode("\n");
-        }
-        method.addCode(idBindParam(info, "entity." + model.idColumn().getterName + "()", index));
+        bindColumns(method, model, entityImpl, updateColumns);
+        method.addCode(idBindParam(info, "entity." + model.idColumn().getterName + "()", updateColumns.size() +1));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
         SqlCodegen.endTxBlockExpr(method, sqlException, "update", info.model.tableName(), "updateSql", configHelper.logSql(info.element));
