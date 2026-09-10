@@ -786,8 +786,9 @@ public final class CrudGenerator {
         List<EntityModel.ColumnModel> columns = info.model.columns();
         for (int i = 0; i < columns.size(); i++) {
             EntityModel.ColumnModel column = columns.get(i);
-            method.addStatement(SqlCodegen.readColumn(column.typeName, column.javaType, column.javaClassType, "e", column.setterName, "startIndex + " + i,
+            method.addCode(SqlCodegen.readColumn(column.typeName, column.javaType, column.javaClassType, "e", column.setterName, "startIndex + " + i,
                     column.nullable, column.isEnum, column.converter != null ? SqlCodegen.converterFieldName(info.model, column) : null));
+            method.addCode("\n");
         }
         method.addStatement("return e");
         return method.build();

@@ -176,7 +176,7 @@ public final class SqlCodegen {
             // pgjdbc 不支持 getObject(i, Class) 把 PG enum 转成 Java 枚举——读标签字符串
             // 后 valueOf（可空列对 NULL 返回 null）。
             if (nullable) {
-                String var = "v" + setterName + index;
+                String var = "v" + setterName;
                 return CodeBlock.of("$T $L = rs.getString($L);\n$L.$L($L == null ? null : $T.valueOf($L));",
                         String.class, var, index, entityVar, setterName, var,
                         javaType, var);
@@ -195,7 +195,7 @@ public final class SqlCodegen {
             // 只有包装基本类型的专用 getter（getInt/getLong 等）需要 wasNull();
             // JDBC 对 String、日期、LOB、数组、URL、byte[] 等引用类型 getter 的 NULL
             // 已直接返回 null，省去局部变量和一次 wasNull() 调用。
-            String var = "v" + setterName + index;
+            String var = "v" + setterName;
             return CodeBlock.of("$T $L = rs.$L($L);\n$L.$L(rs.wasNull() ? null : $L);",
                     javaType.isBoxedPrimitive() ? javaType.unbox() : javaType,
                     var, getter, index, entityVar, setterName, var);
