@@ -34,7 +34,7 @@ class JoinCodegenTest {
         assertTrue(result.success, () -> result.diagnostics.toString());
         String generated = result.generatedSources.get("test.UserRepository_Impl");
         assertTrue(generated != null, "repository implementation was not generated");
-        assertTrue(generated.contains("LEFT JOIN \\\"departments\\\" ON \\\"users\\\".departmentId = \\\"departments\\\".\\\"id\\\""),
+        assertTrue(generated.contains("LEFT JOIN \\\"departments\\\" ON \\\"users\\\".\\\"departmentId\\\" = \\\"departments\\\".\\\"id\\\""),
                 generated);
         assertTrue(generated.contains("\\\"departments\\\".\\\"name\\\" = ?"), generated);
     }

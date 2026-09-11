@@ -490,8 +490,9 @@ public final class CrudGenerator {
         Nullability.requireNonNull(method, "deleteById", "id", "id");
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "deleteByIdSql", false, configHelper.logSql(info.element));
         EntityModel.ColumnModel idColumn = info.model.idColumn();
-        method.addCode(SqlCodegen.bindParam(idColumn.typeName, idColumn.javaType, "id", "1", idColumn.nullable, idColumn.isEnum,
-                idColumn.converter != null ? SqlCodegen.converterFieldName(info.model, idColumn) : null, false));
+        CodeBlock codeBlock = SqlCodegen.bindParam(idColumn.typeName, idColumn.javaType, "id", "1", idColumn.nullable, idColumn.isEnum,
+                idColumn.converter != null ? SqlCodegen.converterFieldName(info.model, idColumn) : null, false);
+        method.addCode(codeBlock);
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
         SqlCodegen.endTxBlockExpr(method, sqlException, "deleteById", info.model.tableName(), "deleteByIdSql", configHelper.logSql(info.element));
