@@ -213,7 +213,6 @@ public final class RepositoryGenerator {
         // 行映射 helper 与 CRUD 方法。
         builder.addMethod(crudGenerator.rowMapperMethod(info, entityImpl, sqlException, resultSet));
         builder.addMethod(crudGenerator.joinRowMapperMethod(info, entityImpl, sqlException, resultSet));
-        builder.addMethod(crudGenerator.countByIdMethod(info, sqlException, connection, preparedStatement, resultSet));
         for (MethodSpec method : crudGenerator.crudMethods(info, entityImpl, connection, preparedStatement,
                 resultSet, sqlException)) {
             builder.addMethod(method);

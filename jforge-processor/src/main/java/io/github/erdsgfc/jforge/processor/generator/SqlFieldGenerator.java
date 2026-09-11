@@ -40,7 +40,7 @@ public final class SqlFieldGenerator {
         fields.add(sqlField("findByIdsBaseSql", findByIdsBaseSql(info)));
         fields.add(sqlField("findAllSql", findAllSql(info)));
         fields.add(sqlField("countSql", countSql(info)));
-        fields.add(sqlField("countByIdSql", countByIdSql(info)));
+        fields.add(sqlField("existsByIdSql", existsByIdSql(info)));
         return fields;
     }
 
@@ -65,7 +65,7 @@ public final class SqlFieldGenerator {
         String baseName = methodName + "Sql";
         boolean reserved = switch (methodName) {
             case "save", "saveAll", "deleteById", "deleteByIds", "update", "findById",
-                    "findByIds", "findAll", "count", "countById" -> true;
+                    "findByIds", "findAll", "count", "existsById" -> true;
             default -> false;
         };
         if (overloadIndex == 0 && !reserved) {
@@ -159,10 +159,18 @@ public final class SqlFieldGenerator {
                 + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), info.model.tableName());
     }
 
-    static String countByIdSql(JForgeProcessor.DaoInfo info) {
+    /**
+     * {@code existsById} 的 SQL：{@code SELECT 1 FROM t WHERE id=? LIMIT 1}。
+     *
+     * <p>不写 {@code COUNT(*)}——存在性判断只关心"有没有行"，让数据库聚合计数是白做的
+     * 工作；{@code rs.next()} 拿到首行即可返回。取一行子句经方言能力表
+     * {@link DialectSupport#limitOneClause()}（默认 {@code LIMIT 1}），不支持的方言可覆写。</p>
+     */
+    static String existsByIdSql(JForgeProcessor.DaoInfo info) {
         DialectSupport dialect = info.model.dialectSupport();
-        return "SELECT COUNT(*) FROM " + SqlCodegen.quoteIdentifier(dialect, info.model.tableName())
-                + " WHERE " + SqlCodegen.quoteIdentifier(dialect, info.model.idColumn().columnName) + "=?";
+        return "SELECT 1 FROM " + SqlCodegen.quoteIdentifier(dialect, info.model.tableName())
+                + " WHERE " + SqlCodegen.quoteIdentifier(dialect, info.model.idColumn().columnName)
+                + "=?" + " " + dialect.limitOneClause();
     }
 
 }

@@ -26,6 +26,19 @@ public interface DialectSupport {
     /** 分页片段（含占位符），如 {@code "LIMIT ? OFFSET ?"}。 */
     String limitClause();
 
+    /**
+     * "至多取一行"子句，用于存在性判断（{@code SELECT 1 ... LIMIT 1}）。
+     *
+     * <p>默认 {@code "LIMIT 1"}——四种内置方言（PostgreSQL/MySQL/SQLite/H2）语法一致。
+     * 不支持 {@code LIMIT} 的方言（如 Oracle 需 {@code FETCH FIRST 1 ROWS ONLY}）
+     * 可在自定义实现中覆写。</p>
+     *
+     * @return 不含占位符的取一行子句（不含前后空格）
+     */
+    default String limitOneClause() {
+        return "LIMIT 1";
+    }
+
     /** UPSERT 子句（未来 saveOrUpdate 用），如 {@code "ON CONFLICT"}。 */
     String upsertClause();
 

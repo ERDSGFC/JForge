@@ -100,7 +100,9 @@ H2 有独立方言（`Dialect.H2`，`MODE=PostgreSQL` 下 `BIGSERIAL`/引用符�
 | SQL Server（旧版） | `SELECT TOP ? ...` |
 | Oracle（旧版） | `ROWNUM <= ?`（嵌套子查询） |
 
-**影响**：分页查询生成。JForge 当前只支持 PG/MySQL 两个方言——两者分页写法相同，此维度暂不产生差异；扩展方言（SQL Server/Oracle）时是主要差异点。
+**影响**：分页查询生成。JForge 当前只支持 PG/MySQL/H2/SQLite 四个方言——四者分页写法相同，此维度暂不产生差异；扩展方言（SQL Server/Oracle）时是主要差异点。
+
+**已落地的一处相关应用**：`existsById` 生成 `SELECT 1 FROM t WHERE id=? LIMIT 1`（能力方法 `limitOneClause()`，默认 `"LIMIT 1"`）——省去 `COUNT(*)` 聚合，并把"只需一行"的意图交给优化器；Oracle 等不支持 `LIMIT` 的方言覆写该方法即可。该能力用**默认方法**提供，内置方言无需改动。
 
 ### 3.5 UPSERT（saveOrUpdate）
 
@@ -226,6 +228,12 @@ public interface DialectSupport {
 
     /** 分页片段（含占位符）。 */
     String limitClause();
+
+    /**
+     * "至多取一行"子句（{@code existsById} 用）——默认方法，返回 {@code "LIMIT 1"}。
+     * 不支持 LIMIT 的方言（Oracle 的 {@code FETCH FIRST 1 ROWS ONLY}）可覆写。
+     */
+    default String limitOneClause() { return "LIMIT 1"; }
 
     /** UPSERT 子句（未来 saveOrUpdate 用）。 */
     String upsertClause();
