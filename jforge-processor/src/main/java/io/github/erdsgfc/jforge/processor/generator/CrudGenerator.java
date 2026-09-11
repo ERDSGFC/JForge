@@ -322,14 +322,22 @@ public final class CrudGenerator {
     }
 
     /**
-     * 绑定主键参数并复用主键列的枚举/可空/转换器元数据，避免 ID CRUD 路径绕过
-     * {@code @Convert} 或对可空包装类型错误地调用 setXxx(null)。
+     * 绑定 IN 列表中的主键元素——供 {@link #appendInBindings} 使用（{@code findByIds}/
+     * {@code deleteByIds} 的循环变量 {@code id}，索引为运行时表达式 {@code "i"}）。
+     *
+     * <p>以<em>仓库声明的</em> id 类型（{@code info.idType}）而非实体 getter 的返回类型选择
+     * 绑定形态：{@code List<ID>} 的元素类型由仓库类型参数决定。实体 id getter 为基本类型而
+     * 仓库 id 为装箱类型时（如 {@code long adminId()} + {@code BaseRepository<SysAdmin, Long>}），
+     * 该装箱类型不是基本类型，非空契约下会前置 {@code requireNonNull}——{@code ids} 中的
+     * {@code null} 元素在此快速失败，而非留给 JDBC setter 拆箱时抛出信息模糊的 NPE。</p>
+     *
+     * <p>枚举/转换器元数据取自主键列，避免该路径绕过 {@code @Convert}。</p>
+     *
+     * @param info 仓库信息（取其中的仓库 id 类型与主键列元数据）
+     * @return 主键元素的绑定代码块
      */
-
     private static CodeBlock idBindParam(JForgeProcessor.DaoInfo info) {
         EntityModel.ColumnModel id = info.model.idColumn();
-        // Repository ID parameters use a boxed type when the entity getter is primitive.
-        // A nullable binding prevents JDBC setter auto-unboxing from throwing on null.
         return SqlCodegen.bindParam(info.idType.toString(), info.idType, "id", "i", id.nullable, id.isEnum,
                 id.converter != null ? SqlCodegen.converterFieldName(info.model, id) : null, info.fieldRequireNonNull);
     }
@@ -563,7 +571,6 @@ public final class CrudGenerator {
         EntityModel.ColumnModel idColumn = info.model.idColumn();
         method.addCode(SqlCodegen.bindParam(idColumn.typeName, idColumn.javaType, "entity." + model.idColumn().getterName + "()", updateColumns.size() +1, idColumn.nullable,
                 idColumn.isEnum, idColumn.converter != null ? SqlCodegen.converterFieldName(info.model, idColumn) : null, info.fieldRequireNonNull));
-        method.addCode("\n");
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
         SqlCodegen.endTxBlockExpr(method, sqlException, "update", info.model.tableName(), "updateSql", logSql);
