@@ -504,12 +504,25 @@ public final class SqlCodegen {
      * 在生成的方法中开启感知事务的代码块：获取连接，并把 {@code PreparedStatement} 作为
      * try-with-resources 资源打开，确保始终被关闭——
      * {@code Connection conn = getConnection(); try (PreparedStatement ps = conn.prepareStatement(...)) \{}。
+     *
+     * <p><strong>本类的 SQL 代码块方法按"SQL 在生成代码里的形态"分两族</strong>，
+     * 开启/收尾各自配对使用：</p>
+     * <ul>
+     *   <li><b>静态字段名</b>——{@link #beginTxBlock}（{@code sqlExpr} 传字段名）+
+     *       {@link #endTxBlockField}：SQL 取生成类的静态常量字段（如 {@code "saveSql"}）。
+     *       异常消息与失败日志都<em>引用该字段</em>而非内嵌字面量——生成代码里不重复
+     *       出现同一段 SQL 文本，消息在运行时拿到的仍是完整 SQL；</li>
+     *   <li><b>运行时变量</b>——{@link #beginTxBlockVar} + {@link #endTxBlockVar}：SQL 由
+     *       运行时 {@code StringBuilder} 拼出，先固化为 {@code sqlText} 再复用。</li>
+     * </ul>
+     *
      * @param method            方法构建器
      * @param connection        Connection 类
      * @param preparedStatement PreparedStatement 类
-     * @param sqlExpr           传给 prepareStatement 的 SQL 表达式（SQL 字段名，或动态构建的
-     *                          IN 查询用 {@code sql.toString()}）
+     * @param sqlExpr           传给 prepareStatement 的 SQL 表达式（SQL 常量字段名，或已固化的
+     *                          {@code "sqlText"} 变量）
      * @param generatedKeys     是否使用 {@code RETURN_GENERATED_KEYS}
+     * @param logSql            是否生成 DEBUG 日志
      */
     public static void beginTxBlock(MethodSpec.Builder method, ClassName connection,
                                     ClassName preparedStatement, String sqlExpr, boolean generatedKeys, boolean logSql) {
@@ -528,35 +541,8 @@ public final class SqlCodegen {
     }
 
     /**
-     * 以 catch + finally（releaseConnection）关闭感知事务的 try 块。catch 抛出
-     * {@code JForgeException}，其消息内嵌操作名、表名与 SQL，以及底层 {@code SQLException}
-     * 的消息——失败信息自描述，无需深挖异常链。
-     *
-     * @param method       方法构建器
-     * @param sqlException SQLException 类
-     * @param operation    操作名（如 {@code "save"}、{@code "findById"}）
-     * @param tableName    操作目标表
-     * @param sql          失败的 SQL 语句（动态 IN 查询时为其固定前缀）
-     */
-    public static void endTxBlock(MethodSpec.Builder method, ClassName sqlException,
-            String operation, String tableName, String sql, boolean logSql) {
-        String message = operation + " on table '" + tableName + "' [" + sql + "]: ";
-        method.nextControlFlow("catch ($T e)", sqlException);
-        if (logSql) {
-            method.beginControlFlow("if (log.isWarnEnabled())");
-            method.addStatement("log.warn($S, $S, e)", "SQL failed: {}", sql);
-            method.endControlFlow();
-        }
-        method.addStatement("throw new $T($T.Code.SQL, $S + e.getMessage(), $S, e)",
-                ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(), message, sql)
-                .nextControlFlow("finally")
-                .addStatement("releaseConnection(conn)")
-                .endControlFlow();
-    }
-
-    /**
-     * 打开动态拼接 SQL 的执行块：把已构建完成的 {@code StringBuilder sql} 固化成一个
-     * {@code String} 局部变量 {@code sqlText}，随后的 DEBUG 日志与
+     * 打开运行时拼接 SQL 的执行块：把已构建完成的 {@code StringBuilder sql} 固化成一个
+     * 名为 {@code sqlText} 的 {@code String} 局部变量，随后的 DEBUG 日志与
      * {@code conn.prepareStatement(...)} 都复用它。
      *
      * <p><strong>为什么固化</strong>：{@code sql.toString()} 是 O(n) 复制。若在
@@ -566,13 +552,13 @@ public final class SqlCodegen {
      *
      * <p>调用前提：{@code conn} 已赋值、{@code sql} 的全部 append 已完成（含各早退守卫
      * 之后），因此本方法须在拼接阶段末尾调用。变量名固定 {@code sqlText}，与
-     * {@link #endTxBlockSqlVar} 配对使用。</p>
+     * {@link #endTxBlockVar} 配对使用。</p>
      *
      * @param method            方法构建器
      * @param preparedStatement PreparedStatement 类
      * @param logSql            是否生成 DEBUG 日志
      */
-    public static void beginDynamicSqlBlock(MethodSpec.Builder method, ClassName preparedStatement,
+    public static void beginTxBlockVar(MethodSpec.Builder method, ClassName preparedStatement,
             boolean logSql) {
         method.addStatement("$T sqlText = sql.toString()", String.class);
         if (logSql) {
@@ -584,8 +570,8 @@ public final class SqlCodegen {
     }
 
     /**
-     * 收尾动态拼接 SQL 代码块：catch 中直接复用已固化的 {@code sqlText} 变量，不再重复
-     * {@code sql.toString()}。与 {@link #beginDynamicSqlBlock} 配对；也可搭配
+     * 收尾运行时拼接 SQL 代码块：catch 中直接复用已固化的 {@code sqlText} 变量，不再重复
+     * {@code sql.toString()}。与 {@link #beginTxBlockVar} 配对；也可搭配
      * {@link #beginTxBlock} 使用（后者传 {@code "sqlText"} 作为 SQL 表达式）。
      *
      * @param method       方法构建器
@@ -594,7 +580,7 @@ public final class SqlCodegen {
      * @param tableName    操作目标表
      * @param logSql       是否生成 WARN 日志
      */
-    public static void endTxBlockSqlVar(MethodSpec.Builder method, ClassName sqlException,
+    public static void endTxBlockVar(MethodSpec.Builder method, ClassName sqlException,
             String operation, String tableName, boolean logSql) {
         String prefix = operation + " on table '" + tableName + "' [";
         String suffix = "]: ";
@@ -613,16 +599,19 @@ public final class SqlCodegen {
     }
 
     /**
-     * 关闭事务代码块（SQL 为<em>编译期常量字段名</em>版）：{@code sqlExpr} 必须是生成类中
-     * 的静态 SQL 常量字段名（如 {@code "saveSql"}），直接内联进异常消息与失败日志。
+     * 关闭事务代码块（SQL 为<em>静态常量字段名</em>版）：{@code sqlExpr} 必须是生成类中的
+     * 静态 SQL 常量字段名（如 {@code "saveSql"}），直接内联进异常消息与失败日志，
+     * 不先落局部变量。
      *
-     * <p><strong>为何内联而非先落局部变量</strong>：{@code private static final String
-     * saveSql = "..."} 是 JLS 4.12.4 的<em>常量变量</em>，因此 {@code "…[" + saveSql + "]…"}
-     * 会被 javac 常量折叠为单个字符串字面量——异常消息在编译期就拼好了，运行时零开销。
-     * 若先写 {@code String sqlText = saveSql;} 再拼接，{@code sqlText} 是非 final 局部变量、
-     * 不是常量表达式，折叠失效：每次抛异常都要新建 {@code StringBuilder} 逐段拼接。</p>
+     * <p><strong>为何内联</strong>：{@code private static final String saveSql = "..."} 是
+     * JLS 4.12.4 的<em>常量变量</em>，引用它等价于直接用字面量——生成的字节码少一次
+     * {@code ldc}/{@code astore}/{@code aload}、少一个局部变量槽，且字符串拼接的运行时
+     * 参数少一个。（注意：JDK 9+ 的拼接走 {@code invokedynamic} 的
+     * {@code StringConcatFactory}，并非 {@code StringBuilder} 逐段 append——常量折叠
+     * 省下的是"多传一个已有常量作参数"，不是"省掉整个拼接"。异常路径本就是冷路径，
+     * 收益很小，这里主要是让生成代码更直接。）</p>
      *
-     * <p>动态拼接场景请用 {@link #endTxBlockSqlVar}——那里的 SQL 是运行时 StringBuilder
+     * <p>动态拼接场景请用 {@link #endTxBlockVar}——那里的 SQL 是运行时 StringBuilder
      * 的产物，必须固化成变量才能避免重复 {@code toString()}（O(n) 复制），与本方法的
      * 取舍恰好相反。</p>
      *
@@ -630,10 +619,10 @@ public final class SqlCodegen {
      * @param sqlException SQLException 类
      * @param operation    操作名（如 {@code "existsById"}）
      * @param tableName    操作目标表
-     * @param sqlExpr      静态 SQL 常量字段名（编译期常量，可被常量折叠）
+     * @param sqlExpr      静态 SQL 常量字段名（编译期常量）
      * @param logSql       是否生成 WARN 日志
      */
-    public static void endTxBlockExpr(MethodSpec.Builder method, ClassName sqlException,
+    public static void endTxBlockField(MethodSpec.Builder method, ClassName sqlException,
             String operation, String tableName, String sqlExpr, boolean logSql) {
         String prefix = operation + " on table '" + tableName + "' [";
         String suffix = "]: ";

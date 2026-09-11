@@ -134,8 +134,8 @@ public final class DeleteGenerator {
                         1 + WhereCondition.staticBindCount(conditions));
             }
             spec.addStatement("return ps.executeUpdate()");
-            SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(),
-                    sql.toString(), logSql);
+            SqlCodegen.endTxBlockField(spec, sqlException, methodName, info.model.tableName(),
+                    sqlField, logSql);
             return spec.build();
         }
 
@@ -184,14 +184,14 @@ public final class DeleteGenerator {
             spec.endControlFlow();
         }
         // 固化 SQL 字符串:DEBUG 日志、prepareStatement 与 catch 复用同一份,只 toString 一次。
-        SqlCodegen.beginDynamicSqlBlock(spec, preparedStatement, logSql);
+        SqlCodegen.beginTxBlockVar(spec, preparedStatement, logSql);
         spec.addStatement("int i = 1");
         for (WhereCondition condition : conditions) {
             WhereCondition.appendBind(spec, condition);
         }
         criteriaGenerator.emitBind(spec, criteriaUnits, "i++");
         spec.addStatement("return ps.executeUpdate()");
-        SqlCodegen.endTxBlockSqlVar(spec, sqlException, methodName, info.model.tableName(), logSql);
+        SqlCodegen.endTxBlockVar(spec, sqlException, methodName, info.model.tableName(), logSql);
         return spec.build();
     }
 

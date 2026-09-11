@@ -139,7 +139,7 @@ public final class CrudGenerator {
             method.endControlFlow();
         }
         method.addStatement("return entity");
-        SqlCodegen.endTxBlockExpr(method, sqlException, "save", info.model.tableName(),
+        SqlCodegen.endTxBlockField(method, sqlException, "save", info.model.tableName(),
                 "saveSql", configHelper.logSql(info.element));
         return method.build();
     }
@@ -229,7 +229,7 @@ public final class CrudGenerator {
         }
 
         method.addStatement("return entities");
-        SqlCodegen.endTxBlockExpr(method, sqlException, "save", info.model.tableName(),
+        SqlCodegen.endTxBlockField(method, sqlException, "save", info.model.tableName(),
                 "saveAllSql", configHelper.logSql(info.element));
         return method.build();
     }
@@ -495,7 +495,7 @@ public final class CrudGenerator {
         method.addCode(codeBlock);
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
-        SqlCodegen.endTxBlockExpr(method, sqlException, "deleteById", info.model.tableName(), "deleteByIdSql", configHelper.logSql(info.element));
+        SqlCodegen.endTxBlockField(method, sqlException, "deleteById", info.model.tableName(), "deleteByIdSql", configHelper.logSql(info.element));
         return method.build();
     }
 
@@ -527,7 +527,7 @@ public final class CrudGenerator {
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "sqlText", false, logSql);
         appendInBindings(method, info);
         method.addStatement("return ps.executeUpdate()");
-        SqlCodegen.endTxBlockSqlVar(method, sqlException, "deleteByIds", info.model.tableName(), logSql);
+        SqlCodegen.endTxBlockVar(method, sqlException, "deleteByIds", info.model.tableName(), logSql);
         return method.build();
     }
 
@@ -576,7 +576,7 @@ public final class CrudGenerator {
                 idColumn.isEnum, idColumn.converter != null ? SqlCodegen.converterFieldName(info.model, idColumn) : null, info.fieldRequireNonNull));
         method.addCode("\n");
         method.addStatement("return ps.executeUpdate() > 0");
-        SqlCodegen.endTxBlockExpr(method, sqlException, "update", info.model.tableName(), "updateSql", logSql);
+        SqlCodegen.endTxBlockField(method, sqlException, "update", info.model.tableName(), "updateSql", logSql);
         return method.build();
     }
 
@@ -611,7 +611,7 @@ public final class CrudGenerator {
         method.endControlFlow();
         method.addStatement("return mapRow(rs)");
         method.endControlFlow();
-        SqlCodegen.endTxBlockExpr(method, sqlException, "findById", info.model.tableName(), "findByIdSql", logSql);
+        SqlCodegen.endTxBlockField(method, sqlException, "findById", info.model.tableName(), "findByIdSql", logSql);
         return method.build();
     }
 
@@ -645,7 +645,7 @@ public final class CrudGenerator {
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "sqlText", false, logSql);
         appendInBindings(method, info);
         mapEntityList(info, resultSet, method);
-        SqlCodegen.endTxBlockSqlVar(method, sqlException, "findByIds", info.model.tableName(), logSql);
+        SqlCodegen.endTxBlockVar(method, sqlException, "findByIds", info.model.tableName(), logSql);
         return method.build();
     }
 
@@ -668,7 +668,7 @@ public final class CrudGenerator {
         boolean logSql = configHelper.logSql(info.element);
         SqlCodegen.beginTxBlock(method, connection, preparedStatement, "findAllSql", false, logSql);
         mapEntityList(info, resultSet, method);
-        SqlCodegen.endTxBlockExpr(method, sqlException, "findAll", info.model.tableName(), "findAllSql", logSql);
+        SqlCodegen.endTxBlockField(method, sqlException, "findAll", info.model.tableName(), "findAllSql", logSql);
         return method.build();
     }
 
@@ -705,7 +705,7 @@ public final class CrudGenerator {
         method.addStatement("rs.next()");
         method.addStatement("return rs.getLong(1)");
         method.endControlFlow();
-        SqlCodegen.endTxBlockExpr(method, sqlException, "count", info.model.tableName(), "countSql", logSql);
+        SqlCodegen.endTxBlockField(method, sqlException, "count", info.model.tableName(), "countSql", logSql);
         return method.build();
     }
 
@@ -742,7 +742,7 @@ public final class CrudGenerator {
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
         method.addStatement("return rs.next()");
         method.endControlFlow();
-        SqlCodegen.endTxBlockExpr(method, sqlException, "existsById", info.model.tableName(),
+        SqlCodegen.endTxBlockField(method, sqlException, "existsById", info.model.tableName(),
                 "existsByIdSql", logSql);
         return method.build();
     }

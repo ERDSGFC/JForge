@@ -235,8 +235,8 @@ public final class QueryGenerator {
             }
             appendQueryExecution(spec, info, method, builder, embedded, returnType, mappingSql,
                     resultSet, isUpdate, generatedKeys);
-            SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(),
-                    staticSql, configHelper.logSql(info.element));
+            SqlCodegen.endTxBlockField(spec, sqlException, methodName, info.model.tableName(),
+                    sqlField, configHelper.logSql(info.element));
             return spec.build();
         }
         return dynamicQueryMethod2(info, method, query, builder, embedded, connection,
@@ -267,7 +267,7 @@ public final class QueryGenerator {
             }
         }
         // 固化 SQL 字符串:DEBUG 日志、prepareStatement 与 catch 复用同一份,只 toString 一次。
-        SqlCodegen.beginDynamicSqlBlock(spec, preparedStatement, logSql);
+        SqlCodegen.beginTxBlockVar(spec, preparedStatement, logSql);
         spec.addStatement("int i = 1");
         for (QueryToken token : scan.tokens()) {
             if (token.name() == null) continue;
@@ -285,7 +285,7 @@ public final class QueryGenerator {
             appendResultMapping(spec, info, method, builder, embedded, returnType, mappingSql);
             spec.endControlFlow();
         }
-        SqlCodegen.endTxBlockSqlVar(spec, sqlException, methodName, info.model.tableName(), logSql);
+        SqlCodegen.endTxBlockVar(spec, sqlException, methodName, info.model.tableName(), logSql);
         return spec.build();
     }
 
@@ -516,7 +516,7 @@ public final class QueryGenerator {
             }
         }
         // 固化 SQL 字符串:DEBUG 日志、prepareStatement 与 catch 复用同一份,只 toString 一次。
-        SqlCodegen.beginDynamicSqlBlock(spec, preparedStatement, logSql);
+        SqlCodegen.beginTxBlockVar(spec, preparedStatement, logSql);
         // 绑定阶段:与拼接同条件展开,运行时索引 i 递增,类型精确 setXxx。
         spec.addStatement("int i = 1");
         for (int f = 0; f < fragments.size(); f++) {
@@ -549,7 +549,7 @@ public final class QueryGenerator {
             appendResultMapping(spec, info, method, builder, embedded, returnType, selectPart);
             spec.endControlFlow();
         }
-        SqlCodegen.endTxBlockSqlVar(spec, sqlException, methodName, info.model.tableName(), logSql);
+        SqlCodegen.endTxBlockVar(spec, sqlException, methodName, info.model.tableName(), logSql);
         return spec.build();
     }
 

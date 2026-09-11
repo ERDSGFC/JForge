@@ -261,7 +261,7 @@ public final class SelectGenerator {
             spec.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
             queryGenerator.appendResultMapping(spec, info, method, builder, embedded, returnType, baseSql);
             spec.endControlFlow();
-            SqlCodegen.endTxBlock(spec, sqlException, methodName, info.model.tableName(), fullSql, logSql);
+            SqlCodegen.endTxBlockField(spec, sqlException, methodName, info.model.tableName(), sqlField, logSql);
             return spec.build();
         }
 
@@ -299,7 +299,7 @@ public final class SelectGenerator {
         }
         criteriaGenerator.emitGroupAppend(spec, criteriaUnits, "where", " AND ");
         // 固化 SQL 字符串:DEBUG 日志、prepareStatement 与 catch 复用同一份,只 toString 一次。
-        SqlCodegen.beginDynamicSqlBlock(spec, preparedStatement, logSql);
+        SqlCodegen.beginTxBlockVar(spec, preparedStatement, logSql);
         // 绑定阶段：与拼接同条件展开，运行时索引 i 递增，类型精确 setXxx。
         spec.addStatement("int i = 1");
         for (WhereCondition condition : conditions) {
@@ -312,7 +312,7 @@ public final class SelectGenerator {
         queryGenerator.appendResultMapping(spec, info, method, builder, embedded, returnType, baseSql);
         spec.endControlFlow();
 
-        SqlCodegen.endTxBlockSqlVar(spec, sqlException, methodName, info.model.tableName(), logSql);
+        SqlCodegen.endTxBlockVar(spec, sqlException, methodName, info.model.tableName(), logSql);
         return spec.build();
     }
 
