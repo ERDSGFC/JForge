@@ -231,6 +231,31 @@ public interface UserRepository extends BaseRepository<UserEntity, Long> {
 
 **继承的 CRUD**(`BaseRepository<T, ID>`):`save`(单条/批量)、`delete`、`deleteById`、`deleteByIds`、`update`、`findById`、`findByIds`、`findAll`、`count`、`existsById`、`createEntity`。
 
+### `@Dao.fieldRequireNonNull` 列级非空校验
+
+`@Dao(fieldRequireNonNull = false)` 关闭生成代码对**非空列**的 `Objects.requireNonNull` 前置校验(默认 `true`,即开启):
+
+```java
+@Dao                                  // 默认 fieldRequireNonNull = true
+public interface UserRepository extends BaseRepository<UserEntity, Long> { }
+
+@Dao(fieldRequireNonNull = false)     // 列级校验全部不生成
+public interface BatchRepository extends BaseRepository<BatchUser, Long> { }
+```
+
+| | 默认 `true` | `false` |
+|---|---|---|
+| 非空引用列(如 `@NullMarked` 下的 `String nickname()`) | `Objects.requireNonNull(entity.nickname(), "entity.nickname() must not be null");` + 绑定 | 仅绑定 |
+| 可空列 / 基本类型列 | 不生成(空值合法、基本类型无 null) | 不生成 |
+| 方法参数守卫(`save: entity must not be null` 等) | 生成 | **仍生成**(不受此开关控制) |
+
+- 判定条件:`!nullable && !javaType.isPrimitive()`——即"列非空**且**不是基本类型"才校验(可空列允许 null;基本类型不会有 null)
+- 覆盖范围:实体列的 INSERT/UPDATE 绑定(`save`/`save(List)`/`update`)与主键绑定(`deleteById`/`findById`/`existsById`/`findByIds` 等)
+- **默认开启的理由**:列声明为非空(尤其 `@NullMarked` 作用域下的无标注引用类型)意味着"该列不允许缺失",让它为 `null` 是调用方缺陷——在绑定处立即以带列名的 NPE 失败,胜过让 null 流到 JDBC 层
+- **关闭的场景**:追求极致吞吐的热路径(每列省一次 `Objects.requireNonNull` 调用与分支)。**这是把编译期契约降级为运行期静默行为**——非空列传 `null` 时不再快速失败,而是交由驱动/数据库处理(通常以约束违规或写入 SQL NULL 告终,错误信息远离根因)
+
+> 该开关只影响**列值**校验;**方法参数**的 `@NonNull` 契约守卫(如 `save(entity)` 的 `requireNonNull(entity, "save: entity must not be null")`)始终生成,与 `fieldRequireNonNull` 无关。
+
 **@Query 规则**:
 
 - 占位符 `:name` 必须对应同名 `@Bind` 参数；`@Bind` 不再有 `value` 属性
@@ -474,6 +499,8 @@ package com.example.data;
 | `batchSize` | 50 | `save(List)` 批处理分块大小;0 关闭 |
 
 **批处理粒度覆盖**:`@BatchSize(N)` 标在仓库接口(类型级)或重声明的 `save(List<T>)` 方法(方法级)。优先级:方法级 > 类型级 > `@JForgeConfig.batchSize` > 默认 50。
+
+**注意**:`@Dao.fieldRequireNonNull` 是**仓库级**配置(标在 `@Dao` 上),与上表 `@JForgeConfig` 的属性互不影响——后者按接口/包链解析,前者只看仓库接口自身(见第 3 节)。
 
 ## 5. 获取仓库
 

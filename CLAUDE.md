@@ -19,6 +19,9 @@ mvn clean install
 # jforge-spring-boot-pgsql 是真 PG 集成测试——本地 PG 不可达时自动跳过）
 mvn test -pl jforge-bench,jforge-spring-boot-starter
 mvn test -pl jforge-spring-boot-pgsql    # 需本地 PG；连接参数 -Djforge.pgsql.url/-Djforge.pgsql.user/-Djforge.pgsql.password
+mvn test -pl jforge-spring-boot-postgresql   # Spring Boot 示例应用：@SpringBootTest 直接起上下文连本地 PG
+                                             # （application.yml 硬编码 localhost:5432/jpa），无 Assumptions 跳过守卫
+                                             # ——PG 不可达时测试失败而非跳过，与上面 pgsql 模块行为不同
 
 # 运行单个测试类（JUnit 5）
 mvn test -pl jforge-bench -Dtest=TransactionTest
@@ -44,13 +47,16 @@ mvn -Prelease deploy
 
 | 模块 | 职责 |
 |---|---|
-| `jforge-annotation` | 注解：`@Table/@Id/@Column/@GeneratedValue` + `@Dao/@Query/@Bind/@RawSql/@ReturnGeneratedKeys` + `@Select/@Update/@UpdateSet/@Delete/@Condition/@Where/@And/@Or/Op`（Query 使用 `:name` 与 `{:name}`；每个参数必须有唯一语义注解，Query 的 `@Condition.value` 是原生 SQL 列名且必须显式填写，`@Where` 字段必须显式标注；支持原生 SQL 片段、条件对象嵌套分组）+ `@JForgeSql`、`@Convert`/`JForgeConverter` 与 JSpecify 空性/集合 IN/NOT IN 支持 |
-| `jforge-processor` | 编译期生成器（javapoet + auto-service，provided）：`JForgeProcessor`（入口，**只处理 @Dao**，经 `BaseRepository<T,ID>` 定位实体）+ `EntityGenerator`（实体→Impl 嵌套类 TypeSpec）+ `RepositoryGenerator`（@Dao→CRUD + @Query + @Select/@Update/@Delete 声明式 SQL + 条件对象展开（`CriteriaGenerator`：`@JForgeSql` 类型校验、`@Where` 显式嵌套括号/`@And/@Or`/Optional IS NULL）+ DTO record 投影 + 固定 SQL 常量字段 + 实体 impl 嵌套类 + Repositories 工厂） |
+| `jforge-annotation` | 注解：`@Table/@Id/@Column/@GeneratedValue` + `@Dao/@Query/@Bind/@RawSql/@ReturnGeneratedKeys` + `@Select/@Update/@UpdateSet/@Delete/@Condition/@Where/@And/@Or/Op`（Query 使用 `:name` 与 `{:name}`；每个参数必须有唯一语义注解，Query 的 `@Condition.value` 是原生 SQL 列名且必须显式填写，`@Where` 字段必须显式标注；支持原生 SQL 片段、条件对象嵌套分组）+ `@JForgeSql`、`@Convert`/`JForgeConverter` 与 JSpecify 空性/集合 IN/NOT IN 支持；`@Dao.fieldRequireNonNull`（默认 `true`）控制列级非空校验代码生成 |
+| `jforge-processor` | 编译期生成器（javapoet + auto-service，provided）：`JForgeProcessor`（入口，**只处理 @Dao**，经 `BaseRepository<T,ID>` 定位实体；读取 `@Dao.fieldRequireNonNull` 存入 `DaoInfo`）+ `EntityGenerator`（实体→Impl 嵌套类 TypeSpec）+ `RepositoryGenerator`（@Dao→CRUD + @Query + @Select/@Update/@Delete 声明式 SQL + 条件对象展开（`CriteriaGenerator`：`@JForgeSql` 类型校验、`@Where` 显式嵌套括号/`@And/@Or`/Optional IS NULL）+ DTO record 投影 + 固定 SQL 常量字段 + 实体 impl 嵌套类 + Repositories 工厂）；`CrudGenerator` 的 `bindColumns`/`idBindParam` 透传 `fieldRequireNonNull`，生成键回写经 `appendIdWriteback` 统一复用 `SqlCodegen.readColumn`（与 `mapRow` 同源） |
 | `jforge-core` | 框架库（**无 Spring 依赖**）：`TransactionManager`（SPI）、`SimpleTransactionManager`、`JForgeException`（带 `Code` 错误码分类 + SQL 上下文）、`JForge` 门面（`io.github.erdsgfc.jforge`）；`BaseRepository`、`TransactionOperations`、`AbstractRepository`、回调接口（`io.github.erdsgfc.jforge.core`） |
 | `jforge-bench` | ORM 集成测试（`RepositoryCrudTest`/`TransactionTest`）+ ORM vs 裸 JDBC JMH 基准 |
 | `jforge-spring-boot-starter` | Spring Boot 自动配置：注册 `SpringTransactionManager` bean（包装 `PlatformTransactionManager`），经 `@Autowired` 注入生成的仓库实现（构造器注入，无全局状态） |
 | `jforge-spring-boot-pgsql` | **真 PostgreSQL 集成测试**（不发布）：连接本地 PG 验证引用符 SQL / `INSERT ... RETURNING` 生成键 / 批量键回写 / Spring 事务 join；连接参数 `-Djforge.pgsql.url/-Djforge.pgsql.user/-Djforge.pgsql.password`（默认 `localhost:5432/jforge`、`jforge`/`jforge`），无 PG 时测试经 Assumptions 自动跳过、构建保持绿色 |
+| `jforge-spring-boot-postgresql` | **Spring Boot 示例应用**：`@SpringBootApplication` + `@JForgeConfig(springBeans=true, naming=CAMEL_TO_SNAKE)` 的完整可运行样例（`SysAdmin`/`SysAdminRepository`），演示 `@Update`/`@Delete` 声明式 SQL、`@Condition` 数组条件与 `BaseEntity` default 列（`INSERT_ONLY`/`BOTH` 策略）；自带 Spring Boot BOM **4.1.1**（独立于根 POM 的 3.5.6），并用 Lombok + 显式 `annotationProcessorPaths`。注意事项见下方"发布前的待办" |
 | `jforge-lambda` | 对象创建策略的 JMH 基准（历史方法学验证） |
+
+**发布前的待办**（实测确认，非推测）：根 POM 的 `<module>` 列出全部 8 个模块，且没有任何模块配置 `maven.deploy.skip` / `<skip>`，`release` profile 也不做模块过滤——因此 `mvn -Prelease deploy` 会**尝试发布所有模块**，上表中标注"不发布"的 `jforge-bench`/`jforge-lambda`/两个 PG 模块目前仅靠文档约定、并无构建层面的拦截。需在发布前二选一：给这些模块加 `maven.deploy.skip=true`，或改用 `mvn -Prelease deploy -pl <发布模块列表>`。另：`jforge-spring-boot-postgresql/src/main/resources/application.yml` 硬编码了本地 PG 口令（`postgres`/`asdfjj`），该模块若纳入发布需先外置为占位符或环境变量。
 
 ## 编程式事务
 
