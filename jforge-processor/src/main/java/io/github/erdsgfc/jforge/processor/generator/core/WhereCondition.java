@@ -264,8 +264,12 @@ public record WhereCondition(String columnName, String op, String paramName, Str
         if (c.collection || c.array) {
             // 集合/数组都直接遍历入参绑值(零临时内存;空集时循环 0 次,与拼接阶段
             // 的 1 = 0 分支一致——无占位符可绑)。
+            // 元素为基本类型时不可能为 null,走类型精确的 setXxx——long[] 之类的入参
+            // 若一律 setObject,每个元素都要装箱成 Long(千个 id 即千次分配)。引用元素
+            // 保留 setObject:集合/数组中的 null 元素是合法输入,由驱动绑定 SQL NULL。
+            boolean elementNullable = !c.elementTypeName.isPrimitive();
             spec.beginControlFlow("for ($T value : $N)", c.elementTypeName, c.paramName);
-            spec.addCode(SqlCodegen.bindParam(c.typeName, "value", "i++", true, false,
+            spec.addCode(SqlCodegen.bindParam(c.typeName, "value", "i++", elementNullable, false,
                     c.converterField));
             spec.addCode("\n");
             spec.endControlFlow();

@@ -541,9 +541,12 @@ public final class CriteriaGenerator {
         if (unit.collection || unit.array) {
             // 直接遍历 getter 返回值绑值(零临时内存;空集时循环 0 次,与拼接阶段的
             // 1 = 0 分支一致——无占位符可绑)。
+            // 元素为基本类型时不可能为 null,走类型精确的 setXxx 免去逐元素装箱;
+            // 引用元素保留 setObject(null 元素是合法输入,由驱动绑定 SQL NULL)。
+            boolean elementNullable = !unit.elementType.isPrimitive();
             beginGuard(spec, unit.guard);
             spec.beginControlFlow("for ($T value : $L)", unit.elementType, unit.readExpr);
-            spec.addCode(SqlCodegen.bindParam(unit.bindType, "value", "i++", true, false,
+            spec.addCode(SqlCodegen.bindParam(unit.bindType, "value", "i++", elementNullable, false,
                     unit.converterField));
             spec.addCode("\n");
             spec.endControlFlow();

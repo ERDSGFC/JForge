@@ -108,10 +108,14 @@ public final class SqlCodegen {
     public static CodeBlock bindParam(String typeName, TypeName javaType, String expr, String indexExpr, boolean nullable, boolean isEnum,
                                       String converterField, boolean requireNonNull) {
         CodeBlock.Builder codeBlock = CodeBlock.builder();
-        // 不为空 && 不是基础类型 && 并且null判断
-        if (!nullable && !javaType.isPrimitive() && requireNonNull) {
-            codeBlock.addStatement(Nullability.requireNonNull(expr));
-        }
+        // 非空契约的列在绑定处快速失败。Objects.requireNonNull 返回入参本身,因此把校验
+        // 内联进 setter 实参即可——表达式只求值一次。若按老写法单起一条语句校验、再在
+        // setter 里写一遍表达式,带副作用的取值(如 default getter 的 LocalDateTime.now()
+        // /UUID.randomUUID())会被求值两次,校验的对象与写入的对象不是同一个值。
+        // 以 CodeBlock 承载(而非 String)才能保留 $T 占位符,交给下面的 $L 原样展开。
+        CodeBlock valueExpr = !nullable && !javaType.isPrimitive() && requireNonNull
+                ? Nullability.requireNonNull(expr)
+                : CodeBlock.of("$L", expr);
         if (converterField != null) {
             // 转换器绑定:setObject(i, v, CONV.sqlType().getVendorTypeNumber())——转 int
             // 类型码发送(3 参 SQLType 版本 pgjdbc 对 JDBCType.OTHER 未实现,抛"方法尚未
@@ -119,16 +123,16 @@ public final class SqlCodegen {
             // varchar 隐式转换的类型也能绑定);用户覆盖 sqlType() 返回 JDBCType 时钉死
             // 具体类型码(驱动自定义 SQLType 需驱动支持其 vendorTypeNumber 语义)。
             codeBlock.add("$L.setObject($L, $L.toDatabase($L), $L.sqlType().getVendorTypeNumber());",
-                    "ps", indexExpr, converterField, expr, converterField);
+                    "ps", indexExpr, converterField, valueExpr, converterField);
         } else if (isEnum) {
-            codeBlock.add("$L.setObject($L, $L, $T.OTHER);", "ps", indexExpr, expr,
+            codeBlock.add("$L.setObject($L, $L, $T.OTHER);", "ps", indexExpr, valueExpr,
                     JDBC_SQL_TYPES.getJavaPoetClassName());
         } else if (nullable) {
-            codeBlock.add("$L.setObject($L, $L);", "ps", indexExpr, expr);
+            codeBlock.add("$L.setObject($L, $L);", "ps", indexExpr, valueExpr);
 
         } else {
             codeBlock.add("$L.$L($L, $L);",
-                    "ps", TypeNameUtils.jdbcSetter(typeName), indexExpr, expr);
+                    "ps", TypeNameUtils.jdbcSetter(typeName), indexExpr, valueExpr);
         }
         return codeBlock.build();
     }
@@ -551,21 +555,50 @@ public final class SqlCodegen {
     }
 
     /**
-     * 关闭事务代码块（SQL 为运行时表达式版）。与 {@link #endTxBlock(MethodSpec.Builder,
-     * ClassName, String, String, String, boolean)}（编译期字面量）不同，{@code sqlExpr}
-     * 是生成代码中的表达式（如动态拼接的 {@code sql.toString()}，或静态 SQL 常量
-     * <em>字段名</em>如 {@code "saveSql"}），因此异常消息和失败日志包含运行时完整
-     * SQL——静态方法传字段名还避免了编译期重复调用 SQL 生成函数（字段初始化与错误
-     * 消息共用同一字符串）。
+     * 打开动态拼接 SQL 的执行块：把已构建完成的 {@code StringBuilder sql} 固化成一个
+     * {@code String} 局部变量 {@code sqlText}，随后的 DEBUG 日志与
+     * {@code conn.prepareStatement(...)} 都复用它。
+     *
+     * <p><strong>为什么固化</strong>：{@code sql.toString()} 是 O(n) 复制。若在
+     * {@code prepareStatement}、DEBUG 日志与 catch 块各写一次，同一条 SQL 会被完整复制
+     * 两三遍——失败路径与开启 SQL 日志时尤其浪费（异常构造时再分配大字符串最不该）。
+     * 固化后无论哪条路径都只复制一次。</p>
+     *
+     * <p>调用前提：{@code conn} 已赋值、{@code sql} 的全部 append 已完成（含各早退守卫
+     * 之后），因此本方法须在拼接阶段末尾调用。变量名固定 {@code sqlText}，与
+     * {@link #endTxBlockSqlVar} 配对使用。</p>
+     *
+     * @param method            方法构建器
+     * @param preparedStatement PreparedStatement 类
+     * @param logSql            是否生成 DEBUG 日志
      */
-    public static void endTxBlockExpr(MethodSpec.Builder method, ClassName sqlException,
-            String operation, String tableName, String sqlExpr, boolean logSql) {
+    public static void beginDynamicSqlBlock(MethodSpec.Builder method, ClassName preparedStatement,
+            boolean logSql) {
+        method.addStatement("$T sqlText = sql.toString()", String.class);
+        if (logSql) {
+            method.beginControlFlow("if (log.isDebugEnabled())");
+            method.addStatement("log.debug($S, $L)", "Executing SQL: {}", "sqlText");
+            method.endControlFlow();
+        }
+        method.beginControlFlow("try ($T ps = conn.prepareStatement($L))", preparedStatement, "sqlText");
+    }
+
+    /**
+     * 收尾动态拼接 SQL 代码块：catch 中直接复用已固化的 {@code sqlText} 变量，不再重复
+     * {@code sql.toString()}。与 {@link #beginDynamicSqlBlock} 配对；也可搭配
+     * {@link #beginTxBlock} 使用（后者传 {@code "sqlText"} 作为 SQL 表达式）。
+     *
+     * @param method       方法构建器
+     * @param sqlException SQLException 类
+     * @param operation    操作名（如 {@code "findByIds"}）
+     * @param tableName    操作目标表
+     * @param logSql       是否生成 WARN 日志
+     */
+    public static void endTxBlockSqlVar(MethodSpec.Builder method, ClassName sqlException,
+            String operation, String tableName, boolean logSql) {
         String prefix = operation + " on table '" + tableName + "' [";
         String suffix = "]: ";
         method.nextControlFlow("catch ($T e)", sqlException);
-        // SQL 表达式(如 sql.toString())只求值一次——失败消息、日志与异常各引用同一
-        // 局部变量,避免动态拼接 SQL 在异常路径上被重复 toString(O(n) 复制)。
-        method.addStatement("$T sqlText = $L", String.class, sqlExpr);
         if (logSql) {
             method.beginControlFlow("if (log.isWarnEnabled())");
             method.addStatement("log.warn($S, $L, e)", "SQL failed: {}", "sqlText");
@@ -574,6 +607,45 @@ public final class SqlCodegen {
         method.addStatement("throw new $T($T.Code.SQL, $S + sqlText + $S + e.getMessage(), sqlText, e)",
                 ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(),
                 prefix, suffix)
+                .nextControlFlow("finally")
+                .addStatement("releaseConnection(conn)")
+                .endControlFlow();
+    }
+
+    /**
+     * 关闭事务代码块（SQL 为<em>编译期常量字段名</em>版）：{@code sqlExpr} 必须是生成类中
+     * 的静态 SQL 常量字段名（如 {@code "saveSql"}），直接内联进异常消息与失败日志。
+     *
+     * <p><strong>为何内联而非先落局部变量</strong>：{@code private static final String
+     * saveSql = "..."} 是 JLS 4.12.4 的<em>常量变量</em>，因此 {@code "…[" + saveSql + "]…"}
+     * 会被 javac 常量折叠为单个字符串字面量——异常消息在编译期就拼好了，运行时零开销。
+     * 若先写 {@code String sqlText = saveSql;} 再拼接，{@code sqlText} 是非 final 局部变量、
+     * 不是常量表达式，折叠失效：每次抛异常都要新建 {@code StringBuilder} 逐段拼接。</p>
+     *
+     * <p>动态拼接场景请用 {@link #endTxBlockSqlVar}——那里的 SQL 是运行时 StringBuilder
+     * 的产物，必须固化成变量才能避免重复 {@code toString()}（O(n) 复制），与本方法的
+     * 取舍恰好相反。</p>
+     *
+     * @param method       方法构建器
+     * @param sqlException SQLException 类
+     * @param operation    操作名（如 {@code "existsById"}）
+     * @param tableName    操作目标表
+     * @param sqlExpr      静态 SQL 常量字段名（编译期常量，可被常量折叠）
+     * @param logSql       是否生成 WARN 日志
+     */
+    public static void endTxBlockExpr(MethodSpec.Builder method, ClassName sqlException,
+            String operation, String tableName, String sqlExpr, boolean logSql) {
+        String prefix = operation + " on table '" + tableName + "' [";
+        String suffix = "]: ";
+        method.nextControlFlow("catch ($T e)", sqlException);
+        if (logSql) {
+            method.beginControlFlow("if (log.isWarnEnabled())");
+            method.addStatement("log.warn($S, $L, e)", "SQL failed: {}", sqlExpr);
+            method.endControlFlow();
+        }
+        method.addStatement("throw new $T($T.Code.SQL, $S + $L + $S + e.getMessage(), $L, e)",
+                ORM_EXCEPTION.getJavaPoetClassName(), ORM_EXCEPTION.getJavaPoetClassName(),
+                prefix, sqlExpr, suffix, sqlExpr)
                 .nextControlFlow("finally")
                 .addStatement("releaseConnection(conn)")
                 .endControlFlow();

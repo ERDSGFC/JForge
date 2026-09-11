@@ -19,7 +19,7 @@ import static io.github.erdsgfc.jforge.processor.ClassEnum.ORM_EXCEPTION;
 
 /**
  * 生成仓库 impl 类的 CRUD 方法（继承自 {@code BaseRepository} 的 13 个方法）以及行映射 helper
- * （{@code mapRow}/{@code countById}）与 JDBC 批处理辅助。
+ * （{@code mapRow}）与 JDBC 批处理辅助。
  *
  * <p>只依赖 {@link JForgeConfigHelper}（批大小解析）与静态工具类 {@link SqlCodegen}/
  * {@code TypeNameUtils}；其余信息经 {@link JForgeProcessor.DaoInfo} 参数传入。</p>
@@ -62,7 +62,7 @@ public final class CrudGenerator {
         methods.add(findByIdsMethod(info, connection, preparedStatement, resultSet, sqlException));
         methods.add(findAllMethod(info, connection, preparedStatement, resultSet, sqlException));
         methods.add(countMethod(info, connection, preparedStatement, resultSet, sqlException));
-        methods.add(existsByIdMethod(info));
+        methods.add(existsByIdMethod(info, connection, preparedStatement, resultSet, sqlException));
         methods.add(createEntityMethod(info, entityImpl));
         return methods;
     }
@@ -521,11 +521,13 @@ public final class CrudGenerator {
         method.addStatement("return 0");
         method.endControlFlow();
         appendInSql(method, "deleteByIdsBaseSql");
-        SqlCodegen.beginTxBlock(method, connection, preparedStatement, "sql.toString()", false, configHelper.logSql(info.element));
+        // 固化 SQL 字符串:prepareStatement、DEBUG 日志与 catch 复用同一份,只 toString 一次。
+        method.addStatement("$T sqlText = sql.toString()", String.class);
+        boolean logSql = configHelper.logSql(info.element);
+        SqlCodegen.beginTxBlock(method, connection, preparedStatement, "sqlText", false, logSql);
         appendInBindings(method, info);
         method.addStatement("return ps.executeUpdate()");
-        SqlCodegen.endTxBlockExpr(method, sqlException, "deleteByIds", info.model.tableName(),
-                "sql.toString()", configHelper.logSql(info.element));
+        SqlCodegen.endTxBlockSqlVar(method, sqlException, "deleteByIds", info.model.tableName(), logSql);
         return method.build();
     }
 
@@ -638,11 +640,12 @@ public final class CrudGenerator {
         method.addStatement("return $T.of()", ClassName.get(List.class));
         method.endControlFlow();
         appendInSql(method, "findByIdsBaseSql");
-        SqlCodegen.beginTxBlock(method, connection, preparedStatement, "sql.toString()", false, logSql);
+        // 固化 SQL 字符串:prepareStatement、DEBUG 日志与 catch 复用同一份,只 toString 一次。
+        method.addStatement("$T sqlText = sql.toString()", String.class);
+        SqlCodegen.beginTxBlock(method, connection, preparedStatement, "sqlText", false, logSql);
         appendInBindings(method, info);
         mapEntityList(info, resultSet, method);
-        SqlCodegen.endTxBlockExpr(method, sqlException, "findByIds", info.model.tableName(),
-                "sql.toString()", logSql);
+        SqlCodegen.endTxBlockSqlVar(method, sqlException, "findByIds", info.model.tableName(), logSql);
         return method.build();
     }
 
@@ -707,51 +710,40 @@ public final class CrudGenerator {
     }
 
     /**
-     * 构建 {@code existsById(ID)}:委托给私有 {@code countById} helper。
+     * 构建 {@code existsById(ID)}:{@code SELECT 1 FROM t WHERE id=? LIMIT 1}，命中即真。
      *
-     * @param info         仓库信息
+     * <p>不委托 {@code countById}（{@code SELECT COUNT(*)}）：存在性判断只关心"有没有行"，
+     * 让数据库聚合计数是白做的工作——{@code rs.next()} 拿到首行即可返回。取一行子句经
+     * 方言能力表 {@link io.github.erdsgfc.jforge.annotation.DialectSupport#limitOneClause()}
+     * 生成（默认 {@code LIMIT 1}），既向优化器明确"只需一行"的意图，也便于不支持
+     * {@code LIMIT} 的方言覆写。</p>
+     *
+     * @param info              仓库信息
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param resultSet         ResultSet 类
+     * @param sqlException      SQLException 类
      * @return existsById 方法规格
      */
-    private MethodSpec existsByIdMethod(JForgeProcessor.DaoInfo info) {
+    private MethodSpec existsByIdMethod(JForgeProcessor.DaoInfo info, ClassName connection,
+            ClassName preparedStatement, ClassName resultSet, ClassName sqlException) {
         MethodSpec.Builder method = MethodSpec.methodBuilder("existsById")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(TypeName.BOOLEAN)
                 .addParameter(Nullability.withNonNull(info.idType), "id");
-        Nullability.requireNonNull(method, "existsById", "id", "id");
-        method.addStatement("return countById(id) > 0");
-        return method.build();
-    }
-
-    /**
-     * 构建供 {@code existsById} 使用的私有 {@code countById} helper
-     * (SQL 取 {@code countByIdSql} 字段)。
-     *
-     * @param info              仓库信息
-     * @param sqlException      SQLException 类
-     * @param connection        Connection 类
-     * @param preparedStatement PreparedStatement 类
-     * @param resultSet         ResultSet 类
-     * @return countById 方法规格
-     */
-    public MethodSpec countByIdMethod(JForgeProcessor.DaoInfo info, ClassName sqlException,
-                                      ClassName connection, ClassName preparedStatement, ClassName resultSet) {
-        MethodSpec.Builder method = MethodSpec.methodBuilder("countById")
-                .addModifiers(Modifier.PRIVATE)
-                .returns(TypeName.LONG)
-                .addParameter(Nullability.withNonNull(info.idType), "id");
         boolean logSql = configHelper.logSql(info.element);
-        SqlCodegen.beginTxBlock(method, connection, preparedStatement, "countByIdSql", false,
-                logSql);
-        method.addCode(SqlCodegen.bindParam(info.model.idColumn().typeName, info.model.idColumn().javaType, "id", "1", info.model.idColumn().nullable,
-                info.model.idColumn().isEnum, info.model.idColumn().converter != null ? SqlCodegen.converterFieldName(info.model, info.model.idColumn()) : null, false));
+        Nullability.requireNonNull(method, "existsById", "id", "id");
+        SqlCodegen.beginTxBlock(method, connection, preparedStatement, "existsByIdSql", false, logSql);
+        EntityModel.ColumnModel idColumn = info.model.idColumn();
+        method.addCode(SqlCodegen.bindParam(idColumn.typeName, idColumn.javaType, "id", "1", idColumn.nullable,
+                idColumn.isEnum, idColumn.converter != null ? SqlCodegen.converterFieldName(info.model, idColumn) : null, false));
         method.addCode("\n");
         method.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
-        method.addStatement("rs.next()");
-        method.addStatement("return rs.getLong(1)");
+        method.addStatement("return rs.next()");
         method.endControlFlow();
-        SqlCodegen.endTxBlockExpr(method, sqlException, "countById", info.model.tableName(),
-                "countByIdSql", logSql);
+        SqlCodegen.endTxBlockExpr(method, sqlException, "existsById", info.model.tableName(),
+                "existsByIdSql", logSql);
         return method.build();
     }
 

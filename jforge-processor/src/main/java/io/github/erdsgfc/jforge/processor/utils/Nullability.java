@@ -96,6 +96,20 @@ public final class Nullability {
         method.addStatement("$T.requireNonNull($L, $S)", Objects.class, expression,
                 expression + " must not be null");
     }
+    /**
+     * 把 {@code expression} 包成非空校验的<em>表达式</em>代码块（不单独成语句）。
+     *
+     * <p>{@code Objects.requireNonNull(T, String)} 返回入参本身，因此该代码块可直接作为
+     * 实参内联进 setter 调用：校验与使用是同一次求值，带副作用的取值表达式（如
+     * default getter 的 {@code LocalDateTime.now()}）不会被调用两次。生成结果形如
+     * {@code ps.setString(1, Objects.requireNonNull(entity.name(), "... must not be null"))}。</p>
+     *
+     * <p>调用方若需要"先校验再使用"的独立语句形态，用
+     * {@link #requireNonNull(MethodSpec.Builder, String, String, String)}。</p>
+     *
+     * @param expression 取值表达式（如 {@code entity.name()}）
+     * @return 内联校验后的表达式代码块
+     */
     public static CodeBlock requireNonNull(String expression) {
         return CodeBlock.of("$T.requireNonNull($L, $S)", Objects.class, expression,
                 expression + " must not be null");

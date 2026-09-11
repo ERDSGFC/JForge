@@ -183,20 +183,15 @@ public final class DeleteGenerator {
             }
             spec.endControlFlow();
         }
-        if (logSql) {
-            spec.beginControlFlow("if (log.isDebugEnabled())");
-            spec.addStatement("log.debug($S, sql.toString())", "Executing SQL: {}");
-            spec.endControlFlow();
-        }
-        spec.beginControlFlow("try ($T ps = conn.prepareStatement(sql.toString()))", preparedStatement);
+        // 固化 SQL 字符串:DEBUG 日志、prepareStatement 与 catch 复用同一份,只 toString 一次。
+        SqlCodegen.beginDynamicSqlBlock(spec, preparedStatement, logSql);
         spec.addStatement("int i = 1");
         for (WhereCondition condition : conditions) {
             WhereCondition.appendBind(spec, condition);
         }
         criteriaGenerator.emitBind(spec, criteriaUnits, "i++");
         spec.addStatement("return ps.executeUpdate()");
-        SqlCodegen.endTxBlockExpr(spec, sqlException, methodName, info.model.tableName(),
-                "sql.toString()", logSql);
+        SqlCodegen.endTxBlockSqlVar(spec, sqlException, methodName, info.model.tableName(), logSql);
         return spec.build();
     }
 
