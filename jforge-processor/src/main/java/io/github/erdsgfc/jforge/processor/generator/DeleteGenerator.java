@@ -15,18 +15,51 @@ import javax.lang.model.type.TypeKind;
 import java.util.Map;
 
 /**
- * 生成 {@code Delete} 声明式删除方法：不写 SQL，按参数自动构造
- * {@code DELETE FROM t WHERE ...}。WHERE 条件与 {@code @Update}/{@code @Select}
- * 同一套（{@link Condition} 参数 / {@link Where} 条件对象，动态/静态形态一致）——
- * 解析与折叠机制继承 {@link AbstractGenerator}。
+ * 生成 {@code @Delete} 声明式删除方法的实现：不写 SQL，按方法参数自动构造
+ * {@code DELETE FROM t WHERE ...}。
+ *
+ * <p><b>参数语义</b>：{@code @Where} 参数是条件对象（递归展开其字段为条件，支持
+ * 括号分组 / {@code @And}/{@code @Or} 连接 / {@code Optional} 的 IS NULL）；其余参数为
+ * 单条件（字段名缺省按参数名，{@code @Condition} 可指定列与操作符；数组/集合参数生成
+ * {@code IN}/{@code NOT IN}）。参数可空性按 JSpecify 判定——可空参数运行时为 {@code null}
+ * 时整段条件跳过。语义与 {@code @Select}/{@code @Update} 完全一致。</p>
+ *
+ * <p><b>生成形态</b>（两态自动选择，见 {@link AbstractGenerator}）：</p>
+ * <ul>
+ *   <li><b>全静态</b>——WHERE 全部条件编译期确定时折叠为 SQL 常量字段 + 静态索引绑定，
+ *       运行时零拼接（与手写 JDBC 等价）；</li>
+ *   <li><b>动态</b>——含可空参数或条件对象组时生成运行时 {@code StringBuilder} 拼接：
+ *       头部连续的全静态条件仍折叠为常量前缀，{@code where} 前缀变量按首个实际生效的
+ *       条件给出 {@code WHERE}/{@code AND}；若全部条件被跳过则 WHERE 缺失，此时以早退
+ *       （返回 {@code 0}/{@code false}）阻断"无 WHERE 的全表删除"。</li>
+ * </ul>
+ *
+ * <p>返回类型为 {@code boolean} 时早退返回 {@code false}，否则返回 {@code 0}——
+ * 与生成方法的返回类型一致。</p>
  */
 public final class DeleteGenerator extends AbstractGenerator {
 
+    /**
+     * @param processingEnv 处理环境（messager 报错、类型工具）
+     * @param configHelper  共享的 ORM 配置 helper（logSql / 命名策略）
+     */
     public DeleteGenerator(javax.annotation.processing.ProcessingEnvironment processingEnv,
                            JForgeConfigHelper configHelper) {
         super(processingEnv, configHelper);
     }
 
+    /**
+     * 为仓库上单个 {@code @Delete} 方法生成实现，并挂到 impl 类构建器。
+     * 生成失败（参数校验报错）时跳过而不添加方法，避免 {@code addMethod(null)}
+     * 让 javapoet 抛 NPE 掩盖真实编译错误。
+     *
+     * @param info              仓库信息
+     * @param call              方法（含同名序号）
+     * @param builder           接收方法的 impl 类构建器
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param sqlException      SQLException 类
+     */
     public void deleteMethod(JForgeProcessor.DaoInfo info, DaoMethod call, TypeSpec.Builder builder,
                              ClassName connection, ClassName preparedStatement, ClassName sqlException) {
         ExecutableElement method = call.method();
@@ -37,6 +70,18 @@ public final class DeleteGenerator extends AbstractGenerator {
         }
     }
 
+    /**
+     * 构建一个 {@code @Delete} 方法的完整实现（SQL 常量字段/拼接代码 + 方法体）。
+     *
+     * @param info              仓库信息（实体模型、表名、方言）
+     * @param builder           接收方法的 impl 类构建器（SQL 常量字段挂到生成类）
+     * @param method            标注了 {@code @Delete} 的仓库方法
+     * @param overloadIndex     同名方法序号（SQL 字段名唯一性）
+     * @param connection        Connection 类
+     * @param preparedStatement PreparedStatement 类
+     * @param sqlException      SQLException 类
+     * @return 方法规格；参数校验失败已报错返回 {@code null}
+     */
     private MethodSpec buildDeleteMethod(JForgeProcessor.DaoInfo info, TypeSpec.Builder builder,
             ExecutableElement method, int overloadIndex, ClassName connection, ClassName preparedStatement,
             ClassName sqlException) {
