@@ -61,7 +61,7 @@ public final class SqlFieldGenerator {
      *                       接口方法时维护（{@code Map} 计数），避免本方法内部重复遍历
      * @return SQL 常量字段名
      */
-    static String methodSqlFieldName(String methodName, int overloadIndex) {
+    public static String methodSqlFieldName(String methodName, int overloadIndex) {
         String baseName = methodName + "Sql";
         boolean reserved = switch (methodName) {
             case "save", "saveAll", "deleteById", "deleteByIds", "update", "findById",

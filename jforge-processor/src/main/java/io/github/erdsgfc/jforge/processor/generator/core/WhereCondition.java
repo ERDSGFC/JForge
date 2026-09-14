@@ -90,7 +90,7 @@ public record WhereCondition(String columnName, String op, String paramName, Str
         boolean optional = CriteriaGenerator.isOptional(parameter.asType());
         TypeMirror type = env.getTypeUtils().stripAnnotations(parameter.asType());
         boolean array = type.getKind() == TypeKind.ARRAY;
-        boolean collection = !optional && isIterable(type, env);
+        boolean collection = !optional && AbstractGenerator.isIterable(type, env);
         if ((array || collection) && condition != null
                 && condition.op() != Op.EQ && condition.op() != Op.NE) {
             env.getMessager().printMessage(Diagnostic.Kind.ERROR,
@@ -163,15 +163,6 @@ public record WhereCondition(String columnName, String op, String paramName, Str
         } catch (MirroredTypeException e) {
             return e.getTypeMirror().getKind() == TypeKind.VOID ? null : e.getTypeMirror();
         }
-    }
-
-    private static boolean isIterable(TypeMirror type, ProcessingEnvironment env) {
-        if (type.getKind() != TypeKind.DECLARED) return false;
-        TypeMirror iterable = env.getElementUtils().getTypeElement("java.lang.Iterable").asType();
-        // isAssignable 比 isSubtype() 更接近 Java 编译器的赋值兼容性。
-        // erasure 获取 Java 泛型擦除后的类型。List<String> 得到 List
-        return env.getTypeUtils().isAssignable(env.getTypeUtils().erasure(type),
-                env.getTypeUtils().erasure(iterable));
     }
 
     private static TypeName iterableElementType(TypeMirror type, ProcessingEnvironment env) {
@@ -348,7 +339,7 @@ public record WhereCondition(String columnName, String op, String paramName, Str
         if (type.getKind().isPrimitive() || type.getKind() == TypeKind.ARRAY) {
             return false;
         }
-        if (isIterable(type, env)) {
+        if (AbstractGenerator.isIterable(type, env)) {
             return false; // 动态路径的 IN 占位符拼接处已有 requireNonNull
         }
         return !Nullability.isNullableParameter(parameter);

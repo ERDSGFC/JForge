@@ -8,13 +8,13 @@ import io.github.erdsgfc.jforge.annotation.*;
 import io.github.erdsgfc.jforge.processor.EntityModel;
 import io.github.erdsgfc.jforge.processor.JForgeConfigHelper;
 import io.github.erdsgfc.jforge.processor.JForgeProcessor;
+import io.github.erdsgfc.jforge.processor.generator.core.AbstractGenerator;
 import io.github.erdsgfc.jforge.processor.generator.core.CriteriaGenerator;
 import io.github.erdsgfc.jforge.processor.generator.core.DaoMethod;
 import io.github.erdsgfc.jforge.processor.generator.core.RawSqlSupport;
 import io.github.erdsgfc.jforge.processor.generator.core.WhereCondition;
 import io.github.erdsgfc.jforge.processor.utils.Nullability;
 import io.github.erdsgfc.jforge.processor.utils.SqlCodegen;
-import io.github.erdsgfc.jforge.processor.utils.TypeNameUtils;
 
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
@@ -24,7 +24,6 @@ import javax.tools.Diagnostic;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * 生成 {@code Update} 声明式更新方法：不写 SQL，按参数自动构造
@@ -32,10 +31,11 @@ import java.util.Objects;
  *
  * <p>{@link UpdateSet} 参数 → SET 列（缺省按参数名映射列；{@code @Nullable} 为 {@code null}
  * 时跳过该 SET；{@code Optional} 空时 {@code SET 列 = NULL}）；{@link Condition} 参数 /
- * {@link Where} 条件对象 → WHERE 条件（动态语义与 {@code @Select} 一致）。生成形态
- * 与动态 WHERE 同一套：全静态 → SQL 常量 + 静态绑定；含动态 → StringBuilder 拼接。</p>
+ * {@link Where} 条件对象 → WHERE 条件（动态语义与 {@code @Select} 一致，解析与折叠机制
+ * 继承 {@link AbstractGenerator}）。生成形态与动态 WHERE 同一套：全静态 → SQL 常量 +
+ * 静态绑定；含动态 → StringBuilder 拼接。</p>
  */
-public final class UpdateGenerator {
+public final class UpdateGenerator extends AbstractGenerator {
 
     /** 一个 SET 单元。 */
     private static final class SetUnit {
@@ -62,16 +62,9 @@ public final class UpdateGenerator {
         }
     }
 
-    private final javax.annotation.processing.ProcessingEnvironment processingEnv;
-    private final JForgeConfigHelper configHelper;
-    private final CriteriaGenerator criteriaGenerator;
-
     public UpdateGenerator(javax.annotation.processing.ProcessingEnvironment processingEnv,
                            JForgeConfigHelper configHelper) {
-        this.processingEnv = processingEnv;
-        this.configHelper = configHelper;
-        this.criteriaGenerator = new CriteriaGenerator(processingEnv.getMessager(),
-                Diagnostic.Kind.ERROR, processingEnv.getTypeUtils());
+        super(processingEnv, configHelper);
     }
 
     public void updateMethod(JForgeProcessor.DaoInfo info, DaoMethod call, TypeSpec.Builder builder,
@@ -88,11 +81,11 @@ public final class UpdateGenerator {
             int overloadIndex, ClassName connection, ClassName preparedStatement, ClassName sqlException) {
         String methodName = method.getSimpleName().toString();
 
-        // 解析 SET 列（@UpdateSet 参数）与 WHERE 条件（@Condition 参数 + @Where 条件对象）。
+        // 解析 SET 列（@UpdateSet 参数 + 条件对象顶层 @UpdateSet 字段）与 WHERE 条件
+        // （@Condition 参数 + @Where 条件对象）。@Update 上下文：条件对象顶层的
+        // @UpdateSet 字段是修改列（值表达式 = criteria.getX()），不作为 WHERE 条件。
         List<SetUnit> sets = new ArrayList<>();
-        List<WhereCondition> conditions = new ArrayList<>();
-        List<CriteriaGenerator.Unit> criteriaUnits = new ArrayList<>();
-        boolean criteriaNullable = false; // 任一 @Where 参数可空 → 整体运行时可能跳过,静态折叠不可用
+        WhereParts parts = new WhereParts();
         for (VariableElement parameter : method.getParameters()) {
             if (parameter.getAnnotation(UpdateSet.class) != null) {
                 SetUnit unit = resolveSet(info, method, parameter);
@@ -101,112 +94,55 @@ public final class UpdateGenerator {
                 }
                 sets.add(unit);
             } else if (parameter.getAnnotation(Where.class) != null) {
-                // 条件对象:顶层 @UpdateSet 字段是 SET 修改列(值表达式 = criteria.getX()),
-                // 其余字段是 WHERE 条件。参数可空 → 整体运行时可能跳过,静态折叠不可用。
                 if (Nullability.isNullableParameter(parameter)) {
-                    criteriaNullable = true;
+                    parts.criteriaNullable = true;
                 }
                 List<SetUnit> criteriaSets = resolveCriteriaSets(info, method, parameter);
                 if (criteriaSets == null) {
                     return null;
                 }
                 sets.addAll(criteriaSets);
-                List<CriteriaGenerator.Unit> units = criteriaGenerator.parse(info, method, parameter, true);
+                List<CriteriaGenerator.Unit> units =
+                        criteriaGenerator.parse(info, method, parameter, true);
                 if (units == null) {
                     return null;
                 }
-                criteriaUnits.addAll(units);
+                parts.criteriaUnits.addAll(units);
             } else {
-            WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
-                    processingEnv, "@Condition", Map.of(), false);
+                WhereCondition condition = WhereCondition.resolveHost(info, method, parameter,
+                        processingEnv, "@Condition", Map.of(), false);
                 if (condition == null) {
                     return null;
                 }
-                conditions.add(condition);
+                parts.conditions.add(condition);
             }
         }
         if (sets.isEmpty()) {
-            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "@Update method must have at least one @UpdateSet parameter", method);
+            error(method, "@Update method must have at least one @UpdateSet parameter");
             return null;
         }
 
         String baseSql = "UPDATE "
                 + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), info.model.tableName());
-        MethodSpec.Builder spec = MethodSpec.methodBuilder(methodName)
-                .addAnnotation(Override.class)
-                .addModifiers(Modifier.PUBLIC)
-                .returns(TypeNameUtils.toTypeNameWithNullability(
-                        method.getReturnType(), method, processingEnv.getTypeUtils()));
-        for (VariableElement parameter : method.getParameters()) {
-            spec.addParameter(TypeNameUtils.toTypeNameWithNullability(
-                            parameter.asType(), parameter, processingEnv.getTypeUtils()),
-                    parameter.getSimpleName().toString());
-        }
+        MethodSpec.Builder spec = methodShell(methodName, method);
         boolean logSql = configHelper.logSql(info.element);
-
-        // 非空契约参数（@UpdateSet/@Condition/@Where，非基本/非数组/非集合）在方法顶部
-        // 快速失败——null 直送会静默绑 NULL 或深处抛模糊 NPE（数组/集合的动态路径在
-        // 占位符拼接处已有检查，顶层不重复）。
-        for (VariableElement parameter : method.getParameters()) {
-            if (WhereCondition.needsRequireNonNull(parameter, processingEnv)) {
-                spec.addStatement("$T.requireNonNull($N, $S)", Objects.class,
-                        parameter.getSimpleName(), parameter.getSimpleName() + " must not be null");
-            }
-        }
+        emitTopLevelRequireNonNull(spec, method);
 
         // 全静态：SET 无动态 + WHERE 无动态，且条件对象（若存在）参数非空、字段全静态 →
         // SQL 常量 + 静态绑定（条件对象组同样折叠，不做运行时 StringBuilder 拼接）。
-        boolean allStatic = !criteriaNullable
-                && sets.stream().noneMatch(s -> s.dynamic)
-                && conditions.stream().allMatch(WhereCondition::staticCompatible)
-                && CriteriaGenerator.staticCompatible(criteriaUnits);
+        boolean allStatic = sets.stream().noneMatch(s -> s.dynamic) && allStatic(parts);
         if (allStatic) {
             StringBuilder sql = new StringBuilder(baseSql + " SET ");
-            for (int i = 0; i < sets.size(); i++) {
-                if (i > 0) {
-                    sql.append(", ");
-                }
-                SetUnit unit = sets.get(i);
-                sql.append(unit.rawSql != null ? unit.rawSql : unit.column + " = ?");
-            }
-            boolean hasDirect = !conditions.isEmpty();
-            if (hasDirect) {
-                WhereCondition.appendStaticWhereSql(sql, conditions);
-            }
-            if (!criteriaUnits.isEmpty()) {
-                // 条件对象组：前导连接符与动态形态一致（无直接条件时首个得 WHERE）,
-                // 组整体括号包裹,嵌套 @Where 递归(staticCompatible 保证组恒非空)。
-                sql.append(hasDirect ? " AND " : " WHERE ");
-                sql.append("(");
-                CriteriaGenerator.appendStaticSql(sql, criteriaUnits);
-                sql.append(")");
-            }
+            appendStaticSets(sql, sets);
+            appendStaticWhere(sql, parts);
+            addStaticSqlField(builder, sql.toString(), methodName, overloadIndex);
             String sqlField = SqlFieldGenerator.methodSqlFieldName(methodName, overloadIndex);
-            builder.addField(FieldSpec.builder(String.class, sqlField,
-                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL).initializer("$S", sql.toString()).build());
             SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, false, logSql);
             int index = 1;
             for (SetUnit unit : sets) {
-                if (unit.rawSql != null) {
-                    for (RawSqlSupport.Binding binding : unit.rawBindings) {
-                        spec.addCode(SqlCodegen.bindParam(binding.typeName(), binding.expression(), index++,
-                                binding.nullable(), false, null));
-                        spec.addCode("\n");
-                    }
-                    continue;
-                }
-                // Optional SET(非空契约,静态形态):绑定 valueExpr(opt.get());普通 SET 绑参数。
-                spec.addCode(SqlCodegen.bindParam(unit.bindType,
-                        unit.valueExpr != null ? unit.valueExpr : unit.paramName,
-                        index++, false, false, unit.converterField));
-                spec.addCode("\n");
+                index = emitStaticSetBind(spec, unit, index);
             }
-            WhereCondition.appendStaticBinds(spec, conditions, index);
-            if (!criteriaUnits.isEmpty()) {
-                CriteriaGenerator.appendStaticBinds(spec, criteriaUnits,
-                        index + WhereCondition.staticBindCount(conditions));
-            }
+            appendStaticWhereBinds(spec, parts, index);
             spec.addStatement("return ps.executeUpdate()");
             SqlCodegen.endTxBlockField(spec, sqlException, methodName, info.model.tableName(),
                     sqlField, logSql);
@@ -220,22 +156,13 @@ public final class UpdateGenerator {
         // WHERE，where 守卫无需再生成）。SET 含 dynamic（null 跳过）时前缀无法
         // 确定，SET 部分保持全量动态。
         boolean setsStatic = sets.stream().noneMatch(s -> s.dynamic);
-        int staticPrefix = 0;
-        while (setsStatic && staticPrefix < conditions.size()
-                && conditions.get(staticPrefix).staticCompatible()) {
-            staticPrefix++;
-        }
+        int staticPrefix;
         if (setsStatic) {
+            staticPrefix = staticPrefixCount(parts);
             StringBuilder prefix = new StringBuilder(baseSql + " SET ");
-            for (int i = 0; i < sets.size(); i++) {
-                if (i > 0) {
-                    prefix.append(", ");
-                }
-                SetUnit unit = sets.get(i);
-                prefix.append(unit.rawSql != null ? unit.rawSql : unit.column + " = ?");
-            }
+            appendStaticSets(prefix, sets);
             if (staticPrefix > 0) {
-                WhereCondition.appendStaticWhereSql(prefix, conditions.subList(0, staticPrefix));
+                WhereCondition.appendStaticWhereSql(prefix, parts.conditions.subList(0, staticPrefix));
             }
             String prefixField = methodName + "PrefixSql"
                     + (overloadIndex > 0 ? "_" + overloadIndex : "");
@@ -245,6 +172,8 @@ public final class UpdateGenerator {
             spec.addStatement("$T sql = new $T($L)", ClassName.get(StringBuilder.class),
                     ClassName.get(StringBuilder.class), prefixField);
         } else {
+            // SET 含动态（null 跳过）时前缀无法编译期确定——SET 部分全量运行时拼接。
+            staticPrefix = 0;
             spec.addStatement("$T sql = new $T($S)", ClassName.get(StringBuilder.class),
                     ClassName.get(StringBuilder.class), baseSql + " SET");
             spec.addStatement("$T setConn = $S", ClassName.get(String.class), "");
@@ -252,21 +181,20 @@ public final class UpdateGenerator {
                 emitSetAppend(spec, unit, "setConn");
             }
         }
-        boolean hasWhere = !conditions.isEmpty() || !criteriaUnits.isEmpty();
-        if (hasWhere) {
+        if (!parts.conditions.isEmpty() || !parts.criteriaUnits.isEmpty()) {
             spec.addStatement("$T where = $S", ClassName.get(String.class),
                     staticPrefix > 0 ? " AND " : " WHERE ");
         }
-        for (int i = staticPrefix; i < conditions.size(); i++) {
-            WhereCondition.appendSql(spec, conditions.get(i));
+        for (int i = staticPrefix; i < parts.conditions.size(); i++) {
+            WhereCondition.appendSql(spec, parts.conditions.get(i));
         }
-        criteriaGenerator.emitGroupAppend(spec, criteriaUnits, "where", " AND ");
+        criteriaGenerator.emitGroupAppend(spec, parts.criteriaUnits, "where", " AND ");
         // 守卫仅在"可能发生"时生成,避免静态条件的死分支:
         // - where 守卫:前缀未含 WHERE(staticPrefix == 0)且存在可能整体缺失的动态
         //   条件/条件对象组时生成;前缀已含 WHERE 时 SQL 恒有 WHERE,守卫恒不触发;
         // - setConn 守卫:存在 dynamic SET(null 跳过)时才可能 SET 为空——静态 SET 恒拼。
         if (staticPrefix == 0
-                && (conditions.stream().anyMatch(c -> c.dynamic()) || !criteriaUnits.isEmpty())) {
+                && (parts.conditions.stream().anyMatch(c -> c.dynamic()) || !parts.criteriaUnits.isEmpty())) {
             spec.beginControlFlow("if (where.equals($S))", " WHERE ");
             spec.addStatement("return 0");
             spec.endControlFlow();
@@ -282,13 +210,55 @@ public final class UpdateGenerator {
         for (SetUnit unit : sets) {
             emitSetBind(spec, unit);
         }
-        for (WhereCondition condition : conditions) {
+        for (WhereCondition condition : parts.conditions) {
             WhereCondition.appendBind(spec, condition);
         }
-        criteriaGenerator.emitBind(spec, criteriaUnits, "i++");
+        criteriaGenerator.emitBind(spec, parts.criteriaUnits, "i++");
         spec.addStatement("return ps.executeUpdate()");
         SqlCodegen.endTxBlockVar(spec, sqlException, methodName, info.model.tableName(), logSql);
         return spec.build();
+    }
+
+    /**
+     * 把 SET 子句文本（{@code 列 = ?},逗号分隔）追加到 SQL 文本——全静态折叠与
+     * 动态前缀折叠共用（两处 SET 文本完全相同）。
+     *
+     * @param sql  待追加的 SQL 文本（已含 {@code UPDATE t SET }）
+     * @param sets SET 单元
+     */
+    private static void appendStaticSets(StringBuilder sql, List<SetUnit> sets) {
+        for (int i = 0; i < sets.size(); i++) {
+            if (i > 0) {
+                sql.append(", ");
+            }
+            SetUnit unit = sets.get(i);
+            sql.append(unit.rawSql != null ? unit.rawSql : unit.column + " = ?");
+        }
+    }
+
+    /**
+     * 全静态形态下绑定一个 SET 单元（编译期索引；rawSql 片段按其绑定顺序展开）。
+     *
+     * @param spec  方法构建器
+     * @param unit  SET 单元
+     * @param index 该单元首个占位符的索引
+     * @return 下一单元的首个占位符索引
+     */
+    private static int emitStaticSetBind(MethodSpec.Builder spec, SetUnit unit, int index) {
+        if (unit.rawSql != null) {
+            for (RawSqlSupport.Binding binding : unit.rawBindings) {
+                spec.addCode(SqlCodegen.bindParam(binding.typeName(), binding.expression(), index++,
+                        binding.nullable(), false, null));
+                spec.addCode("\n");
+            }
+            return index;
+        }
+        // Optional SET(非空契约,静态形态):绑定 valueExpr(opt.get());普通 SET 绑参数。
+        spec.addCode(SqlCodegen.bindParam(unit.bindType,
+                unit.valueExpr != null ? unit.valueExpr : unit.paramName,
+                index++, false, false, unit.converterField));
+        spec.addCode("\n");
+        return index;
     }
 
     // ---- SET 单元解析与生成 ---------------------------------------------------
