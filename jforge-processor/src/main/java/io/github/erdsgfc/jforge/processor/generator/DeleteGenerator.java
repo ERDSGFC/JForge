@@ -104,8 +104,7 @@ public final class DeleteGenerator extends AbstractGenerator {
         if (allStatic(parts)) {
             StringBuilder sql = new StringBuilder(baseSql);
             appendStaticWhere(sql, parts);
-            addStaticSqlField(builder, sql.toString(), methodName, overloadIndex);
-            String sqlField = SqlFieldGenerator.methodSqlFieldName(methodName, overloadIndex);
+            String sqlField = addStaticSqlField(builder, sql.toString(), methodName, overloadIndex);
             SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, false, logSql);
             appendStaticWhereBinds(spec, parts, 1);
             spec.addStatement("return ps.executeUpdate()");

@@ -433,11 +433,15 @@ public final class CriteriaGenerator {
         };
     }
 
+    /**
+     * 集合判定委托 {@link AbstractGenerator#isIterable(TypeMirror, Types)}
+     * ——全处理器唯一的集合判定实现在基类（本类只需 {@code Types}，与该实现契合）。
+     *
+     * @param type 待判定类型
+     * @return 是 {@code Iterable} 子类型时 {@code true}
+     */
     private boolean isIterable(TypeMirror type) {
-        if (type.getKind() != TypeKind.DECLARED) return false;
-        TypeElement element = (TypeElement) ((DeclaredType) type).asElement();
-        if (element.getQualifiedName().contentEquals("java.lang.Iterable")) return true;
-        return types.directSupertypes(type).stream().anyMatch(this::isIterable);
+        return AbstractGenerator.isIterable(type, types);
     }
 
     private TypeName iterableElementType(TypeMirror type) {

@@ -135,8 +135,7 @@ public final class UpdateGenerator extends AbstractGenerator {
             StringBuilder sql = new StringBuilder(baseSql + " SET ");
             appendStaticSets(sql, sets);
             appendStaticWhere(sql, parts);
-            addStaticSqlField(builder, sql.toString(), methodName, overloadIndex);
-            String sqlField = SqlFieldGenerator.methodSqlFieldName(methodName, overloadIndex);
+            String sqlField = addStaticSqlField(builder, sql.toString(), methodName, overloadIndex);
             SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, false, logSql);
             int index = 1;
             for (SetUnit unit : sets) {

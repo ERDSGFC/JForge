@@ -16,9 +16,12 @@ import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
+import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
 import java.util.ArrayList;
 import java.util.List;
@@ -82,38 +85,26 @@ public abstract class AbstractGenerator {
 
     /**
      * 判定类型是否为 {@code Iterable}（含 {@code List}/{@code Set} 等集合）——
-     * 用于把集合参数识别为 {@code IN}/{@code NOT IN} 条件。
+     * 用于把集合参数/字段识别为 {@code IN}/{@code NOT IN} 条件。
      *
-     * <p>用 {@code isAssignable} 而非 {@code isSubtype}：前者更贴近 Java 编译器的
-     * 赋值兼容性判定。两侧都取 {@code erasure}——泛型信息对"是否为集合"的判定无意义，
-     * 且擦除后比较可避免 {@code List<String>} 与 {@code Iterable<?>} 的类型实参干扰。</p>
+     * <p>实现走 {@code directSupertypes} 递归：沿类型层次向上找限定名为
+     * {@code java.lang.Iterable} 的超类型。只需 {@code Types}（不需要 {@code Elements}），
+     * 因此同时可供 {@link CriteriaGenerator}（只持有 {@code Types}）复用——
+     * <b>全处理器唯一的集合判定实现</b>。</p>
      *
-     * <p>静态版供静态工具（如 {@link WhereCondition}）复用；实例方法
-     * {@link #isIterable(TypeMirror)} 委托本方法，实现只有一份。</p>
-     *
-     * @param type 待判定类型
-     * @param env  处理环境（取类型工具）
+     * @param type  待判定类型
+     * @param types 类型工具（编译期超类型查询）
      * @return 是 {@code Iterable} 子类型时 {@code true}
      */
-    public static boolean isIterable(TypeMirror type, ProcessingEnvironment env) {
+    public static boolean isIterable(TypeMirror type, Types types) {
         if (type.getKind() != TypeKind.DECLARED) {
             return false;
         }
-        TypeMirror iterable = env.getElementUtils().getTypeElement("java.lang.Iterable").asType();
-        return env.getTypeUtils().isAssignable(
-                env.getTypeUtils().erasure(type),
-                env.getTypeUtils().erasure(iterable));
-    }
-
-    /**
-     * 判定类型是否为 {@code Iterable}——用本实例的处理环境，委托
-     * {@link #isIterable(TypeMirror, ProcessingEnvironment)}。
-     *
-     * @param type 待判定类型
-     * @return 是 {@code Iterable} 子类型时 {@code true}
-     */
-    protected boolean isIterable(TypeMirror type) {
-        return isIterable(type, processingEnv);
+        TypeElement element = (TypeElement) ((DeclaredType) type).asElement();
+        if (element.getQualifiedName().contentEquals("java.lang.Iterable")) {
+            return true;
+        }
+        return types.directSupertypes(type).stream().anyMatch(superType -> isIterable(superType, types));
     }
 
     /**
@@ -320,17 +311,21 @@ public abstract class AbstractGenerator {
 
     /**
      * 为全静态形态添加 SQL 常量字段（{@code private static final String <方法名>Sql}，
-     * 名称经 {@link SqlFieldGenerator#methodSqlFieldName} 处理同名重载）。
+     * 名称经 {@link SqlFieldGenerator#methodSqlFieldName} 处理同名重载），并返回该字段名
+     * ——调用方紧接着要用它作 {@code beginTxBlock}/{@code endTxBlockField} 的 SQL 实参，
+     * 返回可免去重复调用命名函数。
      *
      * @param builder       接收方法的 impl 类构建器
      * @param sql           折叠后的完整 SQL
      * @param methodName    方法名
      * @param overloadIndex 同名方法序号
+     * @return 生成的常量字段名（可直接传给 {@code beginTxBlock}/{@code endTxBlockField}）
      */
-    protected static void addStaticSqlField(TypeSpec.Builder builder, String sql,
+    protected static String addStaticSqlField(TypeSpec.Builder builder, String sql,
             String methodName, int overloadIndex) {
         String sqlField = SqlFieldGenerator.methodSqlFieldName(methodName, overloadIndex);
         builder.addField(FieldSpec.builder(String.class, sqlField,
                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL).initializer("$S", sql).build());
+        return sqlField;
     }
 }

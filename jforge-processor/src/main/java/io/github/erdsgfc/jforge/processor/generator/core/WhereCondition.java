@@ -90,7 +90,7 @@ public record WhereCondition(String columnName, String op, String paramName, Str
         boolean optional = CriteriaGenerator.isOptional(parameter.asType());
         TypeMirror type = env.getTypeUtils().stripAnnotations(parameter.asType());
         boolean array = type.getKind() == TypeKind.ARRAY;
-        boolean collection = !optional && AbstractGenerator.isIterable(type, env);
+        boolean collection = !optional && AbstractGenerator.isIterable(type, env.getTypeUtils());
         if ((array || collection) && condition != null
                 && condition.op() != Op.EQ && condition.op() != Op.NE) {
             env.getMessager().printMessage(Diagnostic.Kind.ERROR,
@@ -339,7 +339,7 @@ public record WhereCondition(String columnName, String op, String paramName, Str
         if (type.getKind().isPrimitive() || type.getKind() == TypeKind.ARRAY) {
             return false;
         }
-        if (AbstractGenerator.isIterable(type, env)) {
+        if (AbstractGenerator.isIterable(type, env.getTypeUtils())) {
             return false; // 动态路径的 IN 占位符拼接处已有 requireNonNull
         }
         return !Nullability.isNullableParameter(parameter);

@@ -189,8 +189,7 @@ public final class SelectGenerator extends AbstractGenerator {
             // WHERE 子句与绑定索引均编译期确定（与 @Query 同一形态，运行时零拼接）。
             StringBuilder fullSqlBuilder = new StringBuilder(baseSql);
             appendStaticWhere(fullSqlBuilder, parts);
-            addStaticSqlField(builder, fullSqlBuilder.toString(), methodName, overloadIndex);
-            String sqlField = SqlFieldGenerator.methodSqlFieldName(methodName, overloadIndex);
+            String sqlField = addStaticSqlField(builder, fullSqlBuilder.toString(), methodName, overloadIndex);
             SqlCodegen.beginTxBlock(spec, connection, preparedStatement, sqlField, false, logSql);
             appendStaticWhereBinds(spec, parts, 1);
             spec.beginControlFlow("try ($T rs = ps.executeQuery())", resultSet);
