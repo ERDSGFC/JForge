@@ -380,7 +380,18 @@ List<UserEntity> findByDepartment(
 
 - `JoinType` 支持 `INNER`（默认）、`LEFT`、`RIGHT`、`FULL` 与 `CROSS`；除 `CROSS` 外至少需要
   一个 `@Join.On(local = ..., target = ...)`，多个字段对之间使用 `AND`
-- `@Join.from` 默认是宿主实体；指定时必须引用宿主或更早声明的连接实体，可用于链式连接
+- **链式连接无需写 `@Join.from`**：缺省时处理器从 `On.local` 字段**推断**左侧实体
+  （该字段所属的宿主或此前已连接的实体）；同一字段名在多个已连接实体中都存在（歧义）时
+  编译报错，要求显式指定。显式指定时必须引用宿主或更早声明的连接实体
+
+  ```java
+  // companyId 只存在于 Department → from 自动推断为 Department，无需书写
+  @Join(entity = Department.class, on = @Join.On(local = "departmentId", target = "id"))
+  @Join(entity = Company.class,    on = @Join.On(local = "companyId",    target = "id"))
+  // → JOIN departments ON users.department_id = departments.id
+  //   JOIN companies   ON departments.company_id = companies.id
+  ```
+- 连接链长度不受限制（按声明顺序展开）；`from` 推断失败或歧义时编译期报错，不会猜错方向
 - `@Condition(entity = OtherEntity.class)` 将条件字段解析到对应的已连接实体并自动加表限定；未被
   `@Join` 引入、字段不存在或连接关系非法时编译失败
 - `@Query` 的 SQL 完全由用户提供，`@Join` 不作用于 `@Query`
