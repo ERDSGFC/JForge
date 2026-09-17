@@ -251,13 +251,6 @@ public final class SelectGenerator extends AbstractGenerator {
                         + target.entityQualifiedName());
                 return null;
             }
-            TypeElement fromElement = mirroredClass(annotation, false);
-            EntityModel from = fromElement == null ? info.model
-                    : available.get(fromElement.getQualifiedName().toString());
-            if (from == null) {
-                error(method, "@Join.from must be the host entity or an earlier joined entity");
-                return null;
-            }
             JoinType type = annotation.type();
             List<Join.On> on = List.of(annotation.on());
             if (type == JoinType.CROSS && !on.isEmpty()) {
@@ -266,6 +259,10 @@ public final class SelectGenerator extends AbstractGenerator {
             }
             if (type != JoinType.CROSS && on.isEmpty()) {
                 error(method, "A non-CROSS @Join requires at least one @Join.On condition");
+                return null;
+            }
+            EntityModel from = resolveFrom(info, method, annotation, on, available);
+            if (from == null) {
                 return null;
             }
             for (Join.On pair : on) {
@@ -279,6 +276,61 @@ public final class SelectGenerator extends AbstractGenerator {
             available.put(target.entityQualifiedName(), target);
         }
         return result;
+    }
+
+    /**
+     * 解析连接的 ON 左侧实体（{@code from}）：显式指定优先；未指定时<b>从 ON 左侧字段推断</b>
+     * ——{@code local} 字段所属的可用实体即 {@code from}，因此链式连接无需重复书写
+     * {@code from = ...}。
+     *
+     * <p>推断规则：在所有可用实体（宿主 + 此前已连接）中找能覆盖<b>全部</b> {@code local}
+     * 字段的那个。唯一命中即采用；命中多个（字段重名，如两侧都有 {@code id}）视为歧义，
+     * 报错要求显式指定 {@code from}——宁可让用户写明，也不猜错连接方向。</p>
+     *
+     * <p>{@link JoinType#CROSS}（无 ON 字段）无可推断依据，且 {@code from} 不参与
+     * CROSS 的 SQL 生成，故沿用宿主实体。</p>
+     *
+     * @param info      仓库信息（宿主实体）
+     * @param method    标注 {@code @Select} 的方法（报错定位）
+     * @param annotation 连接注解（读显式 {@code from}）
+     * @param on        ON 字段对
+     * @param available 可用实体表（宿主 + 此前已连接的实体）
+     * @return ON 左侧实体；无法确定或歧义时已报错返回 {@code null}
+     */
+    private EntityModel resolveFrom(JForgeProcessor.DaoInfo info, ExecutableElement method,
+            Join annotation, List<Join.On> on, Map<String, EntityModel> available) {
+        TypeElement fromElement = mirroredClass(annotation, false);
+        if (fromElement != null) {
+            // 显式指定：必须是宿主或此前已连接的实体。
+            EntityModel explicit = available.get(fromElement.getQualifiedName().toString());
+            if (explicit == null) {
+                error(method, "@Join.from must be the host entity or an earlier joined entity");
+            }
+            return explicit;
+        }
+        if (on.isEmpty()) {
+            return info.model;
+        }
+        // 未指定：推断 local 字段所属实体。
+        List<EntityModel> candidates = new ArrayList<>();
+        for (EntityModel candidate : available.values()) {
+            if (on.stream().allMatch(pair -> findColumn(candidate, pair.local()) != null)) {
+                candidates.add(candidate);
+            }
+        }
+        if (candidates.size() == 1) {
+            return candidates.get(0);
+        }
+        String locals = on.stream().map(Join.On::local).distinct().toList().toString();
+        if (candidates.isEmpty()) {
+            error(method, "@Join.from cannot be inferred: no host or earlier joined entity declares "
+                    + locals + " (specify @Join.from explicitly)");
+        } else {
+            error(method, "@Join.from is ambiguous: " + locals + " exists in multiple joined entities "
+                    + candidates.stream().map(EntityModel::entitySimpleName).toList()
+                    + " (specify @Join.from explicitly)");
+        }
+        return null;
     }
 
     /** 读取 Class 注解属性而不加载用户类型（javac 会抛 MirroredTypeException）。 */

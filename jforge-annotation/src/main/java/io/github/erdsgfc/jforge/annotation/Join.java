@@ -10,8 +10,12 @@ import java.lang.annotation.Target;
  * 为声明式 {@link Select} 查询增加一个经过编译期校验的表连接。
  *
  * <p>连接目标和两侧字段都使用实体类型/字段名表达，处理器负责解析表列映射及数据库方言引用符。
- * {@link #from()} 默认是仓库的宿主实体；连接多个表时，也可以指向此前已经连接的实体。一个查询中
- * 每种实体最多出现一次，因此当前设计有意不支持自连接和同表多别名。</p>
+ * 一个查询中每种实体最多出现一次，因此当前设计有意不支持自连接和同表多别名。</p>
+ *
+ * <p><b>链式连接无需写 {@link #from()}</b>：未指定时处理器从 {@link On#local()} 字段
+ * <b>推断</b>——该字段所属的可用实体（宿主或此前已连接的实体）即为左侧。若同一字段名在
+ * 多个已连接实体中都存在（歧义，如两侧都有 {@code id}），编译报错要求显式指定
+ * {@code from}。</p>
  *
  * <pre>{@code
  * @Select
@@ -21,10 +25,11 @@ import java.lang.annotation.Target;
  * List<User> findByDepartmentName(
  *       @Condition(value = "name", entity = Department.class) String departmentName);
  *
+ * // 链式连接：companyId 只存在于 Department，from 自动推断为 Department
  * @Select
  * @Join(entity = Department.class,
  *       on = @Join.On(local = "departmentId", target = "id"))
- * @Join(entity = Company.class, from = Department.class,
+ * @Join(entity = Company.class,
  *       on = @Join.On(local = "companyId", target = "id"))
  * List<User> findByCompanyId(
  *       @Condition(value = "id", entity = Company.class) long companyId);
@@ -43,10 +48,14 @@ public @interface Join {
     Class<?> entity();
 
     /**
-     * ON 条件左侧所属实体。默认的 {@code void.class} 表示当前仓库的宿主实体。
-     * 指定的实体必须是宿主实体或当前注解之前已经连接的实体。
+     * ON 条件左侧所属实体。
      *
-     * @return ON 条件左侧实体，或 {@code void.class}
+     * <p>缺省（{@code void.class}）时<b>自动推断</b>：取 {@link On#local()} 字段所属的
+     * 可用实体（宿主或此前已连接的实体）。链式连接因此无需重复书写本属性；推断有歧义
+     * （字段名在多个已连接实体中都存在）时编译报错，需显式指定。显式指定时必须是宿主
+     * 实体或当前注解之前已经连接的实体。</p>
+     *
+     * @return ON 条件左侧实体，或 {@code void.class}（自动推断）
      */
     Class<?> from() default void.class;
 

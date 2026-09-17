@@ -136,4 +136,82 @@ class JoinCodegenTest {
         assertTrue(generated.contains("List<Integer> ids)"), generated);
         assertTrue(generated.contains("requireNonNull(id"), generated);
     }
+
+    /**
+     * {@code @Join.from} 缺省时从 ON 左侧字段推断：{@code local = "companyId"} 只存在于
+     * Department，故第二个 {@code @Join} 无需书写 {@code from = Department.class}，
+     * 生成的 SQL 与显式书写时一致。
+     */
+    @Test
+    void infersFromFromOnLocalField() throws Exception {
+        String source = """
+                package test;
+                import io.github.erdsgfc.jforge.annotation.*;
+                import io.github.erdsgfc.jforge.core.BaseRepository;
+                import java.util.List;
+                @Table(name = "users") interface User {
+                    @Id Long id(); User id(Long v);
+                    Long departmentId(); User departmentId(Long v);
+                }
+                @Table(name = "departments") interface Department {
+                    @Id Long id(); Department id(Long v);
+                    Long companyId(); Department companyId(Long v);
+                }
+                @Table(name = "companies") interface Company {
+                    @Id Long id(); Company id(Long v);
+                }
+                @Dao public interface UserRepository extends BaseRepository<User, Long> {
+                    @Select
+                    @Join(entity = Department.class, on = @Join.On(local = "departmentId", target = "id"))
+                    @Join(entity = Company.class,    on = @Join.On(local = "companyId",    target = "id"))
+                    List<User> findByCompany(@Condition(value = "id", entity = Company.class) Long id);
+                }
+                """;
+        CompilationHelper.CompilationResult result = CompilationHelper.compile(
+                "test.UserRepository", source, new JForgeProcessor());
+        assertTrue(result.success, () -> result.diagnostics.toString());
+        String generated = result.generatedSources.get("test.UserRepository_Impl");
+        assertTrue(generated != null, "repository implementation was not generated");
+        // 推断出的 from = Department：ON 左侧限定到 departments 表。
+        assertTrue(generated.contains(
+                "INNER JOIN \\\"companies\\\" ON \\\"departments\\\".\\\"companyId\\\" = \\\"companies\\\".\\\"id\\\""),
+                generated);
+    }
+
+    /**
+     * 推断歧义（{@code local} 字段在多个已连接实体中都存在）时报编译错误，
+     * 要求显式指定 {@code from}——不猜连接方向。
+     */
+    @Test
+    void rejectsAmbiguousInferredFrom() throws Exception {
+        String source = """
+                package test;
+                import io.github.erdsgfc.jforge.annotation.*;
+                import io.github.erdsgfc.jforge.core.BaseRepository;
+                import java.util.List;
+                @Table(name = "users") interface User {
+                    @Id Long id(); User id(Long v);
+                    Long departmentId(); User departmentId(Long v);
+                }
+                @Table(name = "departments") interface Department {
+                    @Id Long id(); Department id(Long v);
+                    Long companyId(); Department companyId(Long v);
+                }
+                @Table(name = "companies") interface Company {
+                    @Id Long id(); Company id(Long v);
+                }
+                @Dao public interface UserRepository extends BaseRepository<User, Long> {
+                    @Select
+                    @Join(entity = Department.class, on = @Join.On(local = "departmentId", target = "id"))
+                    @Join(entity = Company.class,    on = @Join.On(local = "id",           target = "id"))
+                    List<User> findByCompany(@Condition(value = "id", entity = Company.class) Long id);
+                }
+                """;
+        CompilationHelper.CompilationResult result = CompilationHelper.compile(
+                "test.UserRepository", source, new JForgeProcessor());
+        assertTrue(!result.success, "ambiguous from must be rejected");
+        assertTrue(result.diagnostics.stream()
+                        .anyMatch(d -> d.getMessage(null).contains("@Join.from is ambiguous")),
+                () -> result.diagnostics.toString());
+    }
 }

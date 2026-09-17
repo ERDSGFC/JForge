@@ -76,10 +76,14 @@ public final class EntityModel {
          *  裸 getObject 路径,适配任意数据库类型;null 透传给转换器);与 nullable/isEnum
          *  互斥(converter 优先)。 */
         public final ClassName converter;
+        /** 列备注——取自 {@code @Column.comment()}；未标注或留空时为空串。
+         *  仅作元数据留存（供将来的 DDL/文档生成消费），<b>不影响</b>任何生成的 SQL：
+         *  生成的 CRUD/JOIN 语句只含列名与占位符，注释不会进入 SQL 文本。 */
+        public final String comment;
 
         ColumnModel(String fieldName, String columnName, TypeMirror returnType, boolean isId, boolean generated,
                 boolean defaultGetter, boolean insertable, boolean updatable, boolean nullable, boolean isEnum,
-                ClassName converter, Types types) {
+                ClassName converter, String comment, Types types) {
             this.fieldName = fieldName;
             this.columnName = columnName;
             // Types.stripAnnotations(JDK 21+)深度剥离全部 TYPE_USE 注解(@Nullable 等)——
@@ -100,6 +104,7 @@ public final class EntityModel {
             this.nullable = nullable;
             this.isEnum = isEnum;
             this.converter = converter;
+            this.comment = comment;
         }
     }
 
@@ -348,6 +353,9 @@ public final class EntityModel {
         // 无 @Column 的列(命名策略推断)与 @Id 列缺省 BOTH。无值来源(无 setter 无
         // default)的纯只读列由 insertColumns/updateSql 再按值来源排除。
         WritePolicy write = column != null ? column.write() : WritePolicy.BOTH;
+        // 列备注:@Column.comment() 缺省空串(无 @Column 的列同样为空)。
+        // 仅作元数据留存,不参与任何 SQL 生成。
+        String comment = column != null ? column.comment() : "";
         ColumnModel columnModel = new ColumnModel(fieldName, columnName,
                 method.signature.getReturnType(), isId, generated,
                 element.getModifiers().contains(Modifier.DEFAULT),
@@ -356,6 +364,7 @@ public final class EntityModel {
                 isNullable(method),
                 isEnum(method),
                 converterOf(element),
+                comment,
                 types);
         if (isId) {
             idColumn = columnModel;
