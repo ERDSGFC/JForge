@@ -16,6 +16,12 @@ public @interface Column {
     String name();
 
     /**
+     * 字段备注
+     * @return 数据库字段备注
+     */
+    String comment() default "";
+
+    /**
      * 写入策略——控制列参与 INSERT（save）与 UPDATE SET（update）的组合，
      * 例如 {@code @Column(name = "created_at", write = WritePolicy.INSERT_ONLY)}。
      * 默认 {@link WritePolicy#BOTH}。
