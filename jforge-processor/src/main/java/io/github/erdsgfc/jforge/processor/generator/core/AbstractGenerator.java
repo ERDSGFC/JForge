@@ -130,6 +130,18 @@ public abstract class AbstractGenerator {
     }
 
     /**
+     * 一个可用于 {@code @Condition} 引用的连接：实体模型 + 其 SQL 限定符。
+     *
+     * <p>限定符是列表达式中该连接的前缀——有别名时为别名（{@code manager}），
+     * 无别名时为表名（{@code users}）。之所以随模型一起传递：同表多次连接时
+     * 表名相同而别名不同，只有限定符能区分"条件字段属于哪一次连接"。</p>
+     *
+     * @param model     实体模型
+     * @param qualifier SQL 限定符（别名或表名）
+     */
+    public record JoinRef(EntityModel model, String qualifier) { }
+
+    /**
      * 一个声明式方法的 WHERE 部分解析结果：直接条件序列 + 条件对象展开单元 +
      * "任一 {@code @Where} 参数可空"标志（可空 → 整体运行时可能跳过，静态折叠不可用）。
      */
@@ -156,16 +168,17 @@ public abstract class AbstractGenerator {
      *
      * @param info          仓库信息
      * @param method        声明式方法
-     * @param entities      可按 {@code @Condition(entity)} 引用的实体模型表（键 = 实体
-     *                      全限定名）；宿主实体必须在内，连接实体由 {@code @Select} 的
-     *                      {@code @Join} 解析加入。无多表场景传 {@code Map.of()}
+     * @param entities      可按 {@code @Condition(entity)} / {@code @Condition(entityAlias)}
+     *                      引用的连接表（键 = 实体全限定名<b>或</b>别名）；宿主实体必须在内
+     *                      （键 = 其全限定名），连接实体由 {@code @Select} 的 {@code @Join}
+     *                      解析加入。无多表场景传 {@code Map.of()}
      * @param updateContext 是否处于 {@code @Update} 上下文（见
      *                      {@link CriteriaGenerator#parse(JForgeProcessor.DaoInfo,
      *                      ExecutableElement, VariableElement, boolean)}）
      * @return WHERE 部分解析结果；任一参数校验失败已报错返回 {@code null}
      */
     protected WhereParts resolveWhereParts(JForgeProcessor.DaoInfo info, ExecutableElement method,
-            Map<String, EntityModel> entities, boolean updateContext) {
+            Map<String, JoinRef> entities, boolean updateContext) {
         WhereParts parts = new WhereParts();
         for (VariableElement parameter : method.getParameters()) {
             if (parameter.getAnnotation(Where.class) != null) {

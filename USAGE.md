@@ -366,7 +366,7 @@ List<UserNameDto> findNameDtoById(Long id);                        // record 投
 
 `@Join` 只能标在 `@Select` 方法上，用实体类型和字段名声明连接；处理器会在编译期解析两侧
 `@Table`/命名策略映射并校验字段，生成带方言引用符的 `JOIN ... ON ...`。连接顺序就是注解声明顺序，
-可重复声明 `@Join`；当前不支持同一实体多次连接（因此也不支持自连接/别名）。
+可重复声明 `@Join`；同一实体可连接多次（自连接/同表多角色），但每次必须给 `alias` 以区分。
 
 ```java
 @Select
@@ -392,8 +392,27 @@ List<UserEntity> findByDepartment(
   //   JOIN companies   ON departments.company_id = companies.id
   ```
 - 连接链长度不受限制（按声明顺序展开）；`from` 推断失败或歧义时编译期报错，不会猜错方向
+- **自连接 / 同表多角色**：同一实体连接多次时，实体类型无法区分是哪一次，因此每次都必须给
+  `@Join.alias`（生成 `JOIN users AS manager`），后续用 `fromAlias` 按别名引用，
+  条件用 `@Condition(entityAlias = ...)` 定位：
+
+  ```java
+  @Select
+  @Join(entity = User.class, alias = "manager",
+        on = @Join.On(local = "managerId", target = "id"))
+  @Join(entity = User.class, alias = "boss", fromAlias = "manager",
+        on = @Join.On(local = "managerId", target = "id"))
+  List<UserEntity> findByBossName(
+        @Condition(entityAlias = "boss", value = "name") String bossName);
+  // → FROM users
+  //   JOIN users AS manager ON users.manager_id  = manager.id
+  //   JOIN users AS boss    ON manager.manager_id = boss.id
+  //   WHERE boss.name = ?
+  ```
+
+  `alias` 在同一查询内必须唯一；无别名时同一实体只能连接一次（重复连接编译报错）。
 - `@Condition(entity = OtherEntity.class)` 将条件字段解析到对应的已连接实体并自动加表限定；未被
-  `@Join` 引入、字段不存在或连接关系非法时编译失败
+  `@Join` 引入、字段不存在或连接关系非法时编译失败。`entity` 与 `entityAlias` 二选一，不可同时指定
 - `@Query` 的 SQL 完全由用户提供，`@Join` 不作用于 `@Query`
 
 ### 条件对象（`@Where` 复杂 WHERE）

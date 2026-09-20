@@ -153,9 +153,20 @@ public final class SelectGenerator extends AbstractGenerator {
 
         List<JoinSpec> joins = parseJoins(info, method);
         if (joins == null) return null;
-        Map<String, EntityModel> entities = new LinkedHashMap<>();
-        entities.put(info.model.entityQualifiedName(), info.model);
-        for (JoinSpec join : joins) entities.put(join.target().entityQualifiedName(), join.target());
+        // 条件可引用的连接表：键为实体全限定名<b>与</b>别名——按类型引用（常规）与
+        // 按别名引用（同表多次连接）都能命中。同表多次连接时实体名键会被后一次覆盖，
+        // 此时必须用 alias 引用（两者都缺省则报歧义）。
+        Map<String, AbstractGenerator.JoinRef> entities = new LinkedHashMap<>();
+        String hostQualifier = SqlCodegen.quoteIdentifier(info.model.dialectSupport(), info.model.tableName());
+        entities.put(info.model.entityQualifiedName(),
+                new AbstractGenerator.JoinRef(info.model, hostQualifier));
+        for (JoinSpec join : joins) {
+            AbstractGenerator.JoinRef ref = new AbstractGenerator.JoinRef(join.target(), qualify(join));
+            entities.put(join.target().entityQualifiedName(), ref);
+            if (!join.alias().isEmpty()) {
+                entities.put(join.alias(), ref);
+            }
+        }
 
         // 解析每个参数为一个 WHERE 条件（字段名 / 操作符 / 动态判定 + 字段存在性校验）。
         // @Where 参数是条件对象——递归展开为片段（值条件/括号分组/Optional IS NULL）。
@@ -169,13 +180,18 @@ public final class SelectGenerator extends AbstractGenerator {
         for (JoinSpec join : joins) {
             baseSql += " " + join.type().sql() + " "
                     + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), join.target().tableName());
+            if (!join.alias().isEmpty()) {
+                baseSql += " AS " + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), join.alias());
+            }
             if (join.type() != JoinType.CROSS) {
                 baseSql += " ON ";
                 for (int i = 0; i < join.on().size(); i++) {
                     if (i > 0) baseSql += " AND ";
                     Join.On on = join.on().get(i);
-                    baseSql += qualifiedColumn(join.from(), on.local(), info.model.dialectSupport())
-                            + " = " + qualifiedColumn(join.target(), on.target(), info.model.dialectSupport());
+                    baseSql += qualifiedColumn(join.from().qualifier(), join.from().model(), on.local(),
+                                    info.model.dialectSupport())
+                            + " = " + qualifiedColumn(join.qualifier(), join.target(), on.target(),
+                                    info.model.dialectSupport());
                 }
             }
         }
@@ -231,12 +247,22 @@ public final class SelectGenerator extends AbstractGenerator {
         return spec.build();
     }
 
-    /** 编译期解析一个 @Select 方法上的全部连接，并校验连接图的顺序和字段。 */
+    /**
+     * 编译期解析一个 {@code @Select} 方法上的全部连接：校验顺序与字段，
+     * 解析每个连接的 {@code from}（显式 / 别名 / 推断），并为每个连接确定 SQL 限定符。
+     *
+     * @param info   仓库信息
+     * @param method 标注 {@code @Select} 的方法
+     * @return 连接规格序列；任一校验失败已报错返回 {@code null}
+     */
     private List<JoinSpec> parseJoins(JForgeProcessor.DaoInfo info, ExecutableElement method) {
         Join[] annotations = method.getAnnotationsByType(Join.class);
         List<JoinSpec> result = new ArrayList<>();
-        Map<String, EntityModel> available = new LinkedHashMap<>();
-        available.put(info.model.entityQualifiedName(), info.model);
+        // 可用连接表：宿主起步（键 = 实体全限定名），此后每个连接按「实体名 + 别名」登记。
+        Map<String, AbstractGenerator.JoinRef> available = new LinkedHashMap<>();
+        Set<String> aliases = new HashSet<>();
+        available.put(info.model.entityQualifiedName(), new AbstractGenerator.JoinRef(info.model,
+                SqlCodegen.quoteIdentifier(info.model.dialectSupport(), info.model.tableName())));
         for (Join annotation : annotations) {
             TypeElement targetElement = mirroredClass(annotation, true);
             if (targetElement == null) {
@@ -246,9 +272,20 @@ public final class SelectGenerator extends AbstractGenerator {
             EntityModel target = EntityModel.parse(targetElement, processingEnv.getTypeUtils(),
                     Diagnostic.Kind.ERROR, processingEnv.getMessager(), configHelper);
             if (target == null) return null;
-            if (available.containsKey(target.entityQualifiedName())) {
-                error(method, "@Join does not support joining the same entity more than once: "
-                        + target.entityQualifiedName());
+            String alias = annotation.alias();
+            if (!alias.isEmpty()) {
+                if (!aliases.add(alias)) {
+                    error(method, "@Join.alias must be unique within a query: " + alias);
+                    return null;
+                }
+                if (alias.equals(info.model.entityQualifiedName()) || alias.contains(".")) {
+                    error(method, "@Join.alias must not collide with an entity qualified name: " + alias);
+                    return null;
+                }
+            } else if (available.containsKey(target.entityQualifiedName())) {
+                // 无别名时按实体类型引用——同表再次连接会无法区分，要求改用别名。
+                error(method, "@Join does not support joining the same entity more than once"
+                        + " (give each @Join a distinct alias): " + target.entityQualifiedName());
                 return null;
             }
             JoinType type = annotation.type();
@@ -261,60 +298,99 @@ public final class SelectGenerator extends AbstractGenerator {
                 error(method, "A non-CROSS @Join requires at least one @Join.On condition");
                 return null;
             }
-            EntityModel from = resolveFrom(info, method, annotation, on, available);
+            AbstractGenerator.JoinRef from = resolveFrom(info, method, annotation, on, available);
             if (from == null) {
                 return null;
             }
             for (Join.On pair : on) {
-                if (findColumn(from, pair.local()) == null || findColumn(target, pair.target()) == null) {
+                if (findColumn(from.model(), pair.local()) == null || findColumn(target, pair.target()) == null) {
                     error(method, "@Join.On refers to an unknown entity field: "
                             + pair.local() + " -> " + pair.target());
                     return null;
                 }
             }
-            result.add(new JoinSpec(from, target, type, on));
-            available.put(target.entityQualifiedName(), target);
+            AbstractGenerator.JoinRef ref = new AbstractGenerator.JoinRef(target, qualify(alias, target, info));
+            result.add(new JoinSpec(from, target, type, on, alias, ref.qualifier()));
+            available.put(target.entityQualifiedName(), ref);
+            if (!alias.isEmpty()) {
+                available.put(alias, ref);
+            }
         }
         return result;
     }
 
     /**
-     * 解析连接的 ON 左侧实体（{@code from}）：显式指定优先；未指定时<b>从 ON 左侧字段推断</b>
-     * ——{@code local} 字段所属的可用实体即 {@code from}，因此链式连接无需重复书写
-     * {@code from = ...}。
+     * 连接的 SQL 限定符：有别名用别名，无别名用表名——ON 与条件表达式都以此前缀列。
      *
-     * <p>推断规则：在所有可用实体（宿主 + 此前已连接）中找能覆盖<b>全部</b> {@code local}
-     * 字段的那个。唯一命中即采用；命中多个（字段重名，如两侧都有 {@code id}）视为歧义，
-     * 报错要求显式指定 {@code from}——宁可让用户写明，也不猜错连接方向。</p>
+     * @param alias  声明的别名（空串 = 无别名）
+     * @param target 连接的目标实体（无别名时取其表名）
+     * @param info   仓库信息（方言）
+     * @return 已按方言引用符包裹的限定符
+     */
+    private static String qualify(String alias, EntityModel target, JForgeProcessor.DaoInfo info) {
+        DialectSupport dialect = info.model.dialectSupport();
+        return SqlCodegen.quoteIdentifier(dialect, alias.isEmpty() ? target.tableName() : alias);
+    }
+
+    /** 连接的 SQL 限定符（ON 与条件表达式的前缀）。 */
+    private static String qualify(JoinSpec join) {
+        return join.qualifier();
+    }
+
+    /**
+     * 解析连接的 ON 左侧（{@code from}），优先级依次为：
+     * <ol>
+     *   <li>{@link Join#fromAlias()}——按别名引用某一次连接（自连接/同表多角色的唯一途径）；</li>
+     *   <li>{@link Join#from()}——按实体类型引用此前已连接的实体；</li>
+     *   <li>都缺省时<b>从 ON 左侧字段推断</b>：{@code local} 字段所属的可用连接即 {@code from}
+     *       （链式连接因此无需重复书写）。推断命中多个（字段重名）时报歧义，要求显式指定。</li>
+     * </ol>
      *
      * <p>{@link JoinType#CROSS}（无 ON 字段）无可推断依据，且 {@code from} 不参与
      * CROSS 的 SQL 生成，故沿用宿主实体。</p>
      *
      * @param info      仓库信息（宿主实体）
      * @param method    标注 {@code @Select} 的方法（报错定位）
-     * @param annotation 连接注解（读显式 {@code from}）
+     * @param annotation 连接注解
      * @param on        ON 字段对
-     * @param available 可用实体表（宿主 + 此前已连接的实体）
-     * @return ON 左侧实体；无法确定或歧义时已报错返回 {@code null}
+     * @param available 可用连接表（键 = 实体全限定名或别名）
+     * @return ON 左侧连接；无法确定或歧义时已报错返回 {@code null}
      */
-    private EntityModel resolveFrom(JForgeProcessor.DaoInfo info, ExecutableElement method,
-            Join annotation, List<Join.On> on, Map<String, EntityModel> available) {
+    private AbstractGenerator.JoinRef resolveFrom(JForgeProcessor.DaoInfo info, ExecutableElement method,
+            Join annotation, List<Join.On> on, Map<String, AbstractGenerator.JoinRef> available) {
+        String fromAlias = annotation.fromAlias();
         TypeElement fromElement = mirroredClass(annotation, false);
+        if (!fromAlias.isEmpty() && fromElement != null) {
+            error(method, "@Join cannot specify both from and fromAlias");
+            return null;
+        }
+        if (!fromAlias.isEmpty()) {
+            AbstractGenerator.JoinRef explicit = available.get(fromAlias);
+            if (explicit == null) {
+                error(method, "@Join.fromAlias must reference an earlier @Join alias: " + fromAlias);
+            }
+            return explicit;
+        }
         if (fromElement != null) {
             // 显式指定：必须是宿主或此前已连接的实体。
-            EntityModel explicit = available.get(fromElement.getQualifiedName().toString());
+            AbstractGenerator.JoinRef explicit = available.get(fromElement.getQualifiedName().toString());
             if (explicit == null) {
                 error(method, "@Join.from must be the host entity or an earlier joined entity");
             }
             return explicit;
         }
         if (on.isEmpty()) {
-            return info.model;
+            return available.get(info.model.entityQualifiedName());
         }
-        // 未指定：推断 local 字段所属实体。
-        List<EntityModel> candidates = new ArrayList<>();
-        for (EntityModel candidate : available.values()) {
-            if (on.stream().allMatch(pair -> findColumn(candidate, pair.local()) != null)) {
+        // 未指定：推断 local 字段所属连接。available 同一次连接有两个键（实体名/别名），
+        // 按限定符去重，避免同一连接被计成两个候选。
+        Map<String, AbstractGenerator.JoinRef> deduped = new LinkedHashMap<>();
+        for (AbstractGenerator.JoinRef candidate : available.values()) {
+            deduped.putIfAbsent(candidate.qualifier(), candidate);
+        }
+        List<AbstractGenerator.JoinRef> candidates = new ArrayList<>();
+        for (AbstractGenerator.JoinRef candidate : deduped.values()) {
+            if (on.stream().allMatch(pair -> findColumn(candidate.model(), pair.local()) != null)) {
                 candidates.add(candidate);
             }
         }
@@ -324,11 +400,12 @@ public final class SelectGenerator extends AbstractGenerator {
         String locals = on.stream().map(Join.On::local).distinct().toList().toString();
         if (candidates.isEmpty()) {
             error(method, "@Join.from cannot be inferred: no host or earlier joined entity declares "
-                    + locals + " (specify @Join.from explicitly)");
+                    + locals + " (specify @Join.from or @Join.fromAlias explicitly)");
         } else {
             error(method, "@Join.from is ambiguous: " + locals + " exists in multiple joined entities "
-                    + candidates.stream().map(EntityModel::entitySimpleName).toList()
-                    + " (specify @Join.from explicitly)");
+                    + candidates.stream()
+                            .map(c -> c.model().entitySimpleName() + "(" + c.qualifier() + ")").toList()
+                    + " (specify @Join.from or @Join.fromAlias explicitly)");
         }
         return null;
     }
@@ -351,12 +428,23 @@ public final class SelectGenerator extends AbstractGenerator {
         return null;
     }
 
-    private static String qualifiedColumn(EntityModel model, String field, DialectSupport dialect) {
+    /** 按限定符（别名或表名）限定列表达式——ON 子句两侧都用它。 */
+    private static String qualifiedColumn(String qualifier, EntityModel model, String field, DialectSupport dialect) {
         EntityModel.ColumnModel column = findColumn(model, field);
-        return SqlCodegen.quoteIdentifier(dialect, model.tableName()) + "."
-                + SqlCodegen.quoteIdentifier(dialect, column.columnName);
+        return qualifier + "." + SqlCodegen.quoteIdentifier(dialect, column.columnName);
     }
 
-    private record JoinSpec(EntityModel from, EntityModel target, JoinType type, List<Join.On> on) { }
+    /**
+     * 一个已解析的连接。
+     *
+     * @param from       ON 左侧连接（含其限定符）
+     * @param target     目标实体
+     * @param type       连接类型
+     * @param on         ON 字段对
+     * @param alias      本连接的别名（空串 = 无别名）
+     * @param qualifier  本连接的 SQL 限定符（别名或表名，已按方言包裹）
+     */
+    private record JoinSpec(AbstractGenerator.JoinRef from, EntityModel target, JoinType type,
+            List<Join.On> on, String alias, String qualifier) { }
 
 }

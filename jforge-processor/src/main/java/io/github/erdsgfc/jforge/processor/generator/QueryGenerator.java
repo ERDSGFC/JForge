@@ -634,7 +634,11 @@ public final class QueryGenerator extends AbstractGenerator {
         }
         Condition condition = parameter.getAnnotation(Condition.class);
         if (condition != null) {
-            WhereCondition c = WhereCondition.resolveHost(info, method, parameter, processingEnv, "@Query", Map.of(info.model.entityQualifiedName(), info.model), true);
+            // @Query 的 SQL 由用户手写，不涉及 @Join——只登记宿主实体供 @Condition(entity) 引用。
+            WhereCondition c = WhereCondition.resolveHost(info, method, parameter, processingEnv, "@Query",
+                    Map.of(info.model.entityQualifiedName(), new AbstractGenerator.JoinRef(info.model,
+                            SqlCodegen.quoteIdentifier(info.model.dialectSupport(), info.model.tableName()))),
+                    true);
             if (c == null) return null;
             return new FragmentPlan(null, List.of(), c, null,
                     c.dynamic() || c.collection() || c.array() || c.optional(), parameter);

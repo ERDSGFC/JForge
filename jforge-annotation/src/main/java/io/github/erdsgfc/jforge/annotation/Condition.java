@@ -37,14 +37,28 @@ public @interface Condition {
     Op op() default Op.EQ;
 
     /**
-     * 不支持 {@link Delete} 和 {@link Update}
-     * 条件字段所属实体。默认的 {@code void.class} 表示当前仓库的宿主实体；指定其他实体时，
-     * 该实体必须由当前 {@link Select} 方法上的 {@link Join} 引入。处理器据此解析列名并添加
-     * 表限定符，避免多表查询中的同名列歧义。
+     * 条件字段所属实体——仅 {@link Select} 支持（{@link Delete}/{@link Update} 忽略本属性）。
+     *
+     * <p>默认的 {@code void.class} 表示当前仓库的宿主实体；指定其他实体时，该实体必须由
+     * 当前 {@code @Select} 方法上的 {@link Join} 引入。处理器据此解析列名并添加表限定符，
+     * 避免多表查询中的同名列歧义。</p>
+     *
+     * <p>同一实体被连接多次（自连接/同表多角色）时用 {@link #entityAlias()} 按别名定位，
+     * 因为实体类型无法区分是哪一次连接。</p>
      *
      * @return 条件字段所属实体，或 {@code void.class}
      */
     Class<?> entity() default void.class;
+
+    /**
+     * 条件字段所属连接的<b>别名</b>——按 {@link Join#alias()} 定位到具体那一次连接。
+     *
+     * <p>与 {@link #entity()} 二选一，不可同时指定。用于同一实体被连接多次的场景
+     * （此时 {@code entity} 无法区分是哪一次连接）。仅 {@code @Select} 支持。</p>
+     *
+     * @return 所属连接的别名；空串 = 按 {@link #entity()} 或宿主实体解析
+     */
+    String entityAlias() default "";
 
     /**
      * 直接使用原生 SQL 片段作为条件（替代 {@link #value()}/{@link #op()} 的

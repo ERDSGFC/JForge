@@ -59,7 +59,7 @@ public record WhereCondition(String columnName, String op, String paramName, Str
      */
     public static WhereCondition resolveHost(JForgeProcessor.DaoInfo info, ExecutableElement method,
                                       VariableElement parameter, ProcessingEnvironment env,
-                                      String diagnosticPrefix, Map<String, EntityModel> entities,
+                                      String diagnosticPrefix, Map<String, AbstractGenerator.JoinRef> entities,
                                       boolean queryContext) {
         String paramName = parameter.getSimpleName().toString();
         Condition condition = parameter.getAnnotation(Condition.class);
@@ -71,18 +71,33 @@ public record WhereCondition(String columnName, String op, String paramName, Str
         }
         String fieldName = condition != null && !condition.value().isEmpty()
                 ? condition.value() : paramName;
+        // 字段归属：宿主实体（无 @Condition/无 entity 指定）→ 表名限定；否则按 entity/entityAlias 定位连接。
         EntityModel fieldEntity = info.model;
-        // @Delete @Update 不支持关联其他entity
+        String qualifier = SqlCodegen.quoteIdentifier(info.model.dialectSupport(), info.model.tableName());
+        // @Delete @Update 不支持关联其他 entity
         if (condition != null && !entities.isEmpty()) {
+            String entityAlias = condition.entityAlias();
             TypeMirror entityType = conditionEntity(condition);
-            if (entityType != null) {
-                fieldEntity = entities.get(entityType.toString());
-                if (fieldEntity == null) {
+            if (!entityAlias.isEmpty() && entityType != null) {
+                env.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        diagnosticPrefix + " @Condition cannot specify both entity and entityAlias",
+                        parameter);
+                return null;
+            }
+            // 别名优先：同表多次连接时实体类型无法区分是哪一次，必须按别名定位。
+            String key = !entityAlias.isEmpty() ? entityAlias : (entityType != null ? entityType.toString() : null);
+            if (key != null) {
+                AbstractGenerator.JoinRef ref = entities.get(key);
+                if (ref == null) {
                     env.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                            diagnosticPrefix + " @Condition(entity) must reference the host entity or a @Join entity",
+                            diagnosticPrefix + (entityAlias.isEmpty()
+                                    ? " @Condition(entity) must reference the host entity or a @Join entity"
+                                    : " @Condition(entityAlias) must reference a @Join alias: " + entityAlias),
                             parameter);
                     return null;
                 }
+                fieldEntity = ref.model();
+                qualifier = ref.qualifier();
             }
         }
         String op = condition != null ? condition.op().sql() : "=";
@@ -141,9 +156,10 @@ public record WhereCondition(String columnName, String op, String paramName, Str
             if (column.fieldName.equals(fieldName)) {
                 String converter = column.converter != null
                         ? SqlCodegen.converterFieldName(info.model, column) : null;
+                // 宿主实体不加限定（与既有行为一致）；连接实体用其限定符（别名或表名）。
                 String qualified = fieldEntity == info.model
                         ? SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column.columnName)
-                        : SqlCodegen.quoteIdentifier(info.model.dialectSupport(), fieldEntity.tableName()) + "."
+                        : qualifier + "."
                                 + SqlCodegen.quoteIdentifier(info.model.dialectSupport(), column.columnName);
                 return new WhereCondition(qualified,
                         op, paramName, bindType, dynamic, optional, valueExpr, null, converter,
