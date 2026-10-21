@@ -75,9 +75,67 @@ class CompilationHelperTest {
                 "生成资源应写入调用方指定的输出目录");
     }
 
+    @Test
+    void compilesAnnotationSourceFromModulePath(@TempDir Path tempDir) throws Exception {
+        Path annotationClasses = findRuntimeEntry("jforge-annotation", "target", "classes");
+        Path jspecifyJar = findRuntimeEntryWithPrefix("jspecify-");
+        List<String> classpath = runtimeClasspath().stream()
+                .filter(entry -> {
+                    Path path = Path.of(entry).toAbsolutePath().normalize();
+                    return !path.equals(annotationClasses) && !path.equals(jspecifyJar);
+                })
+                .toList();
+
+        CompilationHelper.CompilationResult result = CompilationHelper.compile(
+                "test.User",
+                """
+                        package test;
+                        import io.github.erdsgfc.jforge.annotation.Table;
+                        @Table(name = "users")
+                        public interface User {
+                        }
+                        """,
+                classpath,
+                List.of(annotationClasses.toString(), jspecifyJar.toString()),
+                tempDir.resolve("classes"),
+                new NoOpProcessor());
+
+        assertTrue(result.success, () -> result.diagnostics.toString());
+    }
+
     private static List<String> runtimeClasspath() {
         return List.of(System.getProperty("java.class.path")
                 .split(java.io.File.pathSeparator));
+    }
+
+    private static Path findRuntimeEntry(String... pathSuffix) {
+        Path suffix = Path.of(pathSuffix[0], java.util.Arrays.copyOfRange(pathSuffix, 1,
+                pathSuffix.length));
+        return runtimeDependencyEntries().stream()
+                .map(Path::of)
+                .map(path -> path.toAbsolutePath().normalize())
+                .filter(path -> path.endsWith(suffix))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("运行依赖中找不到: " + suffix));
+    }
+
+    private static Path findRuntimeEntryWithPrefix(String fileNamePrefix) {
+        return runtimeDependencyEntries().stream()
+                .map(Path::of)
+                .map(path -> path.toAbsolutePath().normalize())
+                .filter(path -> path.getFileName().toString().startsWith(fileNamePrefix))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "运行依赖中找不到文件前缀: " + fileNamePrefix));
+    }
+
+    private static List<String> runtimeDependencyEntries() {
+        List<String> entries = new java.util.ArrayList<>(runtimeClasspath());
+        String modulePath = System.getProperty("jdk.module.path");
+        if (modulePath != null && !modulePath.isBlank()) {
+            entries.addAll(List.of(modulePath.split(java.io.File.pathSeparator)));
+        }
+        return entries;
     }
 
     /**
@@ -125,6 +183,25 @@ class CompilationHelperTest {
             } catch (IOException e) {
                 throw new IllegalStateException("生成测试编译产物失败", e);
             }
+            return false;
+        }
+    }
+
+    /** 不生成任何内容，仅用于验证内部编译能够解析模块路径上的注解。 */
+    private static final class NoOpProcessor extends AbstractProcessor {
+        @Override
+        public Set<String> getSupportedAnnotationTypes() {
+            return Set.of("*");
+        }
+
+        @Override
+        public SourceVersion getSupportedSourceVersion() {
+            return SourceVersion.latestSupported();
+        }
+
+        @Override
+        public boolean process(Set<? extends TypeElement> annotations,
+                               RoundEnvironment roundEnv) {
             return false;
         }
     }

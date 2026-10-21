@@ -13,8 +13,9 @@ import java.util.stream.Stream;
 /**
  * 通用编译工具 —— 在内存中编译源码、运行注解处理器、捕获生成文件与编译诊断。
  *
- * <p>适用于基于 classpath 的 {@link Processor} 单元测试，不依赖特定处理器。
- * 默认使用当前 JVM 的 classpath，并为每次编译创建独立的临时 class 输出目录；
+ * <p>适用于 classpath 或 module-path 模式下的 {@link Processor} 单元测试，
+ * 不依赖特定处理器。默认同时读取当前 JVM 的 classpath 和模块路径，
+ * 并为每次编译创建独立的临时 class 输出目录；
  * 编译目标版本默认为 Java 25，可通过系统属性
  * {@code jforge.compilation.release} 覆盖。
  *
@@ -99,6 +100,28 @@ public final class CompilationHelper {
     public static CompilationResult compile(String className, String sourceCode,
                                              List<String> classpath, Path classOutput,
                                              Processor... processors) throws IOException {
+        return compile(className, sourceCode, classpath, runtimeModulePath(),
+                classOutput, processors);
+    }
+
+    /**
+     * 完整参数版本，同时指定 classpath 与模块路径。
+     *
+     * <p>模块路径非空时，内部编译会解析路径上的全部模块。这样测试在 IDEA
+     * 以命名模块启动时，注解和依赖仍能被内存中的源码引用。</p>
+     *
+     * @param className   全限定类名
+     * @param sourceCode  源码文本
+     * @param classpath   编译 classpath
+     * @param modulePath  编译 module path
+     * @param classOutput .class 输出目录；调用方负责管理和清理
+     * @param processors  注解处理器
+     * @return 包含生成文件、编译诊断和成功标志的结果
+     */
+    public static CompilationResult compile(String className, String sourceCode,
+                                             List<String> classpath, List<String> modulePath,
+                                             Path classOutput,
+                                             Processor... processors) throws IOException {
         Objects.requireNonNull(processors, "至少需要一个注解处理器");
         if (processors.length == 0) {
             throw new IllegalArgumentException("至少需要一个注解处理器");
@@ -123,7 +146,7 @@ public final class CompilationHelper {
             JavaFileObject sourceFile =
                     SimpleJavaFileObject.forSource(URI.create(simpleName + ".java"), sourceCode);
 
-            List<String> options = buildOptions(classpath);
+            List<String> options = buildOptions(classpath, modulePath);
 
             JavaCompiler.CompilationTask task = compiler.getTask(
                     null, gfm, diagnostics, options, null, List.of(sourceFile));
@@ -144,13 +167,20 @@ public final class CompilationHelper {
     // 内部工具
     // ============================================================
 
-    private static List<String> buildOptions(List<String> classpath) {
+    private static List<String> buildOptions(List<String> classpath, List<String> modulePath) {
         List<String> options = new ArrayList<>();
         options.add("--release");
         options.add(javaRelease());
         if (!classpath.isEmpty()) {
             options.add("-classpath");
             options.add(String.join(File.pathSeparator, classpath));
+        }
+        if (!modulePath.isEmpty()) {
+            options.add("--module-path");
+            options.add(String.join(File.pathSeparator, modulePath));
+            // 测试源码位于未命名模块；显式解析模块路径，避免只能看到 classpath 依赖。
+            options.add("--add-modules");
+            options.add("ALL-MODULE-PATH");
         }
         return options;
     }
@@ -164,6 +194,21 @@ public final class CompilationHelper {
 
     private static List<String> runtimeClasspath() {
         return List.of(System.getProperty("java.class.path").split(File.pathSeparator));
+    }
+
+    /**
+     * 获取启动当前测试 JVM 时使用的模块路径。
+     *
+     * @return 模块路径条目；非模块模式启动时为空列表
+     */
+    private static List<String> runtimeModulePath() {
+        String modulePath = System.getProperty("jdk.module.path");
+        if (modulePath == null || modulePath.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(modulePath.split(File.pathSeparator))
+                .filter(path -> !path.isBlank())
+                .toList();
     }
 
     /**
